@@ -14,6 +14,7 @@
 #include "../../lvgl/src/core/lv_global.h"
 #include "input.h"
 #include "gsmenu/gs_system.h"
+#include <stdbool.h>
 
 extern YAML::Node config;
 extern lv_group_t *main_group;
@@ -72,52 +73,30 @@ void simulate_traffic(lv_timer_t *t)
 
 #ifndef USE_SIMULATOR
 // Function to find GPIO chip and line for a given pin number
-bool find_gpio_mapping(int pin, const char** chip_name, int* line_num) {
-    glob_t globbuf;
-    struct gpiod_chip *chip = NULL;
-    bool found = false;
+bool find_gpio_mapping(int gpio_global_number, const char** chip_name, int* line_num) {
+    int chip_index = gpio_global_number / 32;
+    int line_offset = gpio_global_number % 32;
 
-    if (glob("/dev/gpiochip*", 0, NULL, &globbuf) != 0) {
-        perror("Failed to find GPIO chips");
-        return false;
+    // Create the path string "/dev/gpiochipX"
+    char path_buffer[32];
+    snprintf(path_buffer, sizeof(path_buffer), "/dev/gpiochip%d", chip_index);
+
+    // Allocate memory for the chip name (caller must free this!)
+    *chip_name = strdup(path_buffer);
+    *line_num = line_offset;
+
+    // Verify the chip actually exists (Optional but safer)
+    FILE *fp = fopen(*chip_name, "r");
+    if (fp) {
+        fclose(fp);
+        return true;
+    } else {
+      free((void*)*chip_name); // Cast needed because we are freeing a const pointer
+      *chip_name = NULL;  
+      return false;
     }
-
-    for (size_t i = 0; i < globbuf.gl_pathc && !found; i++) {
-        chip = gpiod_chip_open(globbuf.gl_pathv[i]);
-        if (!chip) continue;
-
-        // Check chip label first
-        const char *label = gpiod_chip_label(chip);
-        if (label) {
-            // If we were looking for a specific chip label, we'd check here
-        }
-
-        // For libgpiod v1.x
-        int num_lines = gpiod_chip_num_lines(chip);
-        for (int offset = 0; offset < num_lines && !found; offset++) {
-            struct gpiod_line *line = gpiod_chip_get_line(chip, offset);
-            if (!line) continue;
-
-            const char *name = gpiod_line_name(line);
-            if (name) {
-                int extracted_pin = 0;
-                if (sscanf(name, "PIN_%d", &extracted_pin) == 1 || 
-                    sscanf(name, "GPIO%d", &extracted_pin) == 1 ||
-                    sscanf(name, "%d", &extracted_pin) == 1) {
-                    if (extracted_pin == pin) {
-                        *chip_name = strdup(globbuf.gl_pathv[i]);
-                        *line_num = offset;
-                        found = true;
-                    }
-                }
-            }
-            gpiod_line_release(line);
-        }
-        gpiod_chip_close(chip);
-    }
-    globfree(&globbuf);
-    return found;
 }
+
 
 void init_button_from_config(YAML::Node& gpio_config, const char* button_name, int& button_index) {
     if (!gpio_config[button_name] || gpio_config[button_name].IsNull()) {

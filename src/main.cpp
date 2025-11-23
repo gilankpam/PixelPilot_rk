@@ -55,7 +55,8 @@ extern "C" {
 #include "os_mon.hpp"
 #include "pixelpilot_config.h"
 #include <iostream>
-
+#include "WiFiRSSIMonitor.hpp"
+#include "gsmenu/gs_system.h"
 
 #define READ_BUF_SIZE (1024*1024) // SZ_1M https://github.com/rockchip-linux/mpp/blob/ed377c99a733e2cdbcc457a6aa3f0fcd438a9dff/osal/inc/mpp_common.h#L179
 #define MAX_FRAMES 24		// min 16 and 20+ recommended (mpp/readme.txt)
@@ -108,6 +109,9 @@ OsSensors os_sensors; // TODO: pass as argument to `main_loop`
 // Add global variables for plane id overrides
 uint32_t video_plane_id_override = 0;
 uint32_t osd_plane_id_override = 0;
+
+WiFiRSSIMonitor wifi_monitor;
+extern enum RXMode RXMODE;
 
 void init_buffer(MppFrame frame) {
 	output_list->video_frm_width = mpp_frame_get_width(frame);
@@ -540,6 +544,9 @@ void main_loop() {
         // TODO: put gsmenu main loop here
         msg_manager.check_message();
 		os_sensors.run();
+		if (RXMODE == APFPV) {
+    		wifi_monitor.run();
+		}
         sleep(1);
     }
     return;
@@ -586,7 +593,7 @@ void read_gstreamerpipe_stream(MppPacket *packet, int gst_udp_port, const char *
 void set_control_verbose(MppApi * mpi,  MppCtx ctx,MpiCmd control,RK_U32 enable){
     RK_U32 res = mpi->control(ctx, control, &enable);
     if(res){
-        spdlog::warn("Could not set control {} {}", control, enable);
+        spdlog::warn("Could not set control {} {}", static_cast<int>(control), enable);
         assert(false);
     }
 }
@@ -674,6 +681,8 @@ void printHelp() {
     "    --screen-mode <mode>   - Override default screen mode. <width>x<heigth>@<fps> ex: 1920x1080@120\n"
     "\n"
     "    --video-plane-id       - Override default drm plane used for video by plane-id\n"
+	"\n"
+	"    --video-scale <factor> - Scale video output size (0.5 =< factor <= 1.0) (Default: 1.0)\n"
     "\n"
     "    --osd-plane-id         - Override default drm plane used for osd by plane-id\n"
     "\n"
@@ -717,6 +726,7 @@ int main(int argc, char **argv)
     std::ofstream pidFile(pidFilePath);
     pidFile << getpid();
     pidFile.close();
+	float video_scale_factor = 1.0;
 
 	// Load console arguments
 	__BeginParseConsoleArguments__(printHelp) 
@@ -880,6 +890,15 @@ int main(int argc, char **argv)
 		continue;
 	}
 
+	__OnArgument("--video-scale") {
+    	video_scale_factor = atof(__ArgValue);
+    	if (video_scale_factor < 0.5 || video_scale_factor > 1.0) {
+        	fprintf(stderr, "Invalid video scale factor, should be (0.5 =< scale <= 1.0)\n");
+        	return -1;
+    	}
+    	continue;
+	}
+
 	__EndParseConsoleArguments__
 
 	spdlog::set_level(log_level);
@@ -976,7 +995,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	output_list = modeset_prepare(drm_fd, mode_width, mode_height, mode_vrefresh, video_plane_id_override, osd_plane_id_override);
+	output_list = modeset_prepare(drm_fd, mode_width, mode_height, mode_vrefresh, video_plane_id_override, osd_plane_id_override, video_scale_factor);
 	if (!output_list) {
 		fprintf(stderr,
 				"cannot initialize display. Is display connected? Is --screen-mode correct?\n");

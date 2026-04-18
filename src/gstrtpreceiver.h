@@ -54,6 +54,8 @@ public:
     typedef std::function<void(std::shared_ptr<std::vector<uint8_t>> frame)> NEW_FRAME_CALLBACK;
     void start_receiving(NEW_FRAME_CALLBACK cb);
     void stop_receiving();
+    // RTP jitter buffer latency in ms; 0 disables the jitterbuffer element. Call before start_receiving().
+    void set_jitter_ms(int ms) { m_jitter_ms = ms; }
     VideoCodec switch_to_file_playback(const char* file_path);
     void switch_to_stream();
     void fast_forward(double rate = 2.0);
@@ -73,6 +75,7 @@ private:
     VideoCodec m_video_codec;
     VideoCodec m_playback_codec = VideoCodec::UNKNOWN;
     int m_port;
+    int m_jitter_ms = 0;  // 0 = rtpjitterbuffer disabled
     // appsink
     GstElement *m_app_sink_element = nullptr;
     bool m_pull_samples_run;

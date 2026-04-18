@@ -955,9 +955,16 @@ std::string GstRtpReceiver::construct_gstreamer_pipeline()
 {
     std::stringstream ss;
     if (! unix_socket)
-        ss<<"udpsrc port="<<m_port<<" "<<pipeline::gst_create_rtp_caps(m_video_codec)<<" ! tee name=rtp_tee ";
+        ss<<"udpsrc port="<<m_port<<" "<<pipeline::gst_create_rtp_caps(m_video_codec)<<" ";
     else
-        ss<<"appsrc name=appsrc "<<pipeline::gst_create_rtp_caps(m_video_codec)<<" ! tee name=rtp_tee ";
+        ss<<"appsrc name=appsrc "<<pipeline::gst_create_rtp_caps(m_video_codec)<<" ";
+    // Optional RTP jitter buffer — sits before the tee so both decode and
+    // restream branches receive reordered, gap-aware RTP. When m_jitter_ms == 0
+    // the emitted pipeline is byte-for-byte identical to the pre-feature shape.
+    if (m_jitter_ms > 0) {
+        ss<<"! rtpjitterbuffer latency="<<m_jitter_ms<<" do-lost=true mode=1 ";
+    }
+    ss<<"! tee name=rtp_tee ";
     ss<<"rtp_tee. ! ";
     ss<<pipeline::create_rtp_depacketize_for_codec(m_video_codec);
     ss<<pipeline::create_parse_for_codec(m_video_codec);

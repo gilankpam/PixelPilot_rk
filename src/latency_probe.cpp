@@ -1,19 +1,240 @@
 #include "latency_probe.hpp"
 #include "latency_probe_wire.hpp"
+#include "osd.h"
+#include <spdlog/spdlog.h>
 
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstring>
 #include <ctime>
 #include <limits>
+#include <memory>
+#include <thread>
 
 namespace latency_probe {
 
 std::atomic<bool> active{false};
 
-bool start(const std::string& /*host*/, uint16_t /*port*/) { return false; }
-void stop() {}
+namespace {
 
-void on_rtp_buffer(const uint8_t* /*data*/, size_t /*len*/, uint64_t /*gs_recv_us*/) {}
-void record_decode_done(uint64_t /*gs_decode_us*/) {}
-void record_display_submit(uint64_t /*gs_display_us*/) {}
+// Module-internal state. There is one global instance protected by g_start_mu;
+// the thread itself does not need additional locking against g_state — only
+// the application driver calls start()/stop().
+struct ProbeState {
+    std::thread        thread;
+    std::atomic<bool>  stop_flag{false};
+    int                fd = -1;
+    sockaddr_in        peer{};
+    ClockOffset        clock;
+    FrameMatcher       matcher;
+    uint64_t           wire_clamp_count = 0;
+    uint64_t           started_us = 0;
+};
+
+std::mutex      g_start_mu;
+ProbeState*     g_state = nullptr;
+
+void publish_uint_real(const char* name, uint64_t value) {
+    osd_publish_uint_fact(name, NULL, 0, static_cast<unsigned long>(value));
+}
+void publish_int_real(const char* name, int64_t value) {
+    osd_publish_int_fact(name, NULL, 0, static_cast<long>(value));
+}
+
+void send_subscribe(ProbeState& s) {
+    uint8_t buf[wire::kSizeSubscribe];
+    encode_subscribe(buf);
+    sendto(s.fd, buf, sizeof(buf), 0,
+           reinterpret_cast<sockaddr*>(&s.peer), sizeof(s.peer));
+}
+
+void send_sync_req(ProbeState& s) {
+    uint8_t buf[wire::kSizeSyncReq];
+    uint64_t t1 = now_us();
+    encode_sync_req(buf, t1);
+    sendto(s.fd, buf, sizeof(buf), 0,
+           reinterpret_cast<sockaddr*>(&s.peer), sizeof(s.peer));
+}
+
+void handle_packet(ProbeState& s, const uint8_t* buf, size_t len) {
+    SyncRespFields sr{};
+    MsgFrameFields mf{};
+    uint8_t kind = decode_message(buf, len, sr, mf);
+    switch (kind) {
+        case wire::kMsgSyncResp: {
+            uint64_t t4 = now_us();
+            s.clock.add_sample(sr.t1_us, sr.t2_us, sr.t3_us, t4);
+            break;
+        }
+        case wire::kMsgFrame: {
+            s.matcher.on_msg_frame(mf.ssrc, mf.rtp_timestamp,
+                                   mf.capture_us, mf.frame_ready_us,
+                                   mf.last_pkt_send_us,
+                                   /*now=*/now_us());
+            break;
+        }
+        default: break;
+    }
+}
+
+void probe_thread_main(ProbeState* sp) {
+    ProbeState& s = *sp;
+    constexpr uint64_t kSubInterval_us  = 2'000'000;
+    constexpr uint64_t kSyncFast_us     = 1'000'000;
+    constexpr uint64_t kSyncSlow_us     = 5'000'000;
+    constexpr uint64_t kFastWindow_us   = 10'000'000;
+    constexpr uint64_t kTtlSweepStep_us = 100'000;
+    constexpr uint64_t kTtl_us          = 500'000;
+
+    s.started_us = now_us();
+    uint64_t next_subscribe = s.started_us;
+    uint64_t next_sync      = s.started_us;
+    uint64_t next_sweep     = s.started_us + kTtlSweepStep_us;
+
+    // Wire publish callback. The matcher holds its own mutex while calling
+    // back, so this runs under that mutex — keep it cheap.
+    s.matcher.set_publish_callback(
+        [&](const FrameTimings& f) {
+            int64_t  off; uint64_t rtt;
+            s.clock.get(off, rtt);
+            compute_and_publish(f, off, rtt, s.wire_clamp_count,
+                                publish_uint_real, publish_int_real);
+        });
+
+    pollfd pfd{ s.fd, POLLIN, 0 };
+
+    while (!s.stop_flag.load(std::memory_order_relaxed)) {
+        uint64_t now = now_us();
+
+        if (now >= next_subscribe) {
+            send_subscribe(s);
+            next_subscribe = now + kSubInterval_us;
+        }
+        if (now >= next_sync) {
+            send_sync_req(s);
+            uint64_t step = (now - s.started_us < kFastWindow_us)
+                ? kSyncFast_us : kSyncSlow_us;
+            next_sync = now + step;
+        }
+        if (now >= next_sweep) {
+            s.matcher.ttl_sweep(now, kTtl_us);
+            next_sweep = now + kTtlSweepStep_us;
+        }
+
+        uint64_t soonest = std::min({next_subscribe, next_sync, next_sweep});
+        int timeout_ms = (soonest > now) ? static_cast<int>((soonest - now) / 1000ull) : 0;
+        if (timeout_ms < 1) timeout_ms = 1;
+        if (timeout_ms > 100) timeout_ms = 100;
+
+        int prc = poll(&pfd, 1, timeout_ms);
+        if (prc > 0 && (pfd.revents & POLLIN)) {
+            for (int i = 0; i < 8; ++i) {
+                uint8_t buf[128];
+                ssize_t n = recv(s.fd, buf, sizeof(buf), MSG_DONTWAIT);
+                if (n <= 0) break;
+                handle_packet(s, buf, static_cast<size_t>(n));
+            }
+        }
+    }
+}
+
+bool resolve_peer(const std::string& host, uint16_t port, sockaddr_in& out) {
+    memset(&out, 0, sizeof(out));
+    out.sin_family = AF_INET;
+    out.sin_port   = htons(port);
+    if (inet_pton(AF_INET, host.c_str(), &out.sin_addr) == 1) return true;
+    addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) return false;
+    auto* a = reinterpret_cast<sockaddr_in*>(res->ai_addr);
+    out.sin_addr = a->sin_addr;
+    freeaddrinfo(res);
+    return true;
+}
+
+} // namespace
+
+bool start(const std::string& host, uint16_t port) {
+    std::lock_guard<std::mutex> lk(g_start_mu);
+    if (g_state) return true;
+    if (port == 0 || host.empty()) {
+        spdlog::warn("[latency-probe] disabled: empty host/port");
+        return false;
+    }
+
+    auto s = std::make_unique<ProbeState>();
+    if (!resolve_peer(host, port, s->peer)) {
+        spdlog::warn("[latency-probe] failed to resolve {}:{}", host, port);
+        return false;
+    }
+
+    s->fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (s->fd < 0) {
+        spdlog::warn("[latency-probe] socket: {}", strerror(errno));
+        return false;
+    }
+    int flags = fcntl(s->fd, F_GETFL, 0);
+    fcntl(s->fd, F_SETFL, flags | O_NONBLOCK);
+
+    g_state = s.release();
+    g_state->thread = std::thread(probe_thread_main, g_state);
+    active.store(true, std::memory_order_release);
+    spdlog::info("[latency-probe] started → {}:{}", host, port);
+    return true;
+}
+
+void stop() {
+    ProbeState* s = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_start_mu);
+        s = g_state;
+        g_state = nullptr;
+    }
+    if (!s) return;
+    active.store(false, std::memory_order_release);
+    s->stop_flag.store(true, std::memory_order_release);
+    if (s->thread.joinable()) s->thread.join();
+    if (s->fd >= 0) close(s->fd);
+    delete s;
+}
+
+// g_state is read without a lock in the hot-path hooks. The `active` atomic
+// is the gate: it's only flipped to `true` AFTER g_state is fully initialized
+// (release store at end of start()), and flipped to `false` BEFORE g_state
+// is torn down (release store at the top of stop()). A relaxed read of
+// `active` synchronizes with the release on the start side via the prior
+// happens-before relationship on `g_state`.
+void on_rtp_buffer(const uint8_t* data, size_t len, uint64_t gs_recv_us) {
+    if (!active.load(std::memory_order_relaxed)) return;
+    ProbeState* s = g_state;
+    if (!s) return;
+    RtpHeaderInfo h;
+    if (!parse_rtp_header(data, len, h)) return;
+    if (!h.marker) return;
+    s->matcher.on_marker_arrival(h.ssrc, h.timestamp, gs_recv_us, gs_recv_us);
+}
+
+void record_decode_done(uint64_t gs_decode_us) {
+    if (!active.load(std::memory_order_relaxed)) return;
+    ProbeState* s = g_state;
+    if (!s) return;
+    s->matcher.on_decode_done(gs_decode_us, gs_decode_us);
+}
+
+void record_display_submit(uint64_t gs_display_us) {
+    if (!active.load(std::memory_order_relaxed)) return;
+    ProbeState* s = g_state;
+    if (!s) return;
+    s->matcher.on_display_submit(gs_display_us, gs_display_us);
+}
 
 bool parse_rtp_header(const uint8_t* data, size_t len, RtpHeaderInfo& info) {
     if (!data || len < 12) return false;

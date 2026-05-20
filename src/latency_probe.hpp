@@ -130,9 +130,12 @@ private:
     // Caller holds m_.
     FrameTimings* find_by_key_locked(uint32_t ssrc, uint32_t rtp_ts);
     FrameTimings& push_new_locked(uint64_t now);
-    void try_publish_locked();   // pops and publishes any complete slots
-                                 // at the head of the ring (or any
-                                 // complete slot, FIFO order preserved).
+    void try_publish_locked();   // Walks the full ring front-to-back and
+                                 // publishes+erases every complete slot
+                                 // in encounter order. Non-head completion
+                                 // is allowed because MSG_FRAME can arrive
+                                 // out-of-order relative to the decode/
+                                 // display FIFO binding.
 };
 
 } // namespace latency_probe

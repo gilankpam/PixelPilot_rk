@@ -223,6 +223,9 @@ TEST_CASE("FrameMatcher: FIFO decode/display binding across multiple frames",
     REQUIRE(published[0].gs_decode_done_us == 10'000);
     REQUIRE(published[1].gs_decode_done_us == 20'000);
     REQUIRE(published[2].gs_decode_done_us == 30'000);
+    REQUIRE(published[0].gs_display_submit_us == 11'000);
+    REQUIRE(published[1].gs_display_submit_us == 21'000);
+    REQUIRE(published[2].gs_display_submit_us == 31'000);
 }
 
 TEST_CASE("FrameMatcher: TTL evicts orphans",
@@ -256,7 +259,7 @@ TEST_CASE("FrameMatcher: ring cap discards oldest",
     for (uint32_t i = 0; i < 200; ++i) {
         m.on_marker_arrival(1u, i, i * 1000ull, i * 1000ull);
     }
-    REQUIRE(m.size() <= 64);
+    REQUIRE(m.size() == lp::FrameMatcher::kRingCap);
 }
 
 TEST_CASE("FrameMatcher: duplicate marker arrival is a no-op stamp",

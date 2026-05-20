@@ -1295,47 +1295,47 @@ private:
 
 class VideoStutterWidget: public IconTplTextWidget {
 public:
-    VideoStutterWidget(int pos_x, int pos_y, uint window_size_ms, uint bucket_size_ms,
-                       cairo_surface_t *icon, std::string tpl, uint num_args) :
-        IconTplTextWidget(pos_x, pos_y, icon, tpl, 3),
-        avg_interval(window_size_ms, bucket_size_ms),
-        stutter_events(window_size_ms, bucket_size_ms),
-        peak_ms(0),
-        peak_ts_ms(0) {
-        assert(num_args == 1);
-    }
+	VideoStutterWidget(int pos_x, int pos_y, uint window_size_ms, uint bucket_size_ms,
+					 cairo_surface_t *icon, std::string tpl, uint num_args) :
+		IconTplTextWidget(pos_x, pos_y, icon, tpl, 3),
+		avg_interval(window_size_ms, bucket_size_ms),
+		stutter_events(window_size_ms, bucket_size_ms),
+		peak_ms(0),
+		peak_ts_ms(0) {
+		assert(num_args == 1);
+	}
 
-    virtual void setFact(uint idx, Fact fact) {
-        assert(idx == 0);
-        long interval = static_cast<long>(fact.getUintValue());
+	virtual void setFact(uint idx, Fact fact) {
+		assert(idx == 0);
+		long interval = static_cast<long>(fact.getUintValue());
 
-        recent.push_back(interval);
-        if (recent.size() > RING_CAP) recent.pop_front();
+		recent.push_back(interval);
+		if (recent.size() > RING_CAP) recent.pop_front();
 
-        avg_interval.add(interval);
+		avg_interval.add(interval);
 
-        bool stutter = is_stutter(interval, recent, 1.5);
-        if (stutter) stutter_events.add(1);
+		bool stutter = is_stutter(interval, recent, 1.5);
+		if (stutter) stutter_events.add(1);
 
-        auto now = std::chrono::steady_clock::now();
-        uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                              now.time_since_epoch()).count();
-        update_peak(peak_ms, peak_ts_ms, interval, stutter, now_ms);
+		auto now = std::chrono::steady_clock::now();
+		uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+					 now.time_since_epoch()).count();
+		update_peak(peak_ms, peak_ts_ms, interval, stutter, now_ms);
 
-        Stats avg_stats = avg_interval.get_stats_over_last_ms_result(1000);
-        args[0] = Fact(FactMeta("interval_avg_ms"), (ulong)avg_stats.average);
-        args[1] = Fact(FactMeta("stutter_per_s"),
-                       (ulong)stutter_events.rate_per_second_over_last_ms(1000));
-        args[2] = Fact(FactMeta("peak_ms"), (ulong)peak_ms);
-    }
+		Stats avg_stats = avg_interval.get_stats_over_last_ms_result(1000);
+		args[0] = Fact(FactMeta("interval_avg_ms"), (ulong)avg_stats.average);
+		args[1] = Fact(FactMeta("stutter_per_s"),
+					 (ulong)stutter_events.rate_per_second_over_last_ms(1000));
+		args[2] = Fact(FactMeta("peak_ms"), (ulong)peak_ms);
+	}
 
 private:
-    static constexpr size_t RING_CAP = 120;
-    RunningAverage avg_interval;
-    RunningAverage stutter_events;
-    std::deque<long> recent;
-    long peak_ms;
-    uint64_t peak_ts_ms;
+	static constexpr size_t RING_CAP = 120;
+	RunningAverage avg_interval;
+	RunningAverage stutter_events;
+	std::deque<long> recent;
+	long peak_ms;
+	uint64_t peak_ts_ms;
 };
 
 

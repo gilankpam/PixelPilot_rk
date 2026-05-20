@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstddef>   // size_t
 #include <string>
 
 namespace latency_probe {

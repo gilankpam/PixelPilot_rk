@@ -1,6 +1,5 @@
 #include <catch2/catch.hpp>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 
 #include "../src/latency_probe.hpp"
@@ -46,6 +45,8 @@ TEST_CASE("RTP header parse: marker=0 still parses but flags off",
     lp::RtpHeaderInfo info;
     REQUIRE(lp::parse_rtp_header(h.data(), h.size(), info));
     REQUIRE(info.marker == false);
+    REQUIRE(info.timestamp == 1u);
+    REQUIRE(info.ssrc == 2u);
 }
 
 TEST_CASE("RTP header parse: wrong version rejected",
@@ -53,6 +54,33 @@ TEST_CASE("RTP header parse: wrong version rejected",
     auto h = make_header(/*version=*/3, true, 1u, 2u);
     lp::RtpHeaderInfo info;
     REQUIRE_FALSE(lp::parse_rtp_header(h.data(), h.size(), info));
+}
+
+TEST_CASE("RTP header parse: non-zero CSRC count still parses (CC bits ignored)",
+          "[latency_probe][rtp]") {
+    // The parser only reads bytes 0..11. CSRCs sit AFTER byte 11, so they
+    // do not affect us — but we should prove that a CC>0 packet still
+    // parses correctly. Real RTP packets do sometimes carry CSRCs.
+    auto h = make_header(2, true, 0x11223344u, 0xDEADBEEFu);
+    h[0] |= 0x03;  // CC = 3 (three CSRC entries would follow if we read further)
+    lp::RtpHeaderInfo info;
+    REQUIRE(lp::parse_rtp_header(h.data(), h.size(), info));
+    REQUIRE(info.timestamp == 0x11223344u);
+    REQUIRE(info.ssrc == 0xDEADBEEFu);
+    REQUIRE(info.marker == true);
+}
+
+TEST_CASE("RTP header parse: extension bit set still parses",
+          "[latency_probe][rtp]") {
+    // Extension header sits after CSRC list; the fixed 12-byte prefix
+    // is unaffected.
+    auto h = make_header(2, true, 0x11223344u, 0xDEADBEEFu);
+    h[0] |= 0x10;  // X bit
+    lp::RtpHeaderInfo info;
+    REQUIRE(lp::parse_rtp_header(h.data(), h.size(), info));
+    REQUIRE(info.timestamp == 0x11223344u);
+    REQUIRE(info.ssrc == 0xDEADBEEFu);
+    REQUIRE(info.marker == true);
 }
 
 TEST_CASE("RTP header parse: too short rejected",

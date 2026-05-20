@@ -158,6 +158,8 @@ set(LIB_SOURCE_FILES
         src/WiFiRSSIMonitor.hpp
         src/WiFiRSSIMonitor.cpp
         src/scheduling_helper.hpp
+        src/latency_probe.hpp
+        src/latency_probe.cpp
         src/gstrtpreceiver.cpp
         src/gstrtpreceiver.h)
 set(SOURCE_FILES

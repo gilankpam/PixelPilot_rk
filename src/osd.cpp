@@ -1051,16 +1051,23 @@ public:
 		}
 		all_stats.pop_back(); // drop last bucket, because it is usually still not full
 		std::vector<double> stats = select_stats(all_stats);
-		double min = *std::min_element(stats.begin(), stats.end());
-		double max = *std::max_element(stats.begin(), stats.end());
+		double min;
+		double max;
+		if (fixed_y_active) {
+			min = static_cast<double>(fixed_min_y);
+			max = static_cast<double>(fixed_max_y);
+		} else {
+			min = *std::min_element(stats.begin(), stats.end());
+			max = *std::max_element(stats.begin(), stats.end());
+		}
 
 		// legend
 		cairo_set_source_rgba(cr, 255.0, 255.0, 255.0, 1);
 		cairo_move_to(cr, x + 2, y + 15);
-		cairo_show_text(cr, shorten(max).c_str());
+		cairo_show_text(cr, shorten(static_cast<long>(max)).c_str());
 
 		cairo_move_to(cr, x + 2, y + h);
-		cairo_show_text(cr, shorten(min).c_str());
+		cairo_show_text(cr, shorten(static_cast<long>(min)).c_str());
 
 		// bars
 		cairo_set_source_rgba(cr, 200.0, 200.0, 200.0, 0.8);
@@ -1078,10 +1085,11 @@ public:
 					 chart_w, bar_w, bar_x
                     );
 		for (auto val : stats) {
-			double normalized = val - min;
-			double bar_h = -1.0 * (normalized * (h - 10)) / scale;
-			// h -> max-min
-			// ? -> normalized
+			// Clamp to [min, max] when fixed-Y is active; in auto mode this is a no-op
+			// because min/max were derived from these same values.
+			double clamped = std::max(min, std::min(max, val));
+			double normalized = clamped - min;
+			double bar_h = scale > 0 ? -1.0 * (normalized * (h - 10)) / scale : 0.0;
 			SPDLOG_TRACE("val {}, cairo_rectangle(cr, {}, {}, {}, {})",
 						 val, bar_x, y + h, bar_w, bar_h);
 			cairo_rectangle(cr, bar_x, y + h, bar_w, bar_h - 2);

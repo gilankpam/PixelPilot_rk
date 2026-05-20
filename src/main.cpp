@@ -73,6 +73,10 @@ extern "C" {
 #define DEFAULT_CONFIG_PATH "/etc/pixelpilot.yaml"
 YAML::Node config;
 
+// RTP jitter buffer latency in ms. 0 disables the jitterbuffer element entirely
+// (pipeline is identical to pre-feature). Small values (1-20) absorb WiFi reordering.
+static int video_rtp_jitter_ms = 1;
+
 #define MSG_FIFO_NAME "/run/pixelpilot.msg"
 
 struct {
@@ -941,7 +945,8 @@ void read_gstreamerpipe_stream(MppPacket *packet, int gst_udp_port, const char *
 	} else {
 		receiver = std::make_unique<GstRtpReceiver>(gst_udp_port, codec);
 	}
-	long long bytes_received = 0; 
+	receiver->set_jitter_ms(video_rtp_jitter_ms);
+	long long bytes_received = 0;
 	uint64_t period_start=0;
     auto cb=[&packet,/*&decoder_stalled_count,*/ &bytes_received, &period_start](std::shared_ptr<std::vector<uint8_t>> frame){
         // Let the gst pull thread run at quite high priority
@@ -1040,6 +1045,8 @@ void printHelp() {
     "    --config <configfile>  - Load pixelpilot config from file      (Default: /etc/pixelpilot.yaml)\n"
     "\n"
     "    -p <port>              - UDP port for RTP video stream         (Default: 5600)\n"
+    "\n"
+    "    --rtp-jitter-ms <ms>   - RTP jitter buffer latency, 0 disables  (Default: 1)\n"
     "\n"
     "    --socket <socket>      - read data from socket\n"
     "\n"
@@ -1144,7 +1151,12 @@ int main(int argc, char **argv)
 		listen_port = atoi(__ArgValue);
 		continue;
 	}
-	
+
+	__OnArgument("--rtp-jitter-ms") {
+		video_rtp_jitter_ms = atoi(__ArgValue);
+		continue;
+	}
+
 	__OnArgument("--socket") {
 		unix_socket = const_cast<char*>(__ArgValue);
 		continue;

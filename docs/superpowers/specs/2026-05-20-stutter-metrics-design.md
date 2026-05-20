@@ -1,4 +1,4 @@
-# VideoStutterWidget — GS-local video stutter metrics
+# Video stutter metrics — numeric widget + moving graph
 
 **Date:** 2026-05-20
 **Status:** Approved for implementation
@@ -11,9 +11,16 @@ PixelPilot_rk already surfaces video FPS, bitrate, and decode latency in the OSD
 2. Quantifies how bad it was, so the pilot can compare across flights / setups.
 3. Operates entirely on the ground station clock — the GS clock is not synchronized with the drone, so any cross-clock metric is unusable.
 
-Frame drops (visible glitches) are out of scope: they are already self-evident on screen and the pilot understands their cause. The widget targets the more ambiguous case where the video feels janky without an obvious glitch.
+Frame drops (visible glitches) are out of scope: they are already self-evident on screen and the pilot understands their cause. The metrics target the more ambiguous case where the video feels janky without an obvious glitch.
 
-## Display format
+Two complementary surfaces are provided, both fed from the same underlying `video.frame_interval_ms` fact. The pilot can enable either or both in their OSD config:
+
+1. **`VideoStutterWidget`** — compact numeric line: average / stutter rate / decaying peak.
+2. **`BarChartWidget`** subscribed to `video.frame_interval_ms` — a moving bar graph of recent intervals, more intuitive for spotting patterns ("did it stutter once or has it been bad for the last 10s?").
+
+## Numeric widget — `VideoStutterWidget`
+
+### Display format
 
 A single OSD line:
 
@@ -89,15 +96,53 @@ uint64_t peak_ts_ms = 0;           // monotonic ms when peak_ms was last set
 
 The widget reuses `RunningAverage` exactly as the existing video widgets do — no new sliding-window infrastructure.
 
+## Moving graph — reuse `BarChartWidget`
+
+The existing `BarChartWidget` (`src/osd.cpp:1009`) already implements exactly what is needed for a moving stutter graph: it subscribes to a single fact, feeds samples into a bucketed `RunningAverage`, and renders each bucket's `STATS_MAX` as a bar. Subscribing it to `video.frame_interval_ms` produces a "max interval per time-slice" sparkline at no additional widget-implementation cost.
+
+### Recommended configuration
+
+```
+type: BarChartWidget
+fact: video.frame_interval_ms
+w: 200            # pixels wide
+h: 60             # pixels tall
+window_s: 10      # 10 seconds of history
+num_buckets: 20   # 20 bars; each bar = 500ms slice = max-interval in that window
+stats_field: STATS_MAX
+```
+
+Bar height ∝ max interval observed in the bucket. Calm flight ⇒ flat low bars near the median (~16ms at 60fps); a stutter spike ⇒ one tall bar that walks left across the chart over 10s and falls off.
+
+### One required enhancement to `BarChartWidget` — fixed Y-axis
+
+The existing implementation auto-scales bars to `[min, max]` across the visible buckets (`src/osd.cpp:1048-1049, 1076`). For a stutter graph this is misleading: when everything is healthy, the tiny variation between 15ms and 17ms gets stretched to fill the whole chart, making calm streams look chaotic. Conversely, a single huge spike dwarfs everything else into a flat line at the bottom.
+
+The fix is an **optional fixed Y-axis** added to `BarChartWidget`:
+
+- Two new optional constructor params: `long min_y = -1`, `long max_y = -1`.
+- Fixed-scale mode activates only when **both** are set to non-negative values and `max_y > min_y`. Any other combination (default `-1`, only one set, inverted) keeps the existing auto-scale behavior unchanged.
+- When fixed, the legend labels the fixed endpoints (`max_y` at top, `min_y` at bottom).
+- Bucket values exceeding `max_y` are clamped to `max_y` for drawing (still visually full-height); values below `min_y` clamp to `min_y` (zero-height).
+
+Recommended config for the stutter graph: `min_y = 0`, `max_y = 100` (100ms covers anything down to 10fps; useful range for spotting both micro-stutter and freezes).
+
+This enhancement is **generic** — any other `BarChartWidget` user can opt into a fixed scale, so this is not a stutter-specific hack.
+
+### Why not a new dedicated widget class
+
+A bespoke `VideoStutterGraphWidget` could add threshold-based bar coloring (red bars when `interval > 1.5 × median`) and a reference line at the stutter threshold. Both are visually nice but cost real code, and the bar-height encoding already conveys severity. Deferring to a follow-up. The reused `BarChartWidget` plus fixed-axis enhancement covers the "more natural than numbers" requirement at minimal cost.
+
 ## Wiring
 
-Three small edits, all additive:
+Four small edits, all additive:
 
 1. **`src/main.cpp`** — in `__DISPLAY_THREAD__`, just after the existing `video.displayed_frame` publish (line ~455): track `last_commit_ts_monotonic_ms`, compute and publish `video.frame_interval_ms`. Skip the publish on the first iteration / after `last_commit_ts == 0`.
-2. **`src/osd.cpp`** — add the `VideoStutterWidget` class.
+2. **`src/osd.cpp`** — add the `VideoStutterWidget` class next to `VideoDecodeLatencyWidget`.
 3. **`src/osd.cpp`** — add a parser branch in the widget loader (~line 1722) for `"VideoStutterWidget"`, mirroring the existing `"VideoDecodeLatencyWidget"` branch exactly.
+4. **`src/osd.cpp`** — extend `BarChartWidget` constructor with optional `min_y` / `max_y`; update the `draw()` to use them when set; extend the config-parser branch for `BarChartWidget` to read the two optional fields.
 
-Opt-in via OSD config: pilots who do not add the widget to their config pay only the cost of one extra fact publish per frame (a few dozen ns).
+Opt-in via OSD config: pilots who do not add either widget pay only the cost of one extra fact publish per frame (a few dozen ns).
 
 ## Testing
 
@@ -115,15 +160,18 @@ Tested independently of widget rendering:
 
 The peak-expiry logic is similarly testable as a pure function.
 
-**Manual verification:** synthetic stutter stream via gst-launch — `videotestsrc ! identity sleep-time=...` or a script that drops occasional UDP packets — confirms non-zero `3/s` and a visible `▲` value that decays after 10s.
+**Manual verification:** synthetic stutter stream via gst-launch — `videotestsrc ! identity sleep-time=...` or a script that drops occasional UDP packets — confirms non-zero `3/s` and a visible `▲` value that decays after 10s, and a corresponding tall bar appearing in the moving graph that walks across the chart over 10s.
+
+For the `BarChartWidget` fixed-Y enhancement: verify that with `min_y = 0, max_y = 100` a calm 60fps stream renders bars near ~16% height (16ms / 100ms) instead of stretching to fill the chart, and a 200ms spike renders a full-height bar (clamped at `max_y`).
 
 ## Out of scope
 
 Deliberately excluded to keep this change tight:
 
 - **GStreamer `rtpjitterbuffer` stats integration** — would give true RF-link drop counts; deferred.
-- **Drop counter in this widget** — drops are visible as on-screen glitches; pilot does not need a number.
-- **Color/alert thresholds** — no existing widget uses color cues; would require widening the widget infrastructure.
+- **Drop counter in either surface** — drops are visible as on-screen glitches; pilot does not need a number.
+- **Color/alert thresholds** — no existing widget uses color cues; would require widening the widget infrastructure. The graph could later highlight stutter-classified buckets in red, but that requires a dedicated `VideoStutterGraphWidget` and is deferred.
+- **Reference line in the graph** at median or stutter threshold — nice-to-have, deferred with the dedicated graph widget.
 - **CLI flag** — purely OSD-config opt-in.
 - **End-to-end "frame age"** (RTP ingress → DRM commit) — possible follow-up but adds plumbing through GStreamer→MPP PTS.
 

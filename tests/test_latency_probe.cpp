@@ -90,3 +90,63 @@ TEST_CASE("RTP header parse: too short rejected",
     REQUIRE_FALSE(lp::parse_rtp_header(h.data(), 11, info));
     REQUIRE_FALSE(lp::parse_rtp_header(nullptr, 0, info));
 }
+
+TEST_CASE("ClockOffset: returns 0/0 before any sample",
+          "[latency_probe][clock]") {
+    lp::ClockOffset c;
+    int64_t off = 999;
+    uint64_t rtt = 999;
+    c.get(off, rtt);
+    REQUIRE(off == 0);
+    REQUIRE(rtt == 0);
+}
+
+TEST_CASE("ClockOffset: picks min-RTT sample",
+          "[latency_probe][clock]") {
+    lp::ClockOffset c;
+
+    // Sample 1: drone is +1000us ahead, RTT=200us
+    //   t1=1000, t2=1500 (drone), t3=1600 (drone), t4=1200
+    //   rtt = (t4-t1) - (t3-t2) = 200 - 100 = 100   (NOTE: small RTT here)
+    //   offset = ((t2-t1) + (t3-t4))/2 = (500 + 400)/2 = 450
+    c.add_sample(1000, 1500, 1600, 1200);
+
+    // Sample 2: same offset, but with extra queueing in one direction.
+    //   t1=2000, t2=2500 (true offset still ~500), t3=2600, t4=2800
+    //   rtt = 800 - 100 = 700
+    //   offset = (500 + -200)/2 = 150  (BIASED by queueing)
+    c.add_sample(2000, 2500, 2600, 2800);
+
+    int64_t off = 0; uint64_t rtt = 0;
+    c.get(off, rtt);
+    REQUIRE(rtt == 100);   // min-RTT picked
+    REQUIRE(off == 450);   // its offset, not the biased one
+}
+
+TEST_CASE("ClockOffset: rescans after ring eviction of current best",
+          "[latency_probe][clock]") {
+    lp::ClockOffset c;
+
+    // First sample becomes best (RTT=0).
+    c.add_sample(0, 100, 110, 10);    // rtt = 10-0 - 10 = 0  (use generous arith)
+    int64_t off; uint64_t rtt;
+    c.get(off, rtt);
+    auto best_rtt_before = rtt;
+    auto best_off_before = off;
+
+    // Fill 15 more samples with much larger RTT so the first stays best.
+    for (int i = 0; i < 15; ++i) {
+        uint64_t base = 1000ull + i * 100ull;
+        // Big asymmetry -> big RTT.
+        c.add_sample(base, base + 5000, base + 5100, base + 10000);
+    }
+    c.get(off, rtt);
+    REQUIRE(rtt == best_rtt_before);
+    REQUIRE(off == best_off_before);
+
+    // Add one more -- the original best gets evicted (ring=16, this is the 17th).
+    // The new best should be from the remaining 16 samples.
+    c.add_sample(20'000, 25'000, 25'100, 30'000);
+    c.get(off, rtt);
+    REQUIRE(rtt != best_rtt_before);   // the original is gone
+}

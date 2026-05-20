@@ -47,6 +47,7 @@ extern "C" {
 #include <fmt/ranges.h>
 #include "../lvgl/lvgl.h"
 #include "osd_gl.hpp"
+#include "video_stutter.hpp"
 
 #ifdef BUILD_TESTS
 #include <catch2/catch.hpp>
@@ -1016,8 +1017,13 @@ public:
 		STATS_AVG
 	};
 
-	BarChartWidget(int pos_x, int pos_y, uint w, uint h, uint window_s, uint num_buckets, BarChartWidget::StatsField stats_field):
-		Widget(pos_x, pos_y, 0), w(w), h(h), window_ms(window_s * 1000), num_buckets(num_buckets), stats_field(stats_field),
+	BarChartWidget(int pos_x, int pos_y, uint w, uint h, uint window_s, uint num_buckets,
+	               BarChartWidget::StatsField stats_field,
+	               long min_y = -1, long max_y = -1):
+		Widget(pos_x, pos_y, 0), w(w), h(h), window_ms(window_s * 1000), num_buckets(num_buckets),
+		stats_field(stats_field),
+		fixed_y_active(min_y >= 0 && max_y >= 0 && max_y > min_y),
+		fixed_min_y(min_y), fixed_max_y(max_y),
 		stats(window_s * 1000, window_s * 1000 / num_buckets) {};
 
 	virtual void setFact(uint idx, Fact fact) {
@@ -1045,16 +1051,23 @@ public:
 		}
 		all_stats.pop_back(); // drop last bucket, because it is usually still not full
 		std::vector<double> stats = select_stats(all_stats);
-		double min = *std::min_element(stats.begin(), stats.end());
-		double max = *std::max_element(stats.begin(), stats.end());
+		double min;
+		double max;
+		if (fixed_y_active) {
+			min = static_cast<double>(fixed_min_y);
+			max = static_cast<double>(fixed_max_y);
+		} else {
+			min = *std::min_element(stats.begin(), stats.end());
+			max = *std::max_element(stats.begin(), stats.end());
+		}
 
 		// legend
 		cairo_set_source_rgba(cr, 255.0, 255.0, 255.0, 1);
 		cairo_move_to(cr, x + 2, y + 15);
-		cairo_show_text(cr, shorten(max).c_str());
+		cairo_show_text(cr, shorten(static_cast<long>(max)).c_str());
 
 		cairo_move_to(cr, x + 2, y + h);
-		cairo_show_text(cr, shorten(min).c_str());
+		cairo_show_text(cr, shorten(static_cast<long>(min)).c_str());
 
 		// bars
 		cairo_set_source_rgba(cr, 200.0, 200.0, 200.0, 0.8);
@@ -1072,10 +1085,11 @@ public:
 					 chart_w, bar_w, bar_x
                     );
 		for (auto val : stats) {
-			double normalized = val - min;
-			double bar_h = -1.0 * (normalized * (h - 10)) / scale;
-			// h -> max-min
-			// ? -> normalized
+			// Clamp to [min, max] when fixed-Y is active; in auto mode this is a no-op
+			// because min/max were derived from these same values.
+			double clamped = std::max(min, std::min(max, val));
+			double normalized = clamped - min;
+			double bar_h = scale > 0 ? -1.0 * (normalized * (h - 10)) / scale : 0.0;
 			SPDLOG_TRACE("val {}, cairo_rectangle(cr, {}, {}, {}, {})",
 						 val, bar_x, y + h, bar_w, bar_h);
 			cairo_rectangle(cr, bar_x, y + h, bar_w, bar_h - 2);
@@ -1091,6 +1105,7 @@ private:
 	 * made by ChatGPT
 	 */
 	std::string shorten(long num) {
+		if (num == 0) return "0 ";   // avoid log10(0) UB in the precision calculation below
 		double value = num;
 		std::string suffix;
 
@@ -1139,6 +1154,9 @@ private:
 	uint w, h;
 	uint window_ms, num_buckets;
 	StatsField stats_field = STATS_SUM;
+	bool fixed_y_active = false;
+	long fixed_min_y = -1;
+	long fixed_max_y = -1;
 	RunningAverage stats;
 };
 
@@ -1290,6 +1308,51 @@ public:
 
 private:
 	RunningAverage timing;
+};
+
+class VideoStutterWidget: public IconTplTextWidget {
+public:
+	VideoStutterWidget(int pos_x, int pos_y, uint window_size_ms, uint bucket_size_ms,
+					 cairo_surface_t *icon, std::string tpl, uint num_args) :
+		IconTplTextWidget(pos_x, pos_y, icon, tpl, 3),
+		avg_interval(window_size_ms, bucket_size_ms),
+		stutter_events(window_size_ms, bucket_size_ms),
+		peak_ms(0),
+		peak_ts_ms(0) {
+		assert(num_args == 1);
+	}
+
+	virtual void setFact(uint idx, Fact fact) {
+		assert(idx == 0);
+		long interval = static_cast<long>(fact.getUintValue());
+
+		recent.push_back(interval);
+		if (recent.size() > RING_CAP) recent.pop_front();
+
+		avg_interval.add(interval);
+
+		bool stutter = is_stutter(interval, recent, 1.5);
+		if (stutter) stutter_events.add(1);
+
+		auto now = std::chrono::steady_clock::now();
+		uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+					 now.time_since_epoch()).count();
+		update_peak(peak_ms, peak_ts_ms, interval, stutter, now_ms);
+
+		Stats avg_stats = avg_interval.get_stats_over_last_ms_result(1000);
+		args[0] = Fact(FactMeta("interval_avg_ms"), (ulong)avg_stats.average);
+		args[1] = Fact(FactMeta("stutter_per_s"),
+					 (ulong)stutter_events.rate_per_second_over_last_ms(1000));
+		args[2] = Fact(FactMeta("peak_ms"), (ulong)peak_ms);
+	}
+
+private:
+	static constexpr size_t RING_CAP = 120;
+	RunningAverage avg_interval;
+	RunningAverage stutter_events;
+	std::deque<long> recent;
+	long peak_ms;
+	uint64_t peak_ts_ms;
 };
 
 
@@ -1729,6 +1792,16 @@ public:
 				addWidget(new VideoDecodeLatencyWidget(x, y, window_size_s * 1000, bucket_size_ms,
 													   icon, tpl, 1),
 						  matchers);
+			} else if(type == "VideoStutterWidget") {
+				auto tpl = widget_j.at("template").template get<std::string>();
+				auto icon_path = widget_j.at("icon_path").template get<std::filesystem::path>();
+				uint window_size_s = widget_j.at("per_second_window_s").template get<uint>();
+				uint bucket_size_ms = widget_j.at("per_second_bucket_ms").template get<uint>();
+				cairo_surface_t *icon = openIcon(name, assets_dir, icon_path);
+				if (icon == NULL) break;
+				addWidget(new VideoStutterWidget(x, y, window_size_s * 1000, bucket_size_ms,
+												 icon, tpl, 1),
+						  matchers);
 			} else if(type == "BoxWidget") {
 				auto width = widget_j.at("width").template get<uint>();
 				auto height = widget_j.at("height").template get<uint>();
@@ -1759,8 +1832,17 @@ public:
 					SPDLOG_WARN("{}: invalid stats_kind {}", name, stats_kind_str);
 					break;
 				}
-				addWidget(new BarChartWidget(x, y, width, height, window_s, num_buckets, stats_kind),
-						  matchers);
+				long min_y = -1;
+				long max_y = -1;
+				if (widget_j.contains("min_y")) {
+					min_y = widget_j.at("min_y").template get<long>();
+				}
+				if (widget_j.contains("max_y")) {
+					max_y = widget_j.at("max_y").template get<long>();
+				}
+				addWidget(new BarChartWidget(x, y, width, height, window_s, num_buckets,
+				                             stats_kind, min_y, max_y),
+				          matchers);
 			} else if (type == "GPSWidget") {
 				addWidget(new GPSWidget(x, y, (uint)matchers.size()), matchers);
             } else if (type == "BatteryCellWidget") {

@@ -249,6 +249,7 @@ if(BUILD_TESTS)
     # Test source files
     set(TEST_SOURCES
       tests/test_osd.cpp
+      tests/test_video_stutter.cpp
       src/main.h
       src/main.cpp
     )

@@ -403,6 +403,7 @@ void *__DISPLAY_THREAD__(void *param)
 {
 	int ret;	
 	pthread_setname_np(pthread_self(), "__DISPLAY");
+	uint64_t last_commit_ms = 0;
 
 	while (!frm_eos) {
 		int fb_id;
@@ -453,8 +454,14 @@ void *__DISPLAY_THREAD__(void *param)
 		ret = pthread_mutex_unlock(&osd_mutex);
 		assert(!ret);
 		osd_publish_uint_fact("video.displayed_frame", NULL, 0, 1);
-		uint64_t decode_and_handover_display_ms=get_time_ms()-decoding_pts;
+		uint64_t now_ms = get_time_ms();
+		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;
 		osd_publish_uint_fact("video.decode_and_handover_ms", NULL, 0, decode_and_handover_display_ms);
+		if (last_commit_ms != 0) {
+			uint64_t interval_ms = now_ms - last_commit_ms;
+			osd_publish_uint_fact("video.frame_interval_ms", NULL, 0, interval_ms);
+		}
+		last_commit_ms = now_ms;
 	}
 end:	
 	spdlog::info("Display thread done.");

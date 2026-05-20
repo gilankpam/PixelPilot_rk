@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cstddef>   // size_t
+#include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 
@@ -83,6 +85,54 @@ private:
     int64_t best_offset_us_ = 0;
     uint64_t best_rtt_us_   = 0;
     bool    have_best_      = false;
+};
+
+struct FrameTimings {
+    uint32_t ssrc           = 0;
+    uint32_t rtp_ts         = 0;
+    uint64_t gs_recv_last_us     = 0;  // pad probe (marker=1)
+    uint64_t gs_decode_done_us   = 0;  // decoder hook (FIFO bind)
+    uint64_t gs_display_submit_us= 0;  // display hook (FIFO bind)
+    uint64_t capture_us          = 0;  // from MSG_FRAME (drone clock)
+    uint64_t frame_ready_us      = 0;  // from MSG_FRAME (drone clock)
+    uint64_t last_pkt_send_us    = 0;  // from MSG_FRAME (drone clock)
+    bool     sidecar_seen        = false;
+    uint64_t inserted_us         = 0;  // for TTL
+};
+
+class FrameMatcher {
+public:
+    using PublishFn = std::function<void(const FrameTimings&)>;
+    static constexpr size_t kRingCap = 64;
+
+    void set_publish_callback(PublishFn cb);
+
+    // All entry points take 'now' separately so tests can drive time
+    // deterministically. In production, callers pass latency_probe::now_us().
+    void on_marker_arrival(uint32_t ssrc, uint32_t rtp_ts,
+                           uint64_t gs_recv_us, uint64_t now);
+    void on_decode_done(uint64_t gs_decode_us, uint64_t now);
+    void on_display_submit(uint64_t gs_display_us, uint64_t now);
+    void on_msg_frame(uint32_t ssrc, uint32_t rtp_ts,
+                      uint64_t capture_us, uint64_t frame_ready_us,
+                      uint64_t last_pkt_send_us, uint64_t now);
+
+    // Evict slots older than ttl_us.
+    void ttl_sweep(uint64_t now, uint64_t ttl_us);
+
+    size_t size() const;
+
+private:
+    mutable std::mutex m_;
+    std::deque<FrameTimings> ring_;
+    PublishFn publish_;
+
+    // Caller holds m_.
+    FrameTimings* find_by_key_locked(uint32_t ssrc, uint32_t rtp_ts);
+    FrameTimings& push_new_locked(uint64_t now);
+    void try_publish_locked();   // pops and publishes any complete slots
+                                 // at the head of the ring (or any
+                                 // complete slot, FIFO order preserved).
 };
 
 } // namespace latency_probe

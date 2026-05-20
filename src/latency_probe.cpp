@@ -94,4 +94,110 @@ void ClockOffset::get(int64_t& offset_us, uint64_t& rtt_us) const {
     rtt_us    = best_rtt_us_;
 }
 
+static bool is_complete(const FrameTimings& f) {
+    return f.sidecar_seen &&
+           f.gs_recv_last_us != 0 &&
+           f.gs_decode_done_us != 0 &&
+           f.gs_display_submit_us != 0;
+}
+
+void FrameMatcher::set_publish_callback(PublishFn cb) {
+    std::lock_guard<std::mutex> lk(m_);
+    publish_ = std::move(cb);
+}
+
+size_t FrameMatcher::size() const {
+    std::lock_guard<std::mutex> lk(m_);
+    return ring_.size();
+}
+
+FrameTimings* FrameMatcher::find_by_key_locked(uint32_t ssrc, uint32_t rtp_ts) {
+    for (auto& f : ring_) {
+        if (f.ssrc == ssrc && f.rtp_ts == rtp_ts) return &f;
+    }
+    return nullptr;
+}
+
+FrameTimings& FrameMatcher::push_new_locked(uint64_t now) {
+    if (ring_.size() >= kRingCap) ring_.pop_front();
+    ring_.emplace_back();
+    ring_.back().inserted_us = now;
+    return ring_.back();
+}
+
+void FrameMatcher::on_marker_arrival(uint32_t ssrc, uint32_t rtp_ts,
+                                     uint64_t gs_recv_us, uint64_t now) {
+    std::lock_guard<std::mutex> lk(m_);
+    if (auto* slot = find_by_key_locked(ssrc, rtp_ts)) {
+        if (slot->gs_recv_last_us == 0) slot->gs_recv_last_us = gs_recv_us;
+        try_publish_locked();
+        return;
+    }
+    auto& s = push_new_locked(now);
+    s.ssrc = ssrc;
+    s.rtp_ts = rtp_ts;
+    s.gs_recv_last_us = gs_recv_us;
+    try_publish_locked();
+}
+
+void FrameMatcher::on_decode_done(uint64_t gs_decode_us, uint64_t /*now*/) {
+    std::lock_guard<std::mutex> lk(m_);
+    for (auto& f : ring_) {
+        if (f.gs_decode_done_us == 0) {
+            f.gs_decode_done_us = gs_decode_us;
+            break;
+        }
+    }
+    try_publish_locked();
+}
+
+void FrameMatcher::on_display_submit(uint64_t gs_display_us, uint64_t /*now*/) {
+    std::lock_guard<std::mutex> lk(m_);
+    for (auto& f : ring_) {
+        if (f.gs_display_submit_us == 0) {
+            f.gs_display_submit_us = gs_display_us;
+            break;
+        }
+    }
+    try_publish_locked();
+}
+
+void FrameMatcher::on_msg_frame(uint32_t ssrc, uint32_t rtp_ts,
+                                uint64_t capture_us, uint64_t frame_ready_us,
+                                uint64_t last_pkt_send_us, uint64_t now) {
+    std::lock_guard<std::mutex> lk(m_);
+    FrameTimings* slot = find_by_key_locked(ssrc, rtp_ts);
+    if (!slot) {
+        slot = &push_new_locked(now);
+        slot->ssrc = ssrc;
+        slot->rtp_ts = rtp_ts;
+    }
+    slot->capture_us        = capture_us;
+    slot->frame_ready_us    = frame_ready_us;
+    slot->last_pkt_send_us  = last_pkt_send_us;
+    slot->sidecar_seen      = true;
+    try_publish_locked();
+}
+
+void FrameMatcher::ttl_sweep(uint64_t now, uint64_t ttl_us) {
+    std::lock_guard<std::mutex> lk(m_);
+    while (!ring_.empty() && now - ring_.front().inserted_us > ttl_us) {
+        ring_.pop_front();
+    }
+}
+
+void FrameMatcher::try_publish_locked() {
+    // Walk from front and publish any complete slot. We allow non-head
+    // completion because sidecar_seen can land out-of-order vs. the
+    // decode/display FIFO binding for adjacent frames.
+    for (auto it = ring_.begin(); it != ring_.end(); ) {
+        if (is_complete(*it)) {
+            if (publish_) publish_(*it);
+            it = ring_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 } // namespace latency_probe

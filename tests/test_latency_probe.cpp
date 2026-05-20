@@ -150,3 +150,129 @@ TEST_CASE("ClockOffset: rescans after ring eviction of current best",
     c.get(off, rtt);
     REQUIRE(rtt != best_rtt_before);   // the original is gone
 }
+
+TEST_CASE("FrameMatcher: arrival then sidecar then decode then display publishes once",
+          "[latency_probe][matcher]") {
+    lp::FrameMatcher m;
+    std::vector<lp::FrameTimings> published;
+    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
+
+    constexpr uint32_t ssrc = 0xABCDu;
+    constexpr uint32_t rtp_ts = 90000u;
+
+    m.on_marker_arrival(ssrc, rtp_ts, /*gs_recv_us=*/100'000, /*now=*/100'000);
+    m.on_decode_done(/*gs_decode_us=*/110'000, /*now=*/110'000);
+    m.on_display_submit(/*gs_display_us=*/120'000, /*now=*/120'000);
+    // Sidecar arrives last — should trigger publish.
+    m.on_msg_frame(ssrc, rtp_ts,
+                   /*capture_us=*/  50'000,
+                   /*frame_ready_us=*/ 90'000,
+                   /*last_pkt_send_us=*/95'000,
+                   /*now=*/130'000);
+
+    REQUIRE(published.size() == 1);
+    REQUIRE(published[0].ssrc == ssrc);
+    REQUIRE(published[0].rtp_ts == rtp_ts);
+    REQUIRE(published[0].gs_recv_last_us == 100'000);
+    REQUIRE(published[0].gs_decode_done_us == 110'000);
+    REQUIRE(published[0].gs_display_submit_us == 120'000);
+    REQUIRE(published[0].capture_us == 50'000);
+}
+
+TEST_CASE("FrameMatcher: sidecar before arrival also works",
+          "[latency_probe][matcher]") {
+    lp::FrameMatcher m;
+    std::vector<lp::FrameTimings> published;
+    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
+
+    m.on_msg_frame(1u, 100u, 50'000, 90'000, 95'000, /*now=*/96'000);
+    m.on_marker_arrival(1u, 100u, 100'000, 100'000);
+    m.on_decode_done(110'000, 110'000);
+    m.on_display_submit(120'000, 120'000);
+
+    REQUIRE(published.size() == 1);
+    REQUIRE(published[0].gs_recv_last_us == 100'000);
+}
+
+TEST_CASE("FrameMatcher: FIFO decode/display binding across multiple frames",
+          "[latency_probe][matcher]") {
+    lp::FrameMatcher m;
+    std::vector<lp::FrameTimings> published;
+    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
+
+    // Three arrivals in order.
+    m.on_marker_arrival(1u, 100u, 1'000, 1'000);
+    m.on_marker_arrival(1u, 200u, 2'000, 2'000);
+    m.on_marker_arrival(1u, 300u, 3'000, 3'000);
+
+    // Decode/display stamps arrive in order — FIFO bind.
+    m.on_decode_done(10'000, 10'000);
+    m.on_decode_done(20'000, 20'000);
+    m.on_decode_done(30'000, 30'000);
+    m.on_display_submit(11'000, 11'000);
+    m.on_display_submit(21'000, 21'000);
+    m.on_display_submit(31'000, 31'000);
+
+    // Sidecar for all three.
+    m.on_msg_frame(1u, 100u, 0, 500, 900, 1'100);
+    m.on_msg_frame(1u, 200u, 0, 1'500, 1'900, 2'100);
+    m.on_msg_frame(1u, 300u, 0, 2'500, 2'900, 3'100);
+
+    REQUIRE(published.size() == 3);
+    REQUIRE(published[0].rtp_ts == 100u);
+    REQUIRE(published[0].gs_decode_done_us == 10'000);
+    REQUIRE(published[1].gs_decode_done_us == 20'000);
+    REQUIRE(published[2].gs_decode_done_us == 30'000);
+}
+
+TEST_CASE("FrameMatcher: TTL evicts orphans",
+          "[latency_probe][matcher]") {
+    lp::FrameMatcher m;
+    std::vector<lp::FrameTimings> published;
+    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
+
+    // Arrival without ever getting a decode/display stamp.
+    m.on_marker_arrival(1u, 100u, 1'000, /*now=*/1'000);
+    // Half a second later, sweep with a now far in the future.
+    m.ttl_sweep(/*now=*/501'000, /*ttl_us=*/500'000);
+
+    // Subsequent arrival should now be at the head — FIFO.
+    m.on_marker_arrival(1u, 200u, 600'000, 600'000);
+    m.on_decode_done(601'000, 601'000);
+    m.on_display_submit(602'000, 602'000);
+    m.on_msg_frame(1u, 200u, 0, 599'000, 599'500, 603'000);
+
+    REQUIRE(published.size() == 1);
+    REQUIRE(published[0].rtp_ts == 200u);
+}
+
+TEST_CASE("FrameMatcher: ring cap discards oldest",
+          "[latency_probe][matcher]") {
+    lp::FrameMatcher m;
+    std::vector<lp::FrameTimings> published;
+    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
+
+    // Push 200 arrivals — cap should hold at 64 (kRingCap).
+    for (uint32_t i = 0; i < 200; ++i) {
+        m.on_marker_arrival(1u, i, i * 1000ull, i * 1000ull);
+    }
+    REQUIRE(m.size() <= 64);
+}
+
+TEST_CASE("FrameMatcher: duplicate marker arrival is a no-op stamp",
+          "[latency_probe][matcher]") {
+    lp::FrameMatcher m;
+    std::vector<lp::FrameTimings> published;
+    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
+
+    m.on_marker_arrival(1u, 100u, 1'000, 1'000);
+    // Duplicate marker for the same frame must not overwrite the recorded time.
+    m.on_marker_arrival(1u, 100u, 2'000, 2'000);
+
+    m.on_decode_done(3'000, 3'000);
+    m.on_display_submit(4'000, 4'000);
+    m.on_msg_frame(1u, 100u, 0, 900, 950, 5'000);
+
+    REQUIRE(published.size() == 1);
+    REQUIRE(published[0].gs_recv_last_us == 1'000);
+}

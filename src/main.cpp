@@ -373,6 +373,7 @@ void *__FRAME_THREAD__(void *param)
 					output_list->video_fb_id = mpi.frame_to_drm[i].fb_id;
                     //output_list->video_fb_index=i;
                     output_list->decoding_pts=feed_data_ts;
+					latency_probe::record_decode_done(latency_probe::now_us());
 					ret = pthread_cond_signal(&video_cond);
 					assert(!ret);
 					ret = pthread_mutex_unlock(&video_mutex);
@@ -455,6 +456,7 @@ void *__DISPLAY_THREAD__(void *param)
 		ret = pthread_mutex_unlock(&osd_mutex);
 		assert(!ret);
 		osd_publish_uint_fact("video.displayed_frame", NULL, 0, 1);
+		latency_probe::record_display_submit(latency_probe::now_us());
 		uint64_t now_ms = get_time_ms();
 		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;
 		osd_publish_uint_fact("video.decode_and_handover_ms", NULL, 0, decode_and_handover_display_ms);

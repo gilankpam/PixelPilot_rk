@@ -1775,6 +1775,16 @@ public:
 				addWidget(new VideoDecodeLatencyWidget(x, y, window_size_s * 1000, bucket_size_ms,
 													   icon, tpl, 1),
 						  matchers);
+			} else if(type == "VideoStutterWidget") {
+				auto tpl = widget_j.at("template").template get<std::string>();
+				auto icon_path = widget_j.at("icon_path").template get<std::filesystem::path>();
+				uint window_size_s = widget_j.at("per_second_window_s").template get<uint>();
+				uint bucket_size_ms = widget_j.at("per_second_bucket_ms").template get<uint>();
+				cairo_surface_t *icon = openIcon(name, assets_dir, icon_path);
+				if (icon == NULL) break;
+				addWidget(new VideoStutterWidget(x, y, window_size_s * 1000, bucket_size_ms,
+												 icon, tpl, (uint)matchers.size()),
+						  matchers);
 			} else if(type == "BoxWidget") {
 				auto width = widget_j.at("width").template get<uint>();
 				auto height = widget_j.at("height").template get<uint>();

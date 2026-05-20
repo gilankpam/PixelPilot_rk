@@ -178,4 +178,21 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
         if (n == "video.latency.clock_offset_us") { saw_offset = true; break; }
     }
     REQUIRE(saw_offset);
+
+    // Verify all 9 spec-required facts are present somewhere in the
+    // capture vectors. Names are gated names; this catches a regression
+    // that accidentally drops one from compute_and_publish.
+    auto has_uint = [&](const char* name) {
+        for (auto& [n, _] : uint_facts) if (n == name) return true;
+        return false;
+    };
+    REQUIRE(has_uint("video.latency.capture_to_encode_ms"));
+    REQUIRE(has_uint("video.latency.encode_to_send_ms"));
+    REQUIRE(has_uint("video.latency.wire_ms"));
+    REQUIRE(has_uint("video.latency.decode_ms"));
+    REQUIRE(has_uint("video.latency.display_ms"));
+    REQUIRE(has_uint("video.latency.total_ms"));
+    REQUIRE(has_uint("video.latency.clock_rtt_us"));
+    REQUIRE(has_uint("video.latency.wire_clamp_count"));
+    // clock_offset_us is signed (int_facts) — already covered by saw_offset above.
 }

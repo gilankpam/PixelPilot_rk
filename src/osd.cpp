@@ -1017,8 +1017,13 @@ public:
 		STATS_AVG
 	};
 
-	BarChartWidget(int pos_x, int pos_y, uint w, uint h, uint window_s, uint num_buckets, BarChartWidget::StatsField stats_field):
-		Widget(pos_x, pos_y, 0), w(w), h(h), window_ms(window_s * 1000), num_buckets(num_buckets), stats_field(stats_field),
+	BarChartWidget(int pos_x, int pos_y, uint w, uint h, uint window_s, uint num_buckets,
+	               BarChartWidget::StatsField stats_field,
+	               long min_y = -1, long max_y = -1):
+		Widget(pos_x, pos_y, 0), w(w), h(h), window_ms(window_s * 1000), num_buckets(num_buckets),
+		stats_field(stats_field),
+		fixed_y_active(min_y >= 0 && max_y >= 0 && max_y > min_y),
+		fixed_min_y(min_y), fixed_max_y(max_y),
 		stats(window_s * 1000, window_s * 1000 / num_buckets) {};
 
 	virtual void setFact(uint idx, Fact fact) {
@@ -1140,6 +1145,9 @@ private:
 	uint w, h;
 	uint window_ms, num_buckets;
 	StatsField stats_field = STATS_SUM;
+	bool fixed_y_active = false;
+	long fixed_min_y = -1;
+	long fixed_max_y = -1;
 	RunningAverage stats;
 };
 

@@ -1105,6 +1105,7 @@ private:
 	 * made by ChatGPT
 	 */
 	std::string shorten(long num) {
+		if (num == 0) return "0 ";   // avoid log10(0) UB in the precision calculation below
 		double value = num;
 		std::string suffix;
 
@@ -1799,7 +1800,7 @@ public:
 				cairo_surface_t *icon = openIcon(name, assets_dir, icon_path);
 				if (icon == NULL) break;
 				addWidget(new VideoStutterWidget(x, y, window_size_s * 1000, bucket_size_ms,
-												 icon, tpl, (uint)matchers.size()),
+												 icon, tpl, 1),
 						  matchers);
 			} else if(type == "BoxWidget") {
 				auto width = widget_j.at("width").template get<uint>();

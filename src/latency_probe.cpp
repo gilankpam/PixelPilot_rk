@@ -1,4 +1,5 @@
 #include "latency_probe.hpp"
+#include "latency_probe_wire.hpp"
 
 #include <ctime>
 #include <limits>
@@ -245,6 +246,81 @@ void compute_and_publish(const FrameTimings& f,
     pub_i("video.latency.clock_offset_us",   offset_us);
     pub_u("video.latency.clock_rtt_us",      rtt_us);
     pub_u("video.latency.wire_clamp_count",  wire_clamp_counter);
+}
+
+namespace {
+
+inline void write_be32(uint8_t* p, uint32_t v) {
+    p[0] = (v >> 24) & 0xff;
+    p[1] = (v >> 16) & 0xff;
+    p[2] = (v >> 8)  & 0xff;
+    p[3] = (v)       & 0xff;
+}
+
+inline void write_be64(uint8_t* p, uint64_t v) {
+    for (int i = 0; i < 8; ++i) p[i] = (v >> (56 - 8 * i)) & 0xff;
+}
+
+inline uint32_t read_be32(const uint8_t* p) {
+    return (static_cast<uint32_t>(p[0]) << 24) |
+           (static_cast<uint32_t>(p[1]) << 16) |
+           (static_cast<uint32_t>(p[2]) << 8)  |
+           (static_cast<uint32_t>(p[3]));
+}
+
+inline uint64_t read_be64(const uint8_t* p) {
+    uint64_t v = 0;
+    for (int i = 0; i < 8; ++i)
+        v = (v << 8) | static_cast<uint64_t>(p[i]);
+    return v;
+}
+
+} // namespace
+
+void encode_subscribe(uint8_t* out) {
+    write_be32(out, wire::kMagic);
+    out[4] = wire::kVersion;
+    out[5] = wire::kMsgSubscribe;
+    out[6] = 0;
+    out[7] = 0;
+}
+
+void encode_sync_req(uint8_t* out, uint64_t t1_us) {
+    write_be32(out, wire::kMagic);
+    out[4] = wire::kVersion;
+    out[5] = wire::kMsgSyncReq;
+    out[6] = 0;
+    out[7] = 0;
+    write_be64(out + 8, t1_us);
+}
+
+uint8_t decode_message(const uint8_t* in, size_t len,
+                       SyncRespFields& sr, MsgFrameFields& mf) {
+    if (!in || len < 6) return 0;
+    if (read_be32(in) != wire::kMagic) return 0;
+    if (in[4] != wire::kVersion) return 0;
+
+    uint8_t msg = in[5];
+    switch (msg) {
+        case wire::kMsgSyncResp:
+            if (len < wire::kSizeSyncResp) return 0;
+            sr.t1_us = read_be64(in + 8);
+            sr.t2_us = read_be64(in + 16);
+            sr.t3_us = read_be64(in + 24);
+            return msg;
+
+        case wire::kMsgFrame:
+            if (len < wire::kSizeFrame) return 0;
+            mf.ssrc             = read_be32(in + 8);
+            mf.rtp_timestamp    = read_be32(in + 12);
+            mf.frame_ready_us   = read_be64(in + 24);
+            mf.capture_us       = read_be64(in + 36);
+            mf.last_pkt_send_us = read_be64(in + 44);
+            return msg;
+
+        default:
+            return 0;
+    }
 }
 
 } // namespace latency_probe

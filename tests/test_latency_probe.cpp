@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "../src/latency_probe.hpp"
+#include "../src/latency_probe_wire.hpp"
 
 namespace lp = latency_probe;
 
@@ -356,4 +357,84 @@ TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode",
     bool saw_wire = false;
     for (auto& [n, _] : captured.uint_facts) if (n == "video.latency.wire_ms") saw_wire = true;
     REQUIRE(saw_wire);
+}
+
+TEST_CASE("wire: encode_subscribe round-trip header bytes",
+          "[latency_probe][wire]") {
+    uint8_t buf[lp::wire::kSizeSubscribe] = {};
+    lp::encode_subscribe(buf);
+    REQUIRE(buf[0] == 0x52);
+    REQUIRE(buf[1] == 0x54);
+    REQUIRE(buf[2] == 0x50);
+    REQUIRE(buf[3] == 0x53);
+    REQUIRE(buf[4] == 1);   // version
+    REQUIRE(buf[5] == 1);   // msg_type = SUBSCRIBE
+}
+
+TEST_CASE("wire: encode_sync_req carries t1 big-endian",
+          "[latency_probe][wire]") {
+    uint8_t buf[lp::wire::kSizeSyncReq] = {};
+    lp::encode_sync_req(buf, 0x0102030405060708ull);
+    REQUIRE(buf[5] == 3);  // SYNC_REQ
+    REQUIRE(buf[8]  == 0x01);
+    REQUIRE(buf[9]  == 0x02);
+    REQUIRE(buf[10] == 0x03);
+    REQUIRE(buf[11] == 0x04);
+    REQUIRE(buf[12] == 0x05);
+    REQUIRE(buf[13] == 0x06);
+    REQUIRE(buf[14] == 0x07);
+    REQUIRE(buf[15] == 0x08);
+}
+
+TEST_CASE("wire: decode_message rejects bad magic / version / length",
+          "[latency_probe][wire]") {
+    uint8_t buf[64] = {};
+    lp::SyncRespFields sr{};
+    lp::MsgFrameFields mf{};
+    REQUIRE(lp::decode_message(buf, 0, sr, mf)  == 0);
+    buf[0]=0; buf[1]=0; buf[2]=0; buf[3]=0; buf[4]=1; buf[5]=4;
+    REQUIRE(lp::decode_message(buf, lp::wire::kSizeSyncResp, sr, mf) == 0);
+    buf[0]=0x52; buf[1]=0x54; buf[2]=0x50; buf[3]=0x53; buf[4]=99; buf[5]=4;
+    REQUIRE(lp::decode_message(buf, lp::wire::kSizeSyncResp, sr, mf) == 0);
+}
+
+TEST_CASE("wire: decode_message reads SYNC_RESP fields big-endian",
+          "[latency_probe][wire]") {
+    uint8_t buf[lp::wire::kSizeSyncResp] = {};
+    buf[0]=0x52; buf[1]=0x54; buf[2]=0x50; buf[3]=0x53;
+    buf[4]=1; buf[5]=lp::wire::kMsgSyncResp;
+    uint64_t t1 = 0xAABBCCDDEEFF0011ull;
+    for (int i = 0; i < 8; ++i) buf[8+i] = (t1 >> (56 - 8*i)) & 0xff;
+    buf[23] = 100;
+    buf[31] = 200;
+
+    lp::SyncRespFields sr{};
+    lp::MsgFrameFields mf{};
+    REQUIRE(lp::decode_message(buf, sizeof(buf), sr, mf) == lp::wire::kMsgSyncResp);
+    REQUIRE(sr.t1_us == 0xAABBCCDDEEFF0011ull);
+    REQUIRE(sr.t2_us == 100);
+    REQUIRE(sr.t3_us == 200);
+}
+
+TEST_CASE("wire: decode_message reads MSG_FRAME fields",
+          "[latency_probe][wire]") {
+    uint8_t buf[lp::wire::kSizeFrame] = {};
+    buf[0]=0x52; buf[1]=0x54; buf[2]=0x50; buf[3]=0x53;
+    buf[4]=1; buf[5]=lp::wire::kMsgFrame;
+    uint32_t ssrc = 0xDEADBEEFu;
+    for (int i=0;i<4;++i) buf[8+i] = (ssrc >> (24-8*i)) & 0xff;
+    uint32_t rtp_ts = 0x11223344u;
+    for (int i=0;i<4;++i) buf[12+i] = (rtp_ts >> (24-8*i)) & 0xff;
+    buf[31] = 5000 & 0xff; buf[30] = (5000 >> 8) & 0xff;
+    buf[43] = 1000 & 0xff; buf[42] = (1000 >> 8) & 0xff;
+    buf[51] = 8000 & 0xff; buf[50] = (8000 >> 8) & 0xff;
+
+    lp::SyncRespFields sr{};
+    lp::MsgFrameFields mf{};
+    REQUIRE(lp::decode_message(buf, sizeof(buf), sr, mf) == lp::wire::kMsgFrame);
+    REQUIRE(mf.ssrc == ssrc);
+    REQUIRE(mf.rtp_timestamp == rtp_ts);
+    REQUIRE(mf.frame_ready_us == 5000);
+    REQUIRE(mf.capture_us == 1000);
+    REQUIRE(mf.last_pkt_send_us == 8000);
 }

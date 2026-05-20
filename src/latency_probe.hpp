@@ -9,6 +9,8 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace latency_probe {
 
@@ -137,6 +139,29 @@ private:
                                  // out-of-order relative to the decode/
                                  // display FIFO binding.
 };
+
+// Test scaffolding: captured-facts vector used by tests in place of
+// the real osd_publish_*_fact calls.
+struct PublishedFacts {
+    std::vector<std::pair<std::string, uint64_t>> uint_facts;
+    std::vector<std::pair<std::string, int64_t>>  int_facts;
+};
+
+using PublishUintFn = std::function<void(const char* name, uint64_t value)>;
+using PublishIntFn  = std::function<void(const char* name, int64_t  value)>;
+
+// Compute all video.latency.* values from one complete FrameTimings + the
+// current clock offset/rtt, and emit via the provided callbacks. Mutates
+// wire_clamp_counter if the computed wire delta would have been negative.
+//
+// capture_us == 0 means the drone did not provide a PTS-derived capture
+// time; in that case capture_to_encode_ms and total_ms are NOT published.
+void compute_and_publish(const FrameTimings& f,
+                         int64_t  offset_us,
+                         uint64_t rtt_us,
+                         uint64_t& wire_clamp_counter,
+                         PublishUintFn pub_u,
+                         PublishIntFn  pub_i);
 
 } // namespace latency_probe
 

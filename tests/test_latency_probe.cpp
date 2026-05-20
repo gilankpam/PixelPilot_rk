@@ -279,3 +279,81 @@ TEST_CASE("FrameMatcher: duplicate marker arrival is a no-op stamp",
     REQUIRE(published.size() == 1);
     REQUIRE(published[0].gs_recv_last_us == 1'000);
 }
+
+TEST_CASE("compute_and_publish: normal values flow through",
+          "[latency_probe][publish]") {
+    lp::PublishedFacts captured;
+    auto cb = [&](const char* name, uint64_t v) {
+        captured.uint_facts.emplace_back(name, v);
+    };
+    auto cbi = [&](const char* name, int64_t v) {
+        captured.int_facts.emplace_back(name, v);
+    };
+
+    lp::FrameTimings f{};
+    f.ssrc = 1; f.rtp_ts = 100;
+    f.capture_us = 1'000;
+    f.frame_ready_us = 11'000;
+    f.last_pkt_send_us = 14'000;
+    f.gs_recv_last_us = 14'500;
+    f.gs_decode_done_us = 24'500;
+    f.gs_display_submit_us = 28'500;
+    f.sidecar_seen = true;
+
+    int64_t offset_us = -1'000;
+    uint64_t rtt_us   = 400;
+    uint64_t clamp_counter = 0;
+    lp::compute_and_publish(f, offset_us, rtt_us, clamp_counter, cb, cbi);
+
+    auto get = [&](const char* name) -> uint64_t {
+        for (auto& [n, v] : captured.uint_facts) if (n == name) return v;
+        FAIL("missing fact " << name);
+        return 0;
+    };
+
+    REQUIRE(get("video.latency.capture_to_encode_ms") == 10);
+    REQUIRE(get("video.latency.encode_to_send_ms")    == 3);
+    REQUIRE(get("video.latency.wire_ms")              == 0);
+    REQUIRE(clamp_counter == 1);
+    REQUIRE(get("video.latency.decode_ms")            == 10);
+    REQUIRE(get("video.latency.display_ms")           == 4);
+    REQUIRE(get("video.latency.total_ms")             == 27);
+    REQUIRE(get("video.latency.clock_rtt_us")         == 400);
+    REQUIRE(get("video.latency.wire_clamp_count")     == 1);
+
+    bool found_offset = false;
+    for (auto& [n, v] : captured.int_facts) {
+        if (n == "video.latency.clock_offset_us") {
+            REQUIRE(v == -1'000);
+            found_offset = true;
+        }
+    }
+    REQUIRE(found_offset);
+}
+
+TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode",
+          "[latency_probe][publish]") {
+    lp::PublishedFacts captured;
+    auto cb  = [&](const char* n, uint64_t v){ captured.uint_facts.emplace_back(n, v); };
+    auto cbi = [&](const char* n, int64_t v){ captured.int_facts.emplace_back(n, v); };
+
+    lp::FrameTimings f{};
+    f.capture_us = 0;
+    f.frame_ready_us = 11'000;
+    f.last_pkt_send_us = 14'000;
+    f.gs_recv_last_us = 15'000;
+    f.gs_decode_done_us = 16'000;
+    f.gs_display_submit_us = 17'000;
+    f.sidecar_seen = true;
+
+    uint64_t clamp = 0;
+    lp::compute_and_publish(f, 0, 0, clamp, cb, cbi);
+
+    for (auto& [n, _] : captured.uint_facts) {
+        REQUIRE(n != "video.latency.capture_to_encode_ms");
+        REQUIRE(n != "video.latency.total_ms");
+    }
+    bool saw_wire = false;
+    for (auto& [n, _] : captured.uint_facts) if (n == "video.latency.wire_ms") saw_wire = true;
+    REQUIRE(saw_wire);
+}

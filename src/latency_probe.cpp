@@ -200,4 +200,51 @@ void FrameMatcher::try_publish_locked() {
     }
 }
 
+void compute_and_publish(const FrameTimings& f,
+                         int64_t  offset_us,
+                         uint64_t rtt_us,
+                         uint64_t& wire_clamp_counter,
+                         PublishUintFn pub_u,
+                         PublishIntFn  pub_i) {
+    bool have_capture = f.capture_us != 0;
+
+    uint64_t cap_to_enc_ms = 0;
+    uint64_t enc_to_send_ms = 0;
+    if (have_capture && f.frame_ready_us >= f.capture_us)
+        cap_to_enc_ms = (f.frame_ready_us - f.capture_us) / 1000ull;
+    if (f.last_pkt_send_us >= f.frame_ready_us)
+        enc_to_send_ms = (f.last_pkt_send_us - f.frame_ready_us) / 1000ull;
+
+    int64_t adjusted_send_us =
+        static_cast<int64_t>(f.last_pkt_send_us) - offset_us;
+    int64_t wire_us = static_cast<int64_t>(f.gs_recv_last_us) - adjusted_send_us;
+    if (wire_us < 0) {
+        wire_us = 0;
+        wire_clamp_counter++;
+    }
+    uint64_t wire_ms = static_cast<uint64_t>(wire_us) / 1000ull;
+
+    uint64_t decode_ms = 0;
+    if (f.gs_decode_done_us >= f.gs_recv_last_us)
+        decode_ms = (f.gs_decode_done_us - f.gs_recv_last_us) / 1000ull;
+
+    uint64_t display_ms = 0;
+    if (f.gs_display_submit_us >= f.gs_decode_done_us)
+        display_ms = (f.gs_display_submit_us - f.gs_decode_done_us) / 1000ull;
+
+    if (have_capture)
+        pub_u("video.latency.capture_to_encode_ms", cap_to_enc_ms);
+    pub_u("video.latency.encode_to_send_ms", enc_to_send_ms);
+    pub_u("video.latency.wire_ms",           wire_ms);
+    pub_u("video.latency.decode_ms",         decode_ms);
+    pub_u("video.latency.display_ms",        display_ms);
+    if (have_capture) {
+        pub_u("video.latency.total_ms",
+              cap_to_enc_ms + enc_to_send_ms + wire_ms + decode_ms + display_ms);
+    }
+    pub_i("video.latency.clock_offset_us",   offset_us);
+    pub_u("video.latency.clock_rtt_us",      rtt_us);
+    pub_u("video.latency.wire_clamp_count",  wire_clamp_counter);
+}
+
 } // namespace latency_probe

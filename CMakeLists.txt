@@ -253,6 +253,7 @@ if(BUILD_TESTS)
       tests/test_osd.cpp
       tests/test_video_stutter.cpp
       tests/test_latency_probe.cpp
+      tests/test_latency_probe_integration.cpp
       src/main.h
       src/main.cpp
     )

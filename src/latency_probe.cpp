@@ -23,6 +23,9 @@ std::atomic<bool> active{false};
 
 namespace {
 
+PublishUintFn g_pub_u_override;
+PublishIntFn  g_pub_i_override;
+
 // Module-internal state. There is one global instance protected by g_start_mu;
 // the thread itself does not need additional locking against g_state — only
 // the application driver calls start()/stop().
@@ -103,8 +106,9 @@ void probe_thread_main(ProbeState* sp) {
         [&](const FrameTimings& f) {
             int64_t  off; uint64_t rtt;
             s.clock.get(off, rtt);
-            compute_and_publish(f, off, rtt, s.wire_clamp_count,
-                                publish_uint_real, publish_int_real);
+            PublishUintFn pu = g_pub_u_override ? g_pub_u_override : publish_uint_real;
+            PublishIntFn  pi = g_pub_i_override ? g_pub_i_override : publish_int_real;
+            compute_and_publish(f, off, rtt, s.wire_clamp_count, pu, pi);
         });
 
     pollfd pfd{ s.fd, POLLIN, 0 };
@@ -470,6 +474,11 @@ void compute_and_publish(const FrameTimings& f,
     pub_i("video.latency.clock_offset_us",   offset_us);
     pub_u("video.latency.clock_rtt_us",      rtt_us);
     pub_u("video.latency.wire_clamp_count",  wire_clamp_counter);
+}
+
+void set_publish_overrides_for_test(PublishUintFn pub_u, PublishIntFn pub_i) {
+    g_pub_u_override = std::move(pub_u);
+    g_pub_i_override = std::move(pub_i);
 }
 
 namespace {

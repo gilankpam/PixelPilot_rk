@@ -150,6 +150,11 @@ struct PublishedFacts {
 using PublishUintFn = std::function<void(const char* name, uint64_t value)>;
 using PublishIntFn  = std::function<void(const char* name, int64_t  value)>;
 
+// Test-only: override the OSD publish path with custom callbacks. Pass
+// nullptr/nullptr to revert to the real osd_publish_*_fact functions.
+// Has effect only on subsequent publishes.
+void set_publish_overrides_for_test(PublishUintFn pub_u, PublishIntFn pub_i);
+
 // Compute all video.latency.* values from one complete FrameTimings + the
 // current clock offset/rtt, and emit via the provided callbacks. Mutates
 // wire_clamp_counter if the computed wire delta would have been negative.

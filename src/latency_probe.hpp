@@ -8,6 +8,18 @@
 
 namespace latency_probe {
 
+struct RtpHeaderInfo {
+    uint32_t ssrc;
+    uint32_t timestamp;
+    bool marker;
+};
+
+// Parses the fixed 12-byte RTP header (no CSRC, no extension).
+// Returns true and fills info on success, false on short buffer or
+// version != 2. Does NOT validate CSRC count or extension — we only
+// need ssrc/timestamp/marker which all sit in the fixed prefix.
+bool parse_rtp_header(const uint8_t* data, size_t len, RtpHeaderInfo& info);
+
 // Cheap-to-check gate for hot paths. Loaded with relaxed memory order;
 // changes only at start()/stop() which the application drives at startup
 // and shutdown.

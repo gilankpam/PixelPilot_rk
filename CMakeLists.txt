@@ -252,6 +252,7 @@ if(BUILD_TESTS)
     set(TEST_SOURCES
       tests/test_osd.cpp
       tests/test_video_stutter.cpp
+      tests/test_latency_probe.cpp
       src/main.h
       src/main.cpp
     )

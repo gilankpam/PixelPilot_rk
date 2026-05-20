@@ -59,6 +59,7 @@ extern "C" {
 #include "pixelpilot_config.h"
 #include <iostream>
 #include "WiFiRSSIMonitor.hpp"
+#include "latency_probe.hpp"
 #include "gsmenu/gs_system.h"
 #include "gsmenu/air_actions.h"
 #include "gsmenu/gs_actions.h"
@@ -1672,6 +1673,23 @@ int main(int argc, char **argv)
 		} else {
 			osd_config = {};
 		}
+		// Glass-to-glass latency probe (default disabled).
+		{
+			bool        lp_enable = false;
+			std::string lp_host;
+			uint16_t    lp_port   = 5602;
+			try {
+				if (osd_config.contains("latency_probe")) {
+					const auto& lp = osd_config["latency_probe"];
+					if (lp.contains("enable")) lp_enable = lp["enable"].get<bool>();
+					if (lp.contains("host"))   lp_host   = lp["host"].get<std::string>();
+					if (lp.contains("port"))   lp_port   = static_cast<uint16_t>(lp["port"].get<int>());
+				}
+			} catch (const std::exception& e) {
+				spdlog::warn("[latency-probe] config parse error: {}", e.what());
+			}
+			if (lp_enable) latency_probe::start(lp_host, lp_port);
+		}
 		if (mavlink_thread) {
 			ret = pthread_create(&tid_mavlink, NULL, __MAVLINK_THREAD__, &signal_flag);
 			assert(!ret);
@@ -1790,6 +1808,7 @@ int main(int argc, char **argv)
     remove(pidFilePath.c_str());
 
 	restore_stdin();
+	latency_probe::stop();
 	return return_value;
 }
 

@@ -1831,8 +1831,17 @@ public:
 					SPDLOG_WARN("{}: invalid stats_kind {}", name, stats_kind_str);
 					break;
 				}
-				addWidget(new BarChartWidget(x, y, width, height, window_s, num_buckets, stats_kind),
-						  matchers);
+				long min_y = -1;
+				long max_y = -1;
+				if (widget_j.contains("min_y")) {
+					min_y = widget_j.at("min_y").template get<long>();
+				}
+				if (widget_j.contains("max_y")) {
+					max_y = widget_j.at("max_y").template get<long>();
+				}
+				addWidget(new BarChartWidget(x, y, width, height, window_s, num_buckets,
+				                             stats_kind, min_y, max_y),
+				          matchers);
 			} else if (type == "GPSWidget") {
 				addWidget(new GPSWidget(x, y, (uint)matchers.size()), matchers);
             } else if (type == "BatteryCellWidget") {

@@ -396,6 +396,14 @@ TEST_CASE("wire: decode_message rejects bad magic / version / length",
     REQUIRE(lp::decode_message(buf, lp::wire::kSizeSyncResp, sr, mf) == 0);
     buf[0]=0x52; buf[1]=0x54; buf[2]=0x50; buf[3]=0x53; buf[4]=99; buf[5]=4;
     REQUIRE(lp::decode_message(buf, lp::wire::kSizeSyncResp, sr, mf) == 0);
+    // (d) null pointer
+    REQUIRE(lp::decode_message(nullptr, 32, sr, mf) == 0);
+    // (e) unknown msg_type
+    buf[0]=0x52; buf[1]=0x54; buf[2]=0x50; buf[3]=0x53; buf[4]=1; buf[5]=0x99;
+    REQUIRE(lp::decode_message(buf, sizeof(buf), sr, mf) == 0);
+    // (f) sub-message too short — valid magic+version+kMsgSyncResp but len < kSizeSyncResp
+    buf[0]=0x52; buf[1]=0x54; buf[2]=0x50; buf[3]=0x53; buf[4]=1; buf[5]=lp::wire::kMsgSyncResp;
+    REQUIRE(lp::decode_message(buf, lp::wire::kSizeSyncResp - 1, sr, mf) == 0);
 }
 
 TEST_CASE("wire: decode_message reads SYNC_RESP fields big-endian",
@@ -425,16 +433,19 @@ TEST_CASE("wire: decode_message reads MSG_FRAME fields",
     for (int i=0;i<4;++i) buf[8+i] = (ssrc >> (24-8*i)) & 0xff;
     uint32_t rtp_ts = 0x11223344u;
     for (int i=0;i<4;++i) buf[12+i] = (rtp_ts >> (24-8*i)) & 0xff;
-    buf[31] = 5000 & 0xff; buf[30] = (5000 >> 8) & 0xff;
-    buf[43] = 1000 & 0xff; buf[42] = (1000 >> 8) & 0xff;
-    buf[51] = 8000 & 0xff; buf[50] = (8000 >> 8) & 0xff;
+    auto write_be64 = [&](size_t off, uint64_t v) {
+        for (int i = 0; i < 8; ++i) buf[off + i] = (v >> (56 - 8 * i)) & 0xff;
+    };
+    write_be64(24, 0xAABBCCDDEEFF1122ull);  // frame_ready_us
+    write_be64(36, 0x0102030405060708ull);  // capture_us
+    write_be64(44, 0xFEDCBA9876543210ull);  // last_pkt_send_us
 
     lp::SyncRespFields sr{};
     lp::MsgFrameFields mf{};
     REQUIRE(lp::decode_message(buf, sizeof(buf), sr, mf) == lp::wire::kMsgFrame);
     REQUIRE(mf.ssrc == ssrc);
     REQUIRE(mf.rtp_timestamp == rtp_ts);
-    REQUIRE(mf.frame_ready_us == 5000);
-    REQUIRE(mf.capture_us == 1000);
-    REQUIRE(mf.last_pkt_send_us == 8000);
+    REQUIRE(mf.frame_ready_us == 0xAABBCCDDEEFF1122ull);
+    REQUIRE(mf.capture_us == 0x0102030405060708ull);
+    REQUIRE(mf.last_pkt_send_us == 0xFEDCBA9876543210ull);
 }

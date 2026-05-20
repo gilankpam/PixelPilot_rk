@@ -11,7 +11,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <ctime>
 #include <limits>
@@ -182,7 +181,11 @@ bool start(const std::string& host, uint16_t port) {
         return false;
     }
     int flags = fcntl(s->fd, F_GETFL, 0);
-    fcntl(s->fd, F_SETFL, flags | O_NONBLOCK);
+    if (flags < 0 || fcntl(s->fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        spdlog::warn("[latency-probe] fcntl O_NONBLOCK: {}", strerror(errno));
+        close(s->fd);
+        return false;
+    }
 
     g_state = s.release();
     g_state->thread = std::thread(probe_thread_main, g_state);
@@ -207,13 +210,13 @@ void stop() {
 }
 
 // g_state is read without a lock in the hot-path hooks. The `active` atomic
-// is the gate: it's only flipped to `true` AFTER g_state is fully initialized
+// is the gate: it's flipped to `true` AFTER g_state is fully initialized
 // (release store at end of start()), and flipped to `false` BEFORE g_state
-// is torn down (release store at the top of stop()). A relaxed read of
-// `active` synchronizes with the release on the start side via the prior
-// happens-before relationship on `g_state`.
+// is torn down (release store at the top of stop()). The hot-path acquire
+// load synchronizes-with that release, making the prior write to g_state
+// visible without a lock.
 void on_rtp_buffer(const uint8_t* data, size_t len, uint64_t gs_recv_us) {
-    if (!active.load(std::memory_order_relaxed)) return;
+    if (!active.load(std::memory_order_acquire)) return;
     ProbeState* s = g_state;
     if (!s) return;
     RtpHeaderInfo h;
@@ -223,14 +226,14 @@ void on_rtp_buffer(const uint8_t* data, size_t len, uint64_t gs_recv_us) {
 }
 
 void record_decode_done(uint64_t gs_decode_us) {
-    if (!active.load(std::memory_order_relaxed)) return;
+    if (!active.load(std::memory_order_acquire)) return;
     ProbeState* s = g_state;
     if (!s) return;
     s->matcher.on_decode_done(gs_decode_us, gs_decode_us);
 }
 
 void record_display_submit(uint64_t gs_display_us) {
-    if (!active.load(std::memory_order_relaxed)) return;
+    if (!active.load(std::memory_order_acquire)) return;
     ProbeState* s = g_state;
     if (!s) return;
     s->matcher.on_display_submit(gs_display_us, gs_display_us);

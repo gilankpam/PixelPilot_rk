@@ -26,7 +26,7 @@ struct RtpHeaderInfo {
 // need ssrc/timestamp/marker which all sit in the fixed prefix.
 bool parse_rtp_header(const uint8_t* data, size_t len, RtpHeaderInfo& info);
 
-// Cheap-to-check gate for hot paths. Loaded with relaxed memory order;
+// Cheap-to-check gate for hot paths. Loaded with acquire memory order;
 // changes only at start()/stop() which the application drives at startup
 // and shutdown.
 extern std::atomic<bool> active;

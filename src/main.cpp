@@ -1685,10 +1685,10 @@ int main(int argc, char **argv)
 					if (lp.contains("host"))   lp_host   = lp["host"].get<std::string>();
 					if (lp.contains("port"))   lp_port   = static_cast<uint16_t>(lp["port"].get<int>());
 				}
+				if (lp_enable) latency_probe::start(lp_host, lp_port);
 			} catch (const std::exception& e) {
-				spdlog::warn("[latency-probe] config parse error: {}", e.what());
+				spdlog::warn("[latency-probe] init error: {}", e.what());
 			}
-			if (lp_enable) latency_probe::start(lp_host, lp_port);
 		}
 		if (mavlink_thread) {
 			ret = pthread_create(&tid_mavlink, NULL, __MAVLINK_THREAD__, &signal_flag);

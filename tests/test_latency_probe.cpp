@@ -237,8 +237,9 @@ TEST_CASE("FrameMatcher: TTL evicts orphans",
 
     // Arrival without ever getting a decode/display stamp.
     m.on_marker_arrival(1u, 100u, 1'000, /*now=*/1'000);
-    // Half a second later, sweep with a now far in the future.
-    m.ttl_sweep(/*now=*/501'000, /*ttl_us=*/500'000);
+    // Sweep with strict-> eviction: need (now - inserted) > ttl, so
+    // 1us past the boundary at 500'000us-since-insert is the minimum.
+    m.ttl_sweep(/*now=*/501'001, /*ttl_us=*/500'000);
 
     // Subsequent arrival should now be at the head — FIFO.
     m.on_marker_arrival(1u, 200u, 600'000, 600'000);

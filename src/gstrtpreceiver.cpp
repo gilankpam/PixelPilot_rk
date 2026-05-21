@@ -118,7 +118,7 @@ static VideoCodec detect_mp4_codec(const char* file_path) {
 namespace {
     static constexpr int kIdrUdpPort = 11223;
     static constexpr int kIdrBurstCount = 3;
-    static constexpr int kIdrBurstSpacingMs = 100;
+    static constexpr int kIdrBurstSpacingMs = 20;
     static constexpr int kIdrRepeatCount = 3;
     static constexpr int kIdrRepeatSpacingMs = 100;
     static constexpr int kIdrRecordRepeatCount = 3;

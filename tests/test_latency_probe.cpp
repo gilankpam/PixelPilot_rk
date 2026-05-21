@@ -313,7 +313,9 @@ TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode but stil
     f.sidecar_seen = true;
 
     uint64_t clamp = 0;
-    lp::compute_and_publish(f, 0, 0, /*gs_pipeline_ms=*/40, clamp, cb, cbi);
+    // rtt_us=1 (any nonzero) signals "sync acquired" — the focus of this
+    // test is the capture_us=0 branch, not the pre-sync gate.
+    lp::compute_and_publish(f, 0, 1, /*gs_pipeline_ms=*/40, clamp, cb, cbi);
 
     for (auto& [n, _] : captured.uint_facts) {
         REQUIRE(n != "video.latency.capture_to_encode_ms");
@@ -331,6 +333,55 @@ TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode but stil
     REQUIRE(saw_total);
     // total = encode(3) + wire(1) + gs_pipeline(40) = 44
     REQUIRE(total == 44);
+}
+
+TEST_CASE("compute_and_publish: pre-sync (rtt_us=0) suppresses wire_ms and total_ms",
+          "[latency_probe][publish]") {
+    // Regression guard for the cold-start race: before the first
+    // MSG_SYNC_RESP lands, ClockOffset::get() returns (offset=0, rtt=0).
+    // Without a valid offset, gs_recv_last_us (GS CLOCK_MONOTONIC) minus
+    // last_pkt_send_us (drone CLOCK_MONOTONIC) is (GS_uptime - drone_uptime)
+    // — unbounded, often huge. Field symptom: total_ms publishes absurd
+    // values until sync converges. Guard against republishing this bug.
+    lp::PublishedFacts captured;
+    auto cb  = [&](const char* n, uint64_t v){ captured.uint_facts.emplace_back(n, v); };
+    auto cbi = [&](const char* n, int64_t v){ captured.int_facts.emplace_back(n, v); };
+
+    lp::FrameTimings f{};
+    f.ssrc = 1; f.rtp_ts = 100;
+    f.capture_us       = 1'000;        // drone clock
+    f.frame_ready_us   = 11'000;       // drone clock
+    f.last_pkt_send_us = 14'000;       // drone clock
+    // GS clock is millions of µs away from drone clock — the exact divergence
+    // we'd see if both machines have been up for different durations.
+    f.gs_recv_last_us  = 9'999'999'000ull;
+    f.sidecar_seen     = true;
+
+    uint64_t clamp = 0;
+    lp::compute_and_publish(f, /*offset_us=*/0, /*rtt_us=*/0,
+                            /*gs_pipeline_ms=*/35, clamp, cb, cbi);
+
+    auto has_uint = [&](const char* name) {
+        for (auto& [n, _] : captured.uint_facts) if (n == name) return true;
+        return false;
+    };
+
+    // Drone-local segments are safe to publish without sync.
+    REQUIRE(has_uint("video.latency.capture_to_encode_ms"));
+    REQUIRE(has_uint("video.latency.capture_to_encode_us"));
+    REQUIRE(has_uint("video.latency.encode_to_send_ms"));
+    REQUIRE(has_uint("video.latency.encode_to_send_us"));
+    // Clock diagnostics still publish — seeing rtt=0 is itself signal.
+    REQUIRE(has_uint("video.latency.clock_rtt_us"));
+    REQUIRE(has_uint("video.latency.wire_clamp_count"));
+
+    // wire_ms and total_ms MUST be suppressed pre-sync.
+    for (auto& [n, _] : captured.uint_facts) {
+        REQUIRE(n != "video.latency.wire_ms");
+        REQUIRE(n != "video.latency.total_ms");
+    }
+    // wire_clamp_counter must not tick on bogus pre-sync deltas.
+    REQUIRE(clamp == 0);
 }
 
 TEST_CASE("wire: encode_subscribe round-trip header bytes",

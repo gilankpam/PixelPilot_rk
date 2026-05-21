@@ -405,6 +405,13 @@ void compute_and_publish(const FrameTimings& f,
                          PublishUintFn pub_u,
                          PublishIntFn  pub_i) {
     bool have_capture = f.capture_us != 0;
+    // rtt_us == 0 is ClockOffset::get()'s sentinel for "no sync sample yet".
+    // Without an offset, gs_recv_last_us (GS CLOCK_MONOTONIC) minus
+    // last_pkt_send_us (drone CLOCK_MONOTONIC) is (GS_uptime − drone_uptime)
+    // — two independent boot clocks, often off by hours. Publishing wire_ms
+    // before sync causes the field-observed "absurdly high latency at startup
+    // then settles to ~50 ms" symptom; suppress until first MSG_SYNC_RESP.
+    bool have_sync = rtt_us != 0;
 
     uint64_t cap_to_enc_us = 0;
     uint64_t cap_to_enc_ms = 0;
@@ -419,24 +426,27 @@ void compute_and_publish(const FrameTimings& f,
         enc_to_send_ms = enc_to_send_us / 1000ull;
     }
 
-    int64_t adjusted_send_us =
-        static_cast<int64_t>(f.last_pkt_send_us) - offset_us;
-    int64_t wire_us = static_cast<int64_t>(f.gs_recv_last_us) - adjusted_send_us;
-    if (wire_us < 0) {
-        wire_us = 0;
-        wire_clamp_counter++;
-    }
-    uint64_t wire_ms = static_cast<uint64_t>(wire_us) / 1000ull;
-
     if (have_capture) {
         pub_u("video.latency.capture_to_encode_ms", cap_to_enc_ms);
         pub_u("video.latency.capture_to_encode_us", cap_to_enc_us);
     }
     pub_u("video.latency.encode_to_send_ms", enc_to_send_ms);
     pub_u("video.latency.encode_to_send_us", enc_to_send_us);
-    pub_u("video.latency.wire_ms",           wire_ms);
-    pub_u("video.latency.total_ms",
-          cap_to_enc_ms + enc_to_send_ms + wire_ms + gs_pipeline_ms);
+
+    if (have_sync) {
+        int64_t adjusted_send_us =
+            static_cast<int64_t>(f.last_pkt_send_us) - offset_us;
+        int64_t wire_us = static_cast<int64_t>(f.gs_recv_last_us) - adjusted_send_us;
+        if (wire_us < 0) {
+            wire_us = 0;
+            wire_clamp_counter++;
+        }
+        uint64_t wire_ms = static_cast<uint64_t>(wire_us) / 1000ull;
+        pub_u("video.latency.wire_ms", wire_ms);
+        pub_u("video.latency.total_ms",
+              cap_to_enc_ms + enc_to_send_ms + wire_ms + gs_pipeline_ms);
+    }
+
     pub_i("video.latency.clock_offset_us",   offset_us);
     pub_u("video.latency.clock_rtt_us",      rtt_us);
     pub_u("video.latency.wire_clamp_count",  wire_clamp_counter);

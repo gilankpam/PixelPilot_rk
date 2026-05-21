@@ -244,6 +244,7 @@ section → disabled.
 | Decoder skips a frame (NAL discard / error) | Oldest awaiting-decode slot ages out via TTL. Deque self-resyncs within 500 ms. |
 | Display drops a frame | Same — TTL eviction. |
 | `wire_us` computes negative | Clamp to 0, increment `video.latency.wire_clamp_count`. Indicates stale offset; self-corrects on next sync. |
+| Frame publishes before first `MSG_SYNC_RESP` (cold start) | `wire_ms` / `total_ms` suppressed; `wire_clamp_count` not incremented. Drone-local segments (`capture_to_encode_*`, `encode_to_send_*`) and clock diagnostics (`clock_offset_us=0`, `clock_rtt_us=0`) still publish — seeing `clock_rtt_us=0` is itself the "no sync" signal. Self-resolves on first `MSG_SYNC_RESP` (usually <1 s after start; longer on lossy links). |
 | Protocol version mismatch (`buf[4] != 1`) | Drop, log once. |
 | Sender wraps `rtp_timestamp` (uint32, every ~13 h at 90 kHz) | Matcher keys on full `(ssrc, rtp_ts)`; wrap is invisible — we look up by exact value, never compare deltas across wrap. |
 

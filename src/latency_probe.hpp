@@ -157,8 +157,16 @@ void set_publish_overrides_for_test(PublishUintFn pub_u, PublishIntFn pub_i);
 // time; in that case capture_to_encode_ms / capture_to_encode_us are
 // suppressed.
 //
+// rtt_us == 0 is the "no sync yet" sentinel from ClockOffset::get(). In
+// that state wire_ms and total_ms are suppressed (cross-clock arithmetic
+// would be meaningless) and wire_clamp_counter is not incremented. The
+// drone-local segments and the clock diagnostic facts (clock_offset_us,
+// clock_rtt_us=0, wire_clamp_count) still publish so the OSD can see that
+// sync hasn't converged.
+//
 // total_ms = capture_to_encode_ms + encode_to_send_ms + wire_ms + gs_pipeline_ms.
-// It is always published (any missing summand contributes 0).
+// Published only when sync is available (any other missing summand
+// contributes 0).
 void compute_and_publish(const FrameTimings& f,
                          int64_t  offset_us,
                          uint64_t rtt_us,

@@ -131,6 +131,22 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
 
     REQUIRE(lp::start("127.0.0.1", fw.port));
 
+    // Wait for the first clock sync to land. compute_and_publish suppresses
+    // wire_ms / total_ms until the offset is valid (rtt_us > 0), so without
+    // this gate the first frames would publish only drone-local segments and
+    // the wire_ms / total_ms assertions below would race. The probe sends
+    // MSG_SYNC_REQ at startup; fake waybeam replies within a few ms on loopback.
+    {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (fw.sync_responded.load() == 0 &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        REQUIRE(fw.sync_responded.load() >= 1);
+        // Give the probe thread a beat to handle_packet the sync response.
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
     // Feed a synthetic GS-pipeline reading; total_ms uses this.
     lp::record_gs_pipeline_ms(35);
 

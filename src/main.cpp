@@ -456,7 +456,13 @@ void *__DISPLAY_THREAD__(void *param)
 		ret = pthread_mutex_unlock(&osd_mutex);
 		assert(!ret);
 		osd_publish_uint_fact("video.displayed_frame", NULL, 0, 1);
-		latency_probe::record_display_submit(latency_probe::now_us());
+		// Gate on fb_id: this commit may have been an OSD-only redraw
+		// (video_cond is signaled by both "new video frame" and
+		// "osd_update_ready"). Stamping the matcher on an OSD-only wake
+		// causes FIFO drift — display events outnumber arrivals.
+		if (fb_id != 0) {
+			latency_probe::record_display_submit(latency_probe::now_us());
+		}
 		uint64_t now_ms = get_time_ms();
 		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;
 		osd_publish_uint_fact("video.decode_and_handover_ms", NULL, 0, decode_and_handover_display_ms);

@@ -59,6 +59,7 @@ extern "C" {
 #include "pixelpilot_config.h"
 #include <iostream>
 #include "WiFiRSSIMonitor.hpp"
+#include "latency_probe.hpp"
 #include "gsmenu/gs_system.h"
 #include "gsmenu/air_actions.h"
 #include "gsmenu/gs_actions.h"
@@ -457,6 +458,13 @@ void *__DISPLAY_THREAD__(void *param)
 		uint64_t now_ms = get_time_ms();
 		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;
 		osd_publish_uint_fact("video.decode_and_handover_ms", NULL, 0, decode_and_handover_display_ms);
+		// Forward the same number to latency_probe so it can roll the
+		// GS-pipeline component into video.latency.total_ms. Only on
+		// real video commits (fb_id != 0) — OSD-only commits would
+		// publish 0 here and dilute the rolling figure.
+		if (fb_id != 0) {
+			latency_probe::record_gs_pipeline_ms(decode_and_handover_display_ms);
+		}
 		if (last_commit_ms != 0) {
 			uint64_t interval_ms = now_ms - last_commit_ms;
 			osd_publish_uint_fact("video.frame_interval_ms", NULL, 0, interval_ms);
@@ -897,20 +905,55 @@ public:
         }
 
         // fd is non-blocking
-        char custom_msg[120];
-        osd_tag tags[1];
-        ssize_t bytes_read = read(fd, custom_msg, sizeof(custom_msg) - 1);
+        char chunk[120];
+        ssize_t bytes_read = read(fd, chunk, sizeof(chunk));
         if (bytes_read > 0) {
-            // If the last char is `\n`, then drop it
-            if (bytes_read > 1 && custom_msg[bytes_read - 1] == '\n') {
-                custom_msg[bytes_read - 1] = '\0';
-            } else {
-                custom_msg[bytes_read] = '\0';
-            }
-            strcpy(tags[0].key, "file");
-            strcpy(tags[0].val, fifoName);
-            osd_publish_str_fact("osd.custom_message", tags, 1, custom_msg);
+            buffer.append(chunk, bytes_read);
         }
+
+        // Emit one fact per `\n`-terminated message. If the buffer grows past
+        // MAX_MSG_LEN without a newline, flush it anyway so a stuck writer
+        // cannot make us grow unboundedly.
+        while (true) {
+            size_t nl = buffer.find('\n');
+            if (nl == std::string::npos) {
+                if (buffer.size() >= MAX_MSG_LEN) {
+                    publish_message(buffer);
+                    buffer.clear();
+                }
+                break;
+            }
+            std::string msg = buffer.substr(0, nl);
+            buffer.erase(0, nl + 1);
+            if (!msg.empty()) {
+                publish_message(msg);
+            }
+        }
+    }
+
+    // Unescape `\\n` -> literal newline so writers that cannot emit a raw
+    // newline (eg shell `echo` without `-e`) can still build multi-line
+    // messages.
+    static std::string unescape_newlines(const std::string& in) {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i) {
+            if (in[i] == '\\' && i + 1 < in.size() && in[i + 1] == 'n') {
+                out.push_back('\n');
+                ++i;
+            } else {
+                out.push_back(in[i]);
+            }
+        }
+        return out;
+    }
+
+    void publish_message(const std::string& raw) {
+        osd_tag tags[1];
+        strcpy(tags[0].key, "file");
+        strcpy(tags[0].val, fifoName);
+        std::string msg = unescape_newlines(raw);
+        osd_publish_str_fact("osd.custom_message", tags, 1, msg.c_str());
     }
 
     ~CustomMsgManager() {
@@ -921,9 +964,12 @@ public:
     }
 
 private:
+    static constexpr size_t MAX_MSG_LEN = 512;
+
     const char* fifoName;
     int fd; // File descriptor for the FIFO
     bool enabled;
+    std::string buffer; // accumulates partial reads until a `\n` is seen
 };
 
 void main_loop() {
@@ -1672,6 +1718,23 @@ int main(int argc, char **argv)
 		} else {
 			osd_config = {};
 		}
+		// Glass-to-glass latency probe (default disabled).
+		{
+			bool        lp_enable = false;
+			std::string lp_host;
+			uint16_t    lp_port   = 5602;
+			try {
+				if (osd_config.contains("latency_probe")) {
+					const auto& lp = osd_config["latency_probe"];
+					if (lp.contains("enable")) lp_enable = lp["enable"].get<bool>();
+					if (lp.contains("host"))   lp_host   = lp["host"].get<std::string>();
+					if (lp.contains("port"))   lp_port   = static_cast<uint16_t>(lp["port"].get<int>());
+				}
+				if (lp_enable) latency_probe::start(lp_host, lp_port);
+			} catch (const std::exception& e) {
+				spdlog::warn("[latency-probe] init error: {}", e.what());
+			}
+		}
 		if (mavlink_thread) {
 			ret = pthread_create(&tid_mavlink, NULL, __MAVLINK_THREAD__, &signal_flag);
 			assert(!ret);
@@ -1790,6 +1853,7 @@ int main(int argc, char **argv)
     remove(pidFilePath.c_str());
 
 	restore_stdin();
+	latency_probe::stop();
 	return return_value;
 }
 

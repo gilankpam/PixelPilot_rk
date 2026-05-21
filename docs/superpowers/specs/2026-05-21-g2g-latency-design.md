@@ -303,3 +303,44 @@ typical FPV configurations.
 - Memory update: the existing project memory ("never compare timestamps
   across drone and GS") needs to be amended to reflect that the sidecar
   sync handshake makes bounded cross-comparison possible.
+
+## TODO: drone-side MSG_FRAME rate-limit config (waybeam patch)
+
+**Why:** waybeam currently emits one `MSG_FRAME` per encoded frame
+(`star6e_video.c:156`, `maruko_pipeline.c:3215`), unconditionally while
+subscribed. At 60 fps with the 80-byte frame trailer this is ~52 kbps
+sustained across the wfb tunnel. Comfortable on a healthy link, but on
+long-range / low-MCS conditions the tunnel shares budget with MAVLink and
+this could starve control traffic. There's no current knob to throttle
+it; the prior `outgoing.{backpressure,highWaterPct,lowWaterPct}` config
+was deliberately rolled back in v0.9.2 (see `venc_ring.h:149-158`).
+
+**What:** add `outgoing.sidecarFrameInterval` (uint, default 1 = every
+frame, FT_UINT16, MUT_RESTART) to the `outgoing` config block. Wire it
+into the per-frame call sites:
+
+```c
+// star6e_video.c near line 156
+// maruko_pipeline.c near line 3215
+if (cfg->outgoing.sidecar_frame_interval > 0 &&
+    (state->sidecar.frame_id % cfg->outgoing.sidecar_frame_interval) == 0) {
+    rtp_sidecar_send_frame_transport(&state->sidecar, ...);
+}
+```
+
+(Use a per-stream counter; the existing `RtpSidecarSender::frame_id` is
+the monotonic counter and is incremented inside `rtp_sidecar_send_frame_transport`
+on actual sends, so a separate "candidate" counter is needed.)
+
+**GS side:** no code change required. The matcher already gracefully
+handles missing MSG_FRAMEs (orphan marker arrivals age out via TTL). The
+OSD widgets read rolling values, so 12 Hz updates render fine.
+
+**Sizing guidance:**
+- `1` (default) — 60/sec, ~52 kbps, full per-frame fidelity.
+- `5` — 12/sec, ~10 kbps. Good default for long-range FPV.
+- `30` — 2/sec, ~2 kbps. Minimum useful: still gives wire_ms / clock-offset
+  samples but `total_ms` updates feel laggy.
+
+**Out of scope:** dynamic adaptation (link_controller adjusting interval
+based on RSSI/load). The static knob is enough for v1.

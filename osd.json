@@ -3,41 +3,12 @@
     "assets_dir": "/usr/share/pixelpilot/",
     "widgets": [
         {
-            "name": "Video stutter (numeric)",
-            "type": "VideoStutterWidget",
-            "x": -250,
-            "y": 500,
-            "icon_path": "framerate.png",
-            "template": "STUT %u ms · %u/s ▲%u",
-            "per_second_window_s": 1,
-            "per_second_bucket_ms": 100,
-            "facts": [
-                { "name": "video.frame_interval_ms" }
-            ]
-        },
-        {
-            "name": "Video stutter (graph)",
-            "type": "BarChartWidget",
-            "x": -250,
-            "y": 520,
-            "width": 200,
-            "height": 60,
-            "window_s": 10,
-            "num_buckets": 20,
-            "stats_kind": "max",
-            "min_y": 0,
-            "max_y": 100,
-            "facts": [
-                { "name": "video.frame_interval_ms" }
-            ]
-        },
-        {
             "name": "Metrics background",
             "type": "BoxWidget",
             "x": -280,
             "y": 70,
             "width": 400,
-            "height": 130,
+            "height": 160,
             "color": {
                 "r": 0.0,
                 "g": 0.0,
@@ -54,8 +25,12 @@
             "icon_path": "memory.png",
             "template": "CPU: %u%% IO: %u%%",
             "facts": [
-                {"name": "os_mon.cpu.load_total"},
-                {"name": "os_mon.cpu.load_iowait"}
+                {
+                    "name": "os_mon.cpu.load_total"
+                },
+                {
+                    "name": "os_mon.cpu.load_iowait"
+                }
             ]
         },
         {
@@ -97,10 +72,29 @@
             ]
         },
         {
+            "name": "G2G latency (total)",
+            "type": "IconTplTextWidget",
+            "x": -270,
+            "y": 186,
+            "icon_path": "framerate.png",
+            "template": "G2G %u ms (W%u GS%u)",
+            "facts": [
+                {
+                    "name": "video.latency.total_ms"
+                },
+                {
+                    "name": "video.latency.wire_ms"
+                },
+                {
+                    "name": "video.decode_and_handover_ms"
+                }
+            ]
+        },
+        {
             "name": "DVR status",
             "type": "DvrStatusWidget",
             "x": -270,
-            "y": 186,
+            "y": 216,
             "icon_path": "sdcard-white.png",
             "text": "Recording",
             "facts": [
@@ -113,7 +107,7 @@
             "name": "RSSI & SNR background",
             "type": "BoxWidget",
             "x": -280,
-            "y": 210,
+            "y": 240,
             "width": 400,
             "height": 60,
             "color": {
@@ -129,7 +123,7 @@
             "name": "RSSI",
             "template": "RSSI: %i | %i | %i | %i | %i | %i",
             "x": -270,
-            "y": 230,
+            "y": 260,
             "facts": [
                 {
                     "name": "wfbcli.rx.ant_stats.rssi_avg",
@@ -180,7 +174,7 @@
             "name": "SNR",
             "template": "SNR: %i | %i | %i | %i | %i | %i",
             "x": -270,
-            "y": 260,
+            "y": 290,
             "facts": [
                 {
                     "name": "wfbcli.rx.ant_stats.snr_avg",
@@ -230,7 +224,7 @@
             "name": "all",
             "type": "BarChartWidget",
             "x": -280,
-            "y": 290,
+            "y": 320,
             "width": 300,
             "height": 50,
             "window_s": 1,
@@ -246,7 +240,7 @@
             "name": "fec_rec",
             "type": "BarChartWidget",
             "x": -280,
-            "y": 350,
+            "y": 380,
             "width": 300,
             "height": 50,
             "window_s": 1,
@@ -262,7 +256,7 @@
             "name": "lost",
             "type": "BarChartWidget",
             "x": -280,
-            "y": 410,
+            "y": 440,
             "width": 300,
             "height": 50,
             "window_s": 1,
@@ -271,6 +265,57 @@
             "facts": [
                 {
                     "name": "wfbcli.rx.packets.lost.delta"
+                }
+            ]
+        },
+        {
+            "name": "Video stutter (numeric)",
+            "type": "VideoStutterWidget",
+            "x": -280,
+            "y": 530,
+            "icon_path": "framerate.png",
+            "template": "STUT %u ms \u00b7 %u/s \u25b2%u",
+            "per_second_window_s": 1,
+            "per_second_bucket_ms": 100,
+            "facts": [
+                {
+                    "name": "video.frame_interval_ms"
+                }
+            ]
+        },
+        {
+            "name": "Video stutter (graph)",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 550,
+            "width": 300,
+            "height": 60,
+            "window_s": 10,
+            "num_buckets": 20,
+            "stats_kind": "max",
+            "min_y": 0,
+            "max_y": 100,
+            "facts": [
+                {
+                    "name": "video.frame_interval_ms"
+                }
+            ]
+        },
+        {
+            "name": "G2G latency (graph)",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 620,
+            "width": 300,
+            "height": 60,
+            "window_s": 10,
+            "num_buckets": 20,
+            "stats_kind": "max",
+            "min_y": 0,
+            "max_y": 250,
+            "facts": [
+                {
+                    "name": "video.latency.total_ms"
                 }
             ]
         },
@@ -298,7 +343,7 @@
     ],
     "latency_probe": {
         "enable": false,
-        "host":   "10.5.0.10",
-        "port":   5602
+        "host": "10.5.0.10",
+        "port": 5602
     }
 }

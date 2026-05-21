@@ -43,6 +43,13 @@ struct ProbeState {
 std::mutex      g_start_mu;
 ProbeState*     g_state = nullptr;
 
+// Latest "decode_and_handover" reading from the existing display-thread
+// fact, fed in via record_gs_pipeline_ms(). Read by the publish callback
+// at frame-publish time. Relaxed ordering is fine — the value is a smooth
+// per-frame number; transient staleness across the GS pipeline pairing is
+// acceptable.
+std::atomic<uint64_t> g_gs_pipeline_ms{0};
+
 void publish_uint_real(const char* name, uint64_t value) {
     osd_publish_uint_fact(name, NULL, 0, static_cast<unsigned long>(value));
 }
@@ -106,9 +113,10 @@ void probe_thread_main(ProbeState* sp) {
         [&](const FrameTimings& f) {
             int64_t  off; uint64_t rtt;
             s.clock.get(off, rtt);
+            uint64_t gs_pipe = g_gs_pipeline_ms.load(std::memory_order_relaxed);
             PublishUintFn pu = g_pub_u_override ? g_pub_u_override : publish_uint_real;
             PublishIntFn  pi = g_pub_i_override ? g_pub_i_override : publish_int_real;
-            compute_and_publish(f, off, rtt, s.wire_clamp_count, pu, pi);
+            compute_and_publish(f, off, rtt, gs_pipe, s.wire_clamp_count, pu, pi);
         });
 
     pollfd pfd{ s.fd, POLLIN, 0 };
@@ -229,18 +237,9 @@ void on_rtp_buffer(const uint8_t* data, size_t len, uint64_t gs_recv_us) {
     s->matcher.on_marker_arrival(h.ssrc, h.timestamp, gs_recv_us, gs_recv_us);
 }
 
-void record_decode_done(uint64_t gs_decode_us) {
+void record_gs_pipeline_ms(uint64_t gs_pipeline_ms) {
     if (!active.load(std::memory_order_acquire)) return;
-    ProbeState* s = g_state;
-    if (!s) return;
-    s->matcher.on_decode_done(gs_decode_us, gs_decode_us);
-}
-
-void record_display_submit(uint64_t gs_display_us) {
-    if (!active.load(std::memory_order_acquire)) return;
-    ProbeState* s = g_state;
-    if (!s) return;
-    s->matcher.on_display_submit(gs_display_us, gs_display_us);
+    g_gs_pipeline_ms.store(gs_pipeline_ms, std::memory_order_relaxed);
 }
 
 bool parse_rtp_header(const uint8_t* data, size_t len, RtpHeaderInfo& info) {
@@ -324,10 +323,7 @@ void ClockOffset::get(int64_t& offset_us, uint64_t& rtt_us) const {
 }
 
 static bool is_complete(const FrameTimings& f) {
-    return f.sidecar_seen &&
-           f.gs_recv_last_us != 0 &&
-           f.gs_decode_done_us != 0 &&
-           f.gs_display_submit_us != 0;
+    return f.sidecar_seen && f.gs_recv_last_us != 0;
 }
 
 void FrameMatcher::set_publish_callback(PublishFn cb) {
@@ -354,41 +350,27 @@ FrameTimings& FrameMatcher::push_new_locked(uint64_t now) {
     return ring_.back();
 }
 
+void FrameMatcher::try_publish_for_locked(FrameTimings& slot) {
+    if (!is_complete(slot)) return;
+    if (publish_) publish_(slot);
+    for (auto it = ring_.begin(); it != ring_.end(); ++it) {
+        if (&(*it) == &slot) { ring_.erase(it); return; }
+    }
+}
+
 void FrameMatcher::on_marker_arrival(uint32_t ssrc, uint32_t rtp_ts,
                                      uint64_t gs_recv_us, uint64_t now) {
     std::lock_guard<std::mutex> lk(m_);
-    if (auto* slot = find_by_key_locked(ssrc, rtp_ts)) {
+    FrameTimings* slot = find_by_key_locked(ssrc, rtp_ts);
+    if (slot) {
         if (slot->gs_recv_last_us == 0) slot->gs_recv_last_us = gs_recv_us;
-        try_publish_locked();
-        return;
+    } else {
+        slot = &push_new_locked(now);
+        slot->ssrc = ssrc;
+        slot->rtp_ts = rtp_ts;
+        slot->gs_recv_last_us = gs_recv_us;
     }
-    auto& s = push_new_locked(now);
-    s.ssrc = ssrc;
-    s.rtp_ts = rtp_ts;
-    s.gs_recv_last_us = gs_recv_us;
-    try_publish_locked();
-}
-
-void FrameMatcher::on_decode_done(uint64_t gs_decode_us, uint64_t /*now*/) {
-    std::lock_guard<std::mutex> lk(m_);
-    for (auto& f : ring_) {
-        if (f.gs_decode_done_us == 0) {
-            f.gs_decode_done_us = gs_decode_us;
-            break;
-        }
-    }
-    try_publish_locked();
-}
-
-void FrameMatcher::on_display_submit(uint64_t gs_display_us, uint64_t /*now*/) {
-    std::lock_guard<std::mutex> lk(m_);
-    for (auto& f : ring_) {
-        if (f.gs_display_submit_us == 0) {
-            f.gs_display_submit_us = gs_display_us;
-            break;
-        }
-    }
-    try_publish_locked();
+    try_publish_for_locked(*slot);
 }
 
 void FrameMatcher::on_msg_frame(uint32_t ssrc, uint32_t rtp_ts,
@@ -405,7 +387,7 @@ void FrameMatcher::on_msg_frame(uint32_t ssrc, uint32_t rtp_ts,
     slot->frame_ready_us    = frame_ready_us;
     slot->last_pkt_send_us  = last_pkt_send_us;
     slot->sidecar_seen      = true;
-    try_publish_locked();
+    try_publish_for_locked(*slot);
 }
 
 void FrameMatcher::ttl_sweep(uint64_t now, uint64_t ttl_us) {
@@ -415,23 +397,10 @@ void FrameMatcher::ttl_sweep(uint64_t now, uint64_t ttl_us) {
     }
 }
 
-void FrameMatcher::try_publish_locked() {
-    // Walk from front and publish any complete slot. We allow non-head
-    // completion because sidecar_seen can land out-of-order vs. the
-    // decode/display FIFO binding for adjacent frames.
-    for (auto it = ring_.begin(); it != ring_.end(); ) {
-        if (is_complete(*it)) {
-            if (publish_) publish_(*it);
-            it = ring_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
 void compute_and_publish(const FrameTimings& f,
                          int64_t  offset_us,
                          uint64_t rtt_us,
+                         uint64_t  gs_pipeline_ms,
                          uint64_t& wire_clamp_counter,
                          PublishUintFn pub_u,
                          PublishIntFn  pub_i) {
@@ -459,14 +428,6 @@ void compute_and_publish(const FrameTimings& f,
     }
     uint64_t wire_ms = static_cast<uint64_t>(wire_us) / 1000ull;
 
-    uint64_t decode_ms = 0;
-    if (f.gs_decode_done_us >= f.gs_recv_last_us)
-        decode_ms = (f.gs_decode_done_us - f.gs_recv_last_us) / 1000ull;
-
-    uint64_t display_ms = 0;
-    if (f.gs_display_submit_us >= f.gs_decode_done_us)
-        display_ms = (f.gs_display_submit_us - f.gs_decode_done_us) / 1000ull;
-
     if (have_capture) {
         pub_u("video.latency.capture_to_encode_ms", cap_to_enc_ms);
         pub_u("video.latency.capture_to_encode_us", cap_to_enc_us);
@@ -474,12 +435,8 @@ void compute_and_publish(const FrameTimings& f,
     pub_u("video.latency.encode_to_send_ms", enc_to_send_ms);
     pub_u("video.latency.encode_to_send_us", enc_to_send_us);
     pub_u("video.latency.wire_ms",           wire_ms);
-    pub_u("video.latency.decode_ms",         decode_ms);
-    pub_u("video.latency.display_ms",        display_ms);
-    if (have_capture) {
-        pub_u("video.latency.total_ms",
-              cap_to_enc_ms + enc_to_send_ms + wire_ms + decode_ms + display_ms);
-    }
+    pub_u("video.latency.total_ms",
+          cap_to_enc_ms + enc_to_send_ms + wire_ms + gs_pipeline_ms);
     pub_i("video.latency.clock_offset_us",   offset_us);
     pub_u("video.latency.clock_rtt_us",      rtt_us);
     pub_u("video.latency.wire_clamp_count",  wire_clamp_counter);

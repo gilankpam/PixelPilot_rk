@@ -373,7 +373,6 @@ void *__FRAME_THREAD__(void *param)
 					output_list->video_fb_id = mpi.frame_to_drm[i].fb_id;
                     //output_list->video_fb_index=i;
                     output_list->decoding_pts=feed_data_ts;
-					latency_probe::record_decode_done(latency_probe::now_us());
 					ret = pthread_cond_signal(&video_cond);
 					assert(!ret);
 					ret = pthread_mutex_unlock(&video_mutex);
@@ -456,16 +455,16 @@ void *__DISPLAY_THREAD__(void *param)
 		ret = pthread_mutex_unlock(&osd_mutex);
 		assert(!ret);
 		osd_publish_uint_fact("video.displayed_frame", NULL, 0, 1);
-		// Gate on fb_id: this commit may have been an OSD-only redraw
-		// (video_cond is signaled by both "new video frame" and
-		// "osd_update_ready"). Stamping the matcher on an OSD-only wake
-		// causes FIFO drift — display events outnumber arrivals.
-		if (fb_id != 0) {
-			latency_probe::record_display_submit(latency_probe::now_us());
-		}
 		uint64_t now_ms = get_time_ms();
 		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;
 		osd_publish_uint_fact("video.decode_and_handover_ms", NULL, 0, decode_and_handover_display_ms);
+		// Forward the same number to latency_probe so it can roll the
+		// GS-pipeline component into video.latency.total_ms. Only on
+		// real video commits (fb_id != 0) — OSD-only commits would
+		// publish 0 here and dilute the rolling figure.
+		if (fb_id != 0) {
+			latency_probe::record_gs_pipeline_ms(decode_and_handover_display_ms);
+		}
 		if (last_commit_ms != 0) {
 			uint64_t interval_ms = now_ms - last_commit_ms;
 			osd_publish_uint_fact("video.frame_interval_ms", NULL, 0, interval_ms);

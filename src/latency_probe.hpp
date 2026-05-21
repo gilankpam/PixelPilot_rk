@@ -44,17 +44,12 @@ void stop();
 // No-op when active==false.
 void on_rtp_buffer(const uint8_t* data, size_t len, uint64_t gs_recv_us);
 
-// Hot-path hook: called from the decoder thread immediately after a
-// successful decode_get_frame(). Binds to the oldest pending frame in
-// the matcher's deque.
+// Hot-path hook: called from the display thread after a real video-frame
+// commit (NOT on OSD-only redraws), passing the value already computed
+// for the existing `video.decode_and_handover_ms` fact. Stored as the
+// "GS pipeline" component of the per-frame total.
 // No-op when active==false.
-void record_decode_done(uint64_t gs_decode_us);
-
-// Hot-path hook: called from the display thread immediately after
-// drmModeAtomicCommit. Binds to the oldest pending frame in the matcher's
-// deque.
-// No-op when active==false.
-void record_display_submit(uint64_t gs_display_us);
+void record_gs_pipeline_ms(uint64_t gs_pipeline_ms);
 
 // Returns a CLOCK_MONOTONIC sample in microseconds. Convenience for callers.
 uint64_t now_us();
@@ -93,8 +88,6 @@ struct FrameTimings {
     uint32_t ssrc           = 0;
     uint32_t rtp_ts         = 0;
     uint64_t gs_recv_last_us     = 0;  // pad probe (marker=1)
-    uint64_t gs_decode_done_us   = 0;  // decoder hook (FIFO bind)
-    uint64_t gs_display_submit_us= 0;  // display hook (FIFO bind)
     uint64_t capture_us          = 0;  // from MSG_FRAME (drone clock)
     uint64_t frame_ready_us      = 0;  // from MSG_FRAME (drone clock)
     uint64_t last_pkt_send_us    = 0;  // from MSG_FRAME (drone clock)
@@ -102,6 +95,10 @@ struct FrameTimings {
     uint64_t inserted_us         = 0;  // for TTL
 };
 
+// Pairs RTP marker-bit arrivals (from the pad probe) with MSG_FRAME
+// (from the sidecar) by (ssrc, rtp_timestamp). The two halves can arrive
+// in either order. A slot publishes when both are present. Older orphans
+// are aged out by ttl_sweep.
 class FrameMatcher {
 public:
     using PublishFn = std::function<void(const FrameTimings&)>;
@@ -113,8 +110,6 @@ public:
     // deterministically. In production, callers pass latency_probe::now_us().
     void on_marker_arrival(uint32_t ssrc, uint32_t rtp_ts,
                            uint64_t gs_recv_us, uint64_t now);
-    void on_decode_done(uint64_t gs_decode_us, uint64_t now);
-    void on_display_submit(uint64_t gs_display_us, uint64_t now);
     void on_msg_frame(uint32_t ssrc, uint32_t rtp_ts,
                       uint64_t capture_us, uint64_t frame_ready_us,
                       uint64_t last_pkt_send_us, uint64_t now);
@@ -132,12 +127,9 @@ private:
     // Caller holds m_.
     FrameTimings* find_by_key_locked(uint32_t ssrc, uint32_t rtp_ts);
     FrameTimings& push_new_locked(uint64_t now);
-    void try_publish_locked();   // Walks the full ring front-to-back and
-                                 // publishes+erases every complete slot
-                                 // in encounter order. Non-head completion
-                                 // is allowed because MSG_FRAME can arrive
-                                 // out-of-order relative to the decode/
-                                 // display FIFO binding.
+    void try_publish_for_locked(FrameTimings& slot);  // publishes + erases
+                                                      // the given slot if
+                                                      // complete.
 };
 
 // Test scaffolding: captured-facts vector used by tests in place of
@@ -155,15 +147,22 @@ using PublishIntFn  = std::function<void(const char* name, int64_t  value)>;
 // Has effect only on subsequent publishes.
 void set_publish_overrides_for_test(PublishUintFn pub_u, PublishIntFn pub_i);
 
-// Compute all video.latency.* values from one complete FrameTimings + the
-// current clock offset/rtt, and emit via the provided callbacks. Mutates
-// wire_clamp_counter if the computed wire delta would have been negative.
+// Compute all video.latency.* values from one matched FrameTimings + the
+// current clock offset/rtt + the latest GS-pipeline ms (from the existing
+// `video.decode_and_handover_ms` fact, fed via record_gs_pipeline_ms), and
+// emit via the provided callbacks. Mutates wire_clamp_counter if the
+// computed wire delta would have been negative.
 //
 // capture_us == 0 means the drone did not provide a PTS-derived capture
-// time; in that case capture_to_encode_ms and total_ms are NOT published.
+// time; in that case capture_to_encode_ms / capture_to_encode_us are
+// suppressed.
+//
+// total_ms = capture_to_encode_ms + encode_to_send_ms + wire_ms + gs_pipeline_ms.
+// It is always published (any missing summand contributes 0).
 void compute_and_publish(const FrameTimings& f,
                          int64_t  offset_us,
                          uint64_t rtt_us,
+                         uint64_t  gs_pipeline_ms,
                          uint64_t& wire_clamp_counter,
                          PublishUintFn pub_u,
                          PublishIntFn  pub_i);

@@ -131,6 +131,9 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
 
     REQUIRE(lp::start("127.0.0.1", fw.port));
 
+    // Feed a synthetic GS-pipeline reading; total_ms uses this.
+    lp::record_gs_pipeline_ms(35);
+
     for (uint32_t i = 0; i < 3; ++i) {
         uint32_t rtp_ts = 100u * (i + 1);
         uint64_t base   = lp::now_us();
@@ -144,8 +147,6 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
         hdr[6]=(rtp_ts>>8)&0xff;  hdr[7]= rtp_ts &0xff;
         hdr[8]=0; hdr[9]=0; hdr[10]=0; hdr[11]=1;   // ssrc=1
         lp::on_rtp_buffer(hdr, sizeof(hdr), base);
-        lp::record_decode_done(base + 10'000);
-        lp::record_display_submit(base + 15'000);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -179,20 +180,25 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
     }
     REQUIRE(saw_offset);
 
-    // Verify all 9 spec-required facts are present somewhere in the
-    // capture vectors. Names are gated names; this catches a regression
-    // that accidentally drops one from compute_and_publish.
+    // Verify the spec-required facts are present. Names match
+    // compute_and_publish's emit list after the refactor (decode_ms and
+    // display_ms were removed; total now sums via gs_pipeline_ms).
     auto has_uint = [&](const char* name) {
         for (auto& [n, _] : uint_facts) if (n == name) return true;
         return false;
     };
     REQUIRE(has_uint("video.latency.capture_to_encode_ms"));
+    REQUIRE(has_uint("video.latency.capture_to_encode_us"));
     REQUIRE(has_uint("video.latency.encode_to_send_ms"));
+    REQUIRE(has_uint("video.latency.encode_to_send_us"));
     REQUIRE(has_uint("video.latency.wire_ms"));
-    REQUIRE(has_uint("video.latency.decode_ms"));
-    REQUIRE(has_uint("video.latency.display_ms"));
     REQUIRE(has_uint("video.latency.total_ms"));
     REQUIRE(has_uint("video.latency.clock_rtt_us"));
     REQUIRE(has_uint("video.latency.wire_clamp_count"));
     // clock_offset_us is signed (int_facts) — already covered by saw_offset above.
+    // decode_ms / display_ms were removed in the refactor; verify they're gone.
+    for (auto& [n, _] : uint_facts) {
+        REQUIRE(n != "video.latency.decode_ms");
+        REQUIRE(n != "video.latency.display_ms");
+    }
 }

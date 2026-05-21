@@ -152,7 +152,7 @@ TEST_CASE("ClockOffset: rescans after ring eviction of current best",
     REQUIRE(rtt != best_rtt_before);   // the original is gone
 }
 
-TEST_CASE("FrameMatcher: arrival then sidecar then decode then display publishes once",
+TEST_CASE("FrameMatcher: arrival then sidecar publishes once",
           "[latency_probe][matcher]") {
     lp::FrameMatcher m;
     std::vector<lp::FrameTimings> published;
@@ -162,9 +162,7 @@ TEST_CASE("FrameMatcher: arrival then sidecar then decode then display publishes
     constexpr uint32_t rtp_ts = 90000u;
 
     m.on_marker_arrival(ssrc, rtp_ts, /*gs_recv_us=*/100'000, /*now=*/100'000);
-    m.on_decode_done(/*gs_decode_us=*/110'000, /*now=*/110'000);
-    m.on_display_submit(/*gs_display_us=*/120'000, /*now=*/120'000);
-    // Sidecar arrives last — should trigger publish.
+    // Sidecar arrives second — should trigger publish.
     m.on_msg_frame(ssrc, rtp_ts,
                    /*capture_us=*/  50'000,
                    /*frame_ready_us=*/ 90'000,
@@ -175,9 +173,9 @@ TEST_CASE("FrameMatcher: arrival then sidecar then decode then display publishes
     REQUIRE(published[0].ssrc == ssrc);
     REQUIRE(published[0].rtp_ts == rtp_ts);
     REQUIRE(published[0].gs_recv_last_us == 100'000);
-    REQUIRE(published[0].gs_decode_done_us == 110'000);
-    REQUIRE(published[0].gs_display_submit_us == 120'000);
     REQUIRE(published[0].capture_us == 50'000);
+    REQUIRE(published[0].frame_ready_us == 90'000);
+    REQUIRE(published[0].last_pkt_send_us == 95'000);
 }
 
 TEST_CASE("FrameMatcher: sidecar before arrival also works",
@@ -187,46 +185,10 @@ TEST_CASE("FrameMatcher: sidecar before arrival also works",
     m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
 
     m.on_msg_frame(1u, 100u, 50'000, 90'000, 95'000, /*now=*/96'000);
+    REQUIRE(published.empty());
     m.on_marker_arrival(1u, 100u, 100'000, 100'000);
-    m.on_decode_done(110'000, 110'000);
-    m.on_display_submit(120'000, 120'000);
-
     REQUIRE(published.size() == 1);
     REQUIRE(published[0].gs_recv_last_us == 100'000);
-}
-
-TEST_CASE("FrameMatcher: FIFO decode/display binding across multiple frames",
-          "[latency_probe][matcher]") {
-    lp::FrameMatcher m;
-    std::vector<lp::FrameTimings> published;
-    m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
-
-    // Three arrivals in order.
-    m.on_marker_arrival(1u, 100u, 1'000, 1'000);
-    m.on_marker_arrival(1u, 200u, 2'000, 2'000);
-    m.on_marker_arrival(1u, 300u, 3'000, 3'000);
-
-    // Decode/display stamps arrive in order — FIFO bind.
-    m.on_decode_done(10'000, 10'000);
-    m.on_decode_done(20'000, 20'000);
-    m.on_decode_done(30'000, 30'000);
-    m.on_display_submit(11'000, 11'000);
-    m.on_display_submit(21'000, 21'000);
-    m.on_display_submit(31'000, 31'000);
-
-    // Sidecar for all three.
-    m.on_msg_frame(1u, 100u, 0, 500, 900, 1'100);
-    m.on_msg_frame(1u, 200u, 0, 1'500, 1'900, 2'100);
-    m.on_msg_frame(1u, 300u, 0, 2'500, 2'900, 3'100);
-
-    REQUIRE(published.size() == 3);
-    REQUIRE(published[0].rtp_ts == 100u);
-    REQUIRE(published[0].gs_decode_done_us == 10'000);
-    REQUIRE(published[1].gs_decode_done_us == 20'000);
-    REQUIRE(published[2].gs_decode_done_us == 30'000);
-    REQUIRE(published[0].gs_display_submit_us == 11'000);
-    REQUIRE(published[1].gs_display_submit_us == 21'000);
-    REQUIRE(published[2].gs_display_submit_us == 31'000);
 }
 
 TEST_CASE("FrameMatcher: TTL evicts orphans",
@@ -235,16 +197,15 @@ TEST_CASE("FrameMatcher: TTL evicts orphans",
     std::vector<lp::FrameTimings> published;
     m.set_publish_callback([&](const lp::FrameTimings& f){ published.push_back(f); });
 
-    // Arrival without ever getting a decode/display stamp.
+    // Arrival without ever getting a MSG_FRAME — orphan.
     m.on_marker_arrival(1u, 100u, 1'000, /*now=*/1'000);
     // Sweep with strict-> eviction: need (now - inserted) > ttl, so
     // 1us past the boundary at 500'000us-since-insert is the minimum.
     m.ttl_sweep(/*now=*/501'001, /*ttl_us=*/500'000);
+    REQUIRE(m.size() == 0);
 
-    // Subsequent arrival should now be at the head — FIFO.
+    // Subsequent frame completes normally.
     m.on_marker_arrival(1u, 200u, 600'000, 600'000);
-    m.on_decode_done(601'000, 601'000);
-    m.on_display_submit(602'000, 602'000);
     m.on_msg_frame(1u, 200u, 0, 599'000, 599'500, 603'000);
 
     REQUIRE(published.size() == 1);
@@ -274,8 +235,6 @@ TEST_CASE("FrameMatcher: duplicate marker arrival is a no-op stamp",
     // Duplicate marker for the same frame must not overwrite the recorded time.
     m.on_marker_arrival(1u, 100u, 2'000, 2'000);
 
-    m.on_decode_done(3'000, 3'000);
-    m.on_display_submit(4'000, 4'000);
     m.on_msg_frame(1u, 100u, 0, 900, 950, 5'000);
 
     REQUIRE(published.size() == 1);
@@ -298,14 +257,14 @@ TEST_CASE("compute_and_publish: normal values flow through",
     f.frame_ready_us = 11'000;
     f.last_pkt_send_us = 14'000;
     f.gs_recv_last_us = 14'500;
-    f.gs_decode_done_us = 24'500;
-    f.gs_display_submit_us = 28'500;
     f.sidecar_seen = true;
 
     int64_t offset_us = -1'000;
     uint64_t rtt_us   = 400;
+    uint64_t gs_pipeline_ms = 35;  // matches video.decode_and_handover_ms
     uint64_t clamp_counter = 0;
-    lp::compute_and_publish(f, offset_us, rtt_us, clamp_counter, cb, cbi);
+    lp::compute_and_publish(f, offset_us, rtt_us, gs_pipeline_ms,
+                            clamp_counter, cb, cbi);
 
     auto get = [&](const char* name) -> uint64_t {
         for (auto& [n, v] : captured.uint_facts) if (n == name) return v;
@@ -319,11 +278,16 @@ TEST_CASE("compute_and_publish: normal values flow through",
     REQUIRE(get("video.latency.encode_to_send_us")    == 3'000);
     REQUIRE(get("video.latency.wire_ms")              == 0);
     REQUIRE(clamp_counter == 1);
-    REQUIRE(get("video.latency.decode_ms")            == 10);
-    REQUIRE(get("video.latency.display_ms")           == 4);
-    REQUIRE(get("video.latency.total_ms")             == 27);
+    // total_ms = capture(10) + encode(3) + wire(0) + gs_pipeline(35) = 48
+    REQUIRE(get("video.latency.total_ms")             == 48);
     REQUIRE(get("video.latency.clock_rtt_us")         == 400);
     REQUIRE(get("video.latency.wire_clamp_count")     == 1);
+
+    // decode_ms and display_ms were removed in the refactor.
+    for (auto& [n, _] : captured.uint_facts) {
+        REQUIRE(n != "video.latency.decode_ms");
+        REQUIRE(n != "video.latency.display_ms");
+    }
 
     bool found_offset = false;
     for (auto& [n, v] : captured.int_facts) {
@@ -335,7 +299,7 @@ TEST_CASE("compute_and_publish: normal values flow through",
     REQUIRE(found_offset);
 }
 
-TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode",
+TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode but still publishes total",
           "[latency_probe][publish]") {
     lp::PublishedFacts captured;
     auto cb  = [&](const char* n, uint64_t v){ captured.uint_facts.emplace_back(n, v); };
@@ -346,25 +310,27 @@ TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode",
     f.frame_ready_us = 11'000;
     f.last_pkt_send_us = 14'000;
     f.gs_recv_last_us = 15'000;
-    f.gs_decode_done_us = 16'000;
-    f.gs_display_submit_us = 17'000;
     f.sidecar_seen = true;
 
     uint64_t clamp = 0;
-    lp::compute_and_publish(f, 0, 0, clamp, cb, cbi);
+    lp::compute_and_publish(f, 0, 0, /*gs_pipeline_ms=*/40, clamp, cb, cbi);
 
     for (auto& [n, _] : captured.uint_facts) {
         REQUIRE(n != "video.latency.capture_to_encode_ms");
         REQUIRE(n != "video.latency.capture_to_encode_us");
-        REQUIRE(n != "video.latency.total_ms");
     }
-    bool saw_wire = false, saw_send_us = false;
-    for (auto& [n, _] : captured.uint_facts) {
-        if (n == "video.latency.wire_ms") saw_wire = true;
+    bool saw_wire = false, saw_send_us = false, saw_total = false;
+    uint64_t total = 0;
+    for (auto& [n, v] : captured.uint_facts) {
+        if (n == "video.latency.wire_ms")           saw_wire = true;
         if (n == "video.latency.encode_to_send_us") saw_send_us = true;
+        if (n == "video.latency.total_ms") { saw_total = true; total = v; }
     }
     REQUIRE(saw_wire);
     REQUIRE(saw_send_us);
+    REQUIRE(saw_total);
+    // total = encode(3) + wire(1) + gs_pipeline(40) = 44
+    REQUIRE(total == 44);
 }
 
 TEST_CASE("wire: encode_subscribe round-trip header bytes",

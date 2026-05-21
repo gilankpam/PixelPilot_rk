@@ -314,7 +314,9 @@ TEST_CASE("compute_and_publish: normal values flow through",
     };
 
     REQUIRE(get("video.latency.capture_to_encode_ms") == 10);
+    REQUIRE(get("video.latency.capture_to_encode_us") == 10'000);
     REQUIRE(get("video.latency.encode_to_send_ms")    == 3);
+    REQUIRE(get("video.latency.encode_to_send_us")    == 3'000);
     REQUIRE(get("video.latency.wire_ms")              == 0);
     REQUIRE(clamp_counter == 1);
     REQUIRE(get("video.latency.decode_ms")            == 10);
@@ -353,11 +355,16 @@ TEST_CASE("compute_and_publish: capture_us == 0 skips capture_to_encode",
 
     for (auto& [n, _] : captured.uint_facts) {
         REQUIRE(n != "video.latency.capture_to_encode_ms");
+        REQUIRE(n != "video.latency.capture_to_encode_us");
         REQUIRE(n != "video.latency.total_ms");
     }
-    bool saw_wire = false;
-    for (auto& [n, _] : captured.uint_facts) if (n == "video.latency.wire_ms") saw_wire = true;
+    bool saw_wire = false, saw_send_us = false;
+    for (auto& [n, _] : captured.uint_facts) {
+        if (n == "video.latency.wire_ms") saw_wire = true;
+        if (n == "video.latency.encode_to_send_us") saw_send_us = true;
+    }
     REQUIRE(saw_wire);
+    REQUIRE(saw_send_us);
 }
 
 TEST_CASE("wire: encode_subscribe round-trip header bytes",

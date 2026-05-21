@@ -437,12 +437,18 @@ void compute_and_publish(const FrameTimings& f,
                          PublishIntFn  pub_i) {
     bool have_capture = f.capture_us != 0;
 
+    uint64_t cap_to_enc_us = 0;
     uint64_t cap_to_enc_ms = 0;
+    uint64_t enc_to_send_us = 0;
     uint64_t enc_to_send_ms = 0;
-    if (have_capture && f.frame_ready_us >= f.capture_us)
-        cap_to_enc_ms = (f.frame_ready_us - f.capture_us) / 1000ull;
-    if (f.last_pkt_send_us >= f.frame_ready_us)
-        enc_to_send_ms = (f.last_pkt_send_us - f.frame_ready_us) / 1000ull;
+    if (have_capture && f.frame_ready_us >= f.capture_us) {
+        cap_to_enc_us = f.frame_ready_us - f.capture_us;
+        cap_to_enc_ms = cap_to_enc_us / 1000ull;
+    }
+    if (f.last_pkt_send_us >= f.frame_ready_us) {
+        enc_to_send_us = f.last_pkt_send_us - f.frame_ready_us;
+        enc_to_send_ms = enc_to_send_us / 1000ull;
+    }
 
     int64_t adjusted_send_us =
         static_cast<int64_t>(f.last_pkt_send_us) - offset_us;
@@ -461,9 +467,12 @@ void compute_and_publish(const FrameTimings& f,
     if (f.gs_display_submit_us >= f.gs_decode_done_us)
         display_ms = (f.gs_display_submit_us - f.gs_decode_done_us) / 1000ull;
 
-    if (have_capture)
+    if (have_capture) {
         pub_u("video.latency.capture_to_encode_ms", cap_to_enc_ms);
+        pub_u("video.latency.capture_to_encode_us", cap_to_enc_us);
+    }
     pub_u("video.latency.encode_to_send_ms", enc_to_send_ms);
+    pub_u("video.latency.encode_to_send_us", enc_to_send_us);
     pub_u("video.latency.wire_ms",           wire_ms);
     pub_u("video.latency.decode_ms",         decode_ms);
     pub_u("video.latency.display_ms",        display_ms);

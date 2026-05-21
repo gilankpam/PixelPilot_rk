@@ -59,6 +59,7 @@ extern "C" {
 #include "pixelpilot_config.h"
 #include <iostream>
 #include "WiFiRSSIMonitor.hpp"
+#include "latency_probe.hpp"
 #include "gsmenu/gs_system.h"
 #include "gsmenu/air_actions.h"
 #include "gsmenu/gs_actions.h"
@@ -457,6 +458,13 @@ void *__DISPLAY_THREAD__(void *param)
 		uint64_t now_ms = get_time_ms();
 		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;
 		osd_publish_uint_fact("video.decode_and_handover_ms", NULL, 0, decode_and_handover_display_ms);
+		// Forward the same number to latency_probe so it can roll the
+		// GS-pipeline component into video.latency.total_ms. Only on
+		// real video commits (fb_id != 0) — OSD-only commits would
+		// publish 0 here and dilute the rolling figure.
+		if (fb_id != 0) {
+			latency_probe::record_gs_pipeline_ms(decode_and_handover_display_ms);
+		}
 		if (last_commit_ms != 0) {
 			uint64_t interval_ms = now_ms - last_commit_ms;
 			osd_publish_uint_fact("video.frame_interval_ms", NULL, 0, interval_ms);
@@ -1672,6 +1680,23 @@ int main(int argc, char **argv)
 		} else {
 			osd_config = {};
 		}
+		// Glass-to-glass latency probe (default disabled).
+		{
+			bool        lp_enable = false;
+			std::string lp_host;
+			uint16_t    lp_port   = 5602;
+			try {
+				if (osd_config.contains("latency_probe")) {
+					const auto& lp = osd_config["latency_probe"];
+					if (lp.contains("enable")) lp_enable = lp["enable"].get<bool>();
+					if (lp.contains("host"))   lp_host   = lp["host"].get<std::string>();
+					if (lp.contains("port"))   lp_port   = static_cast<uint16_t>(lp["port"].get<int>());
+				}
+				if (lp_enable) latency_probe::start(lp_host, lp_port);
+			} catch (const std::exception& e) {
+				spdlog::warn("[latency-probe] init error: {}", e.what());
+			}
+		}
 		if (mavlink_thread) {
 			ret = pthread_create(&tid_mavlink, NULL, __MAVLINK_THREAD__, &signal_flag);
 			assert(!ret);
@@ -1790,6 +1815,7 @@ int main(int argc, char **argv)
     remove(pidFilePath.c_str());
 
 	restore_stdin();
+	latency_probe::stop();
 	return return_value;
 }
 

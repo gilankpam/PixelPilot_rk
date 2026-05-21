@@ -1,0 +1,349 @@
+{
+    "format": "0.0.1",
+    "assets_dir": "/usr/share/pixelpilot/",
+    "widgets": [
+        {
+            "name": "Metrics background",
+            "type": "BoxWidget",
+            "x": -280,
+            "y": 70,
+            "width": 400,
+            "height": 160,
+            "color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0,
+                "alpha": 0.4
+            },
+            "facts": []
+        },
+        {
+            "type": "IconTplTextWidget",
+            "name": "CPU load widget",
+            "x": -270,
+            "y": 96,
+            "icon_path": "memory.png",
+            "template": "CPU: %u%% IO: %u%%",
+            "facts": [
+                {
+                    "name": "os_mon.cpu.load_total"
+                },
+                {
+                    "name": "os_mon.cpu.load_iowait"
+                }
+            ]
+        },
+        {
+            "name": "Video FPS and resolution",
+            "type": "VideoWidget",
+            "x": -270,
+            "y": 126,
+            "icon_path": "framerate.png",
+            "template": "%u fps | %ux%u",
+            "per_second_window_s": 2,
+            "per_second_bucket_ms": 200,
+            "facts": [
+                {
+                    "__comment": "Will be converted to per-second",
+                    "name": "video.displayed_frame"
+                },
+                {
+                    "name": "video.width"
+                },
+                {
+                    "name": "video.height"
+                }
+            ]
+        },
+        {
+            "name": "Video link throughput",
+            "type": "VideoBitrateWidget",
+            "x": -270,
+            "y": 156,
+            "icon_path": "network.png",
+            "template": "%f Mbps",
+            "per_second_window_s": 2,
+            "per_second_bucket_ms": 100,
+            "facts": [
+                {
+                    "__comment": "Should be sum per-second, scaled to Megs",
+                    "name": "gstreamer.received_bytes"
+                }
+            ]
+        },
+        {
+            "name": "G2G latency (total)",
+            "type": "IconTplTextWidget",
+            "x": -270,
+            "y": 186,
+            "icon_path": "framerate.png",
+            "template": "G2G %u ms (W%u GS%u)",
+            "facts": [
+                {
+                    "name": "video.latency.total_ms"
+                },
+                {
+                    "name": "video.latency.wire_ms"
+                },
+                {
+                    "name": "video.decode_and_handover_ms"
+                }
+            ]
+        },
+        {
+            "name": "DVR status",
+            "type": "DvrStatusWidget",
+            "x": -270,
+            "y": 216,
+            "icon_path": "sdcard-white.png",
+            "text": "Recording",
+            "facts": [
+                {
+                    "name": "dvr.recording"
+                }
+            ]
+        },
+        {
+            "name": "RSSI & SNR background",
+            "type": "BoxWidget",
+            "x": -280,
+            "y": 240,
+            "width": 400,
+            "height": 60,
+            "color": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0,
+                "alpha": 0.8
+            },
+            "facts": []
+        },
+        {
+            "type": "TplTextWidget",
+            "name": "RSSI",
+            "template": "RSSI: %i | %i | %i | %i | %i | %i",
+            "x": -270,
+            "y": 260,
+            "facts": [
+                {
+                    "name": "wfbcli.rx.ant_stats.rssi_avg",
+                    "tags": {
+                        "ant_id": "0",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.rssi_avg",
+                    "tags": {
+                        "ant_id": "1",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.rssi_avg",
+                    "tags": {
+                        "ant_id": "256",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.rssi_avg",
+                    "tags": {
+                        "ant_id": "257",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.rssi_avg",
+                    "tags": {
+                        "ant_id": "512",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.rssi_avg",
+                    "tags": {
+                        "ant_id": "513",
+                        "id": "video rx"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "TplTextWidget",
+            "name": "SNR",
+            "template": "SNR: %i | %i | %i | %i | %i | %i",
+            "x": -270,
+            "y": 290,
+            "facts": [
+                {
+                    "name": "wfbcli.rx.ant_stats.snr_avg",
+                    "tags": {
+                        "ant_id": "0",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.snr_avg",
+                    "tags": {
+                        "ant_id": "1",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.snr_avg",
+                    "tags": {
+                        "ant_id": "256",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.snr_avg",
+                    "tags": {
+                        "ant_id": "257",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.snr_avg",
+                    "tags": {
+                        "ant_id": "512",
+                        "id": "video rx"
+                    }
+                },
+                {
+                    "name": "wfbcli.rx.ant_stats.snr_avg",
+                    "tags": {
+                        "ant_id": "513",
+                        "id": "video rx"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "all",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 320,
+            "width": 300,
+            "height": 50,
+            "window_s": 1,
+            "num_buckets": 10,
+            "stats_kind": "avg",
+            "facts": [
+                {
+                    "name": "wfbcli.rx.packets.all.delta"
+                }
+            ]
+        },
+        {
+            "name": "fec_rec",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 380,
+            "width": 300,
+            "height": 50,
+            "window_s": 1,
+            "num_buckets": 10,
+            "stats_kind": "avg",
+            "facts": [
+                {
+                    "name": "wfbcli.rx.packets.fec_rec.delta"
+                }
+            ]
+        },
+        {
+            "name": "lost",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 440,
+            "width": 300,
+            "height": 50,
+            "window_s": 1,
+            "num_buckets": 10,
+            "stats_kind": "avg",
+            "facts": [
+                {
+                    "name": "wfbcli.rx.packets.lost.delta"
+                }
+            ]
+        },
+        {
+            "name": "Video stutter (numeric)",
+            "type": "VideoStutterWidget",
+            "x": -280,
+            "y": 530,
+            "icon_path": "framerate.png",
+            "template": "STUT %u ms \u00b7 %u/s \u25b2%u",
+            "per_second_window_s": 1,
+            "per_second_bucket_ms": 100,
+            "facts": [
+                {
+                    "name": "video.frame_interval_ms"
+                }
+            ]
+        },
+        {
+            "name": "Video stutter (graph)",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 550,
+            "width": 300,
+            "height": 60,
+            "window_s": 10,
+            "num_buckets": 20,
+            "stats_kind": "max",
+            "min_y": 0,
+            "max_y": 100,
+            "facts": [
+                {
+                    "name": "video.frame_interval_ms"
+                }
+            ]
+        },
+        {
+            "name": "G2G latency (graph)",
+            "type": "BarChartWidget",
+            "x": -280,
+            "y": 620,
+            "width": 300,
+            "height": 60,
+            "window_s": 10,
+            "num_buckets": 20,
+            "stats_kind": "max",
+            "min_y": 0,
+            "max_y": 250,
+            "facts": [
+                {
+                    "name": "video.latency.total_ms"
+                }
+            ]
+        },
+        {
+            "name": "Custom fading message",
+            "type": "PopupWidget",
+            "x": 400,
+            "y": 50,
+            "timeout_ms": 10000,
+            "facts": [
+                {
+                    "name": "osd.custom_message"
+                }
+            ]
+        },
+        {
+            "name": "msposd",
+            "type": "ExternalSurfaceWidget",
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "facts": []
+        }
+    ],
+    "latency_probe": {
+        "enable": false,
+        "host": "10.5.0.10",
+        "port": 5602
+    }
+}

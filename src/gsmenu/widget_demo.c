@@ -1,0 +1,25 @@
+#include <lvgl.h>
+#include "styles.h"
+
+/* Defined here; subsequent widget tasks append to demo_root via demo_root_obj(). */
+static lv_obj_t *demo_root = NULL;
+
+lv_obj_t *demo_root_obj(void) { return demo_root; }
+
+void pp_widget_demo_main(void) {
+    style_init();
+
+    lv_obj_t *scr = lv_screen_active();
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x1a3a2a), 0);
+
+    demo_root = lv_obj_create(scr);
+    lv_obj_set_size(demo_root, LV_PCT(78), LV_PCT(100));
+    lv_obj_set_pos(demo_root, 0, 0);
+    lv_obj_add_style(demo_root, &pp_style_panel, 0);
+    lv_obj_set_flex_flow(demo_root, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(demo_root, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_scroll_dir(demo_root, LV_DIR_VER);
+
+    /* Subsequent widget tasks add demo rows here via demo_root_obj(). */
+}

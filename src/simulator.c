@@ -84,6 +84,12 @@ int main(int argc, char **argv)
     lv_obj_set_size(obj, LV_PCT(100), LV_PCT(100));
     lv_image_set_inner_align(obj, LV_IMAGE_ALIGN_STRETCH);
 
+    extern void pp_widget_demo_main(void);
+    if (getenv("PP_WIDGET_DEMO")) {
+        pp_widget_demo_main();
+        while (1) { handle_keyboard_input(); lv_task_handler(); usleep(5000); }
+    }
+
     pp_menu_main();
     while (1) {
         handle_keyboard_input();

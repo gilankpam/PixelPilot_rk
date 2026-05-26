@@ -108,6 +108,7 @@ set(SIMULATOR_SOURCES
         src/gsmenu/ui.c
         src/gsmenu/styles.h
         src/gsmenu/styles.c
+        src/gsmenu/widget_demo.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c

@@ -63,6 +63,7 @@ extern "C" {
 #include "gsmenu/gs_system.h"
 #include "gsmenu/air_actions.h"
 #include "gsmenu/gs_actions.h"
+#include "gsmenu/settings.h"
 #include "menu.h"
 
 
@@ -1438,6 +1439,7 @@ int main(int argc, char **argv)
 
 	spdlog::set_level(log_level);
 	idr_set_enabled(!disable_gregidr);
+	pp_settings_register_stub();
 
 	if (dvr_template != NULL && (dvr_mode == DVR_MODE_RAW || dvr_mode == DVR_MODE_BOTH) && video_framerate < 0) {
 		printf("--dvr-framerate must be provided when raw DVR is enabled.\n"

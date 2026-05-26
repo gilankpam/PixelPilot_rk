@@ -11,6 +11,7 @@
 #include "gsmenu/helper.h"
 #include "gsmenu/air_actions.h"
 #include "gsmenu/gs_actions.h"
+#include "gsmenu/settings.h"
 
 void dispatch_input_char(char c);
 
@@ -71,6 +72,7 @@ void my_log_cb(lv_log_level_t level, const char * buf)
 
 int main(int argc, char **argv)
 {
+    pp_settings_register_stub();
     lv_log_register_print_cb(my_log_cb);
     lv_init();
     lv_disp_t * disp = lv_sdl_window_create(1920,1080);

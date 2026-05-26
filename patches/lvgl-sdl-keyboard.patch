@@ -1,0 +1,19 @@
+diff --git a/src/drivers/sdl/lv_sdl_keyboard.c b/src/drivers/sdl/lv_sdl_keyboard.c
+index 0bb94d6e3..b83e08063 100644
+--- a/src/drivers/sdl/lv_sdl_keyboard.c
++++ b/src/drivers/sdl/lv_sdl_keyboard.c
+@@ -115,10 +115,12 @@ void lv_sdl_keyboard_handler(SDL_Event * event)
+     lv_display_t * disp = lv_sdl_get_disp_from_win_id(win_id);
+ 
+ 
+-    /*Find a suitable indev*/
++    /*Find a suitable indev — only consider SDL keyboard indevs (skip any other
++     *KEYPAD indevs created by the user, whose driver_data is not lv_sdl_keyboard_t).*/
+     lv_indev_t * indev = lv_indev_get_next(NULL);
+     while(indev) {
+-        if(lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD) {
++        if(lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD &&
++           lv_indev_get_read_cb(indev) == sdl_keyboard_read) {
+             /*If disp is NULL for any reason use the first indev with the correct type*/
+             if(disp == NULL || lv_indev_get_display(indev) == disp) break;
+         }

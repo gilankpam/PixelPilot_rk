@@ -4,18 +4,24 @@
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
+#ifndef USE_SIMULATOR
 #include <gpiod.h>
+#endif
 #include <dirent.h>
 #include <string.h>
 #include <time.h>
+#ifndef USE_SIMULATOR
 #include <yaml-cpp/yaml.h>
+#endif
 #include <glob.h>
 #include "main.h"
 #include "lvgl/lvgl.h"
 #include "input.h"
 #include "gsmenu/gs_system.h"
 
+#ifndef USE_SIMULATOR
 extern YAML::Node config;
+#endif
 extern lv_group_t *main_group;
 extern lv_indev_t * indev_drv;
 
@@ -433,11 +439,11 @@ void toggle_screen(void) {
     }
 }
 
-// Handle WASD input and convert to LVGL key codes
-void handle_keyboard_input(void) {
-    char c;
-    if (read(STDIN_FILENO, &c, 1) > 0) {
-        switch(c) {
+// Map a single ASCII character (w/a/s/d/Enter/q/t) to LVGL key events,
+// respecting the current control_mode. Used by both the stdin reader and
+// the SDL window key bridge (simulator only).
+extern "C" void dispatch_input_char(char c) {
+    switch(c) {
             case 'w':
             case 'W':
                 switch (control_mode)
@@ -546,6 +552,14 @@ void handle_keyboard_input(void) {
                 raise(SIGINT);
                 break;
         }
+}
+
+// Handle WASD input from stdin (terminal). Also driven from the SDL window
+// via the SDL event bridge in simulator.c which calls dispatch_input_char.
+void handle_keyboard_input(void) {
+    char c;
+    if (read(STDIN_FILENO, &c, 1) > 0) {
+        dispatch_input_char(c);
     }
 }
 

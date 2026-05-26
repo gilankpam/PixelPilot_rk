@@ -12,9 +12,36 @@ option(USE_SIMULATOR "Build the simulator version of the application" OFF)
 option(BUILD_TESTS "Build unit tests" OFF)
 
 # LVGL setup
-set(LV_USE_LINUX_DRM ON)
+if(NOT USE_SIMULATOR)
+  set(LV_USE_LINUX_DRM ON)
+endif()
 set(LV_CONF_BUILD_DISABLE_DEMOS 1)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES 1)
+
+# Apply local LVGL patches before adding the subdirectory. The simulator
+# needs lv_sdl_keyboard to ignore non-SDL KEYPAD indevs (otherwise it
+# dereferences NULL driver_data on the project's virtual keyboard).
+if(USE_SIMULATOR)
+  set(_lvgl_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/lvgl-sdl-keyboard.patch")
+  if(EXISTS "${_lvgl_patch}")
+    execute_process(
+      COMMAND git apply --check --reverse "${_lvgl_patch}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lvgl"
+      RESULT_VARIABLE _patch_already_applied
+      OUTPUT_QUIET ERROR_QUIET)
+    if(NOT _patch_already_applied EQUAL 0)
+      message(STATUS "Applying ${_lvgl_patch}")
+      execute_process(
+        COMMAND git apply "${_lvgl_patch}"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lvgl"
+        RESULT_VARIABLE _patch_result)
+      if(NOT _patch_result EQUAL 0)
+        message(FATAL_ERROR "Failed to apply ${_lvgl_patch}")
+      endif()
+    endif()
+  endif()
+endif()
+
 add_subdirectory(lvgl)
 
 # Set include directories for LVGL BEFORE any other targets
@@ -26,8 +53,10 @@ set(CMAKE_C_STANDARD 99) # LVGL officially supports C99 and above
 set(CMAKE_CXX_STANDARD 17) #C17
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-pkg_check_modules(LIBDRM REQUIRED libdrm)
-pkg_check_modules(CAIRO IMPORTED_TARGET REQUIRED cairo)
+if(NOT USE_SIMULATOR)
+  pkg_check_modules(LIBDRM REQUIRED libdrm)
+  pkg_check_modules(CAIRO IMPORTED_TARGET REQUIRED cairo)
+endif()
 pkg_check_modules(SPDLOG REQUIRED spdlog)
 
 find_package(PNG REQUIRED)
@@ -176,7 +205,8 @@ if(USE_SIMULATOR)
   target_compile_definitions(lvgl PRIVATE USE_SIMULATOR)
   pkg_check_modules(LIBSDL REQUIRED sdl2)
   add_executable(${PROJECT_NAME} ${SIMULATOR_SOURCES})
-  target_link_libraries(${PROJECT_NAME} lvgl ${LIBSDL_LIBRARIES} ${PNG_LIBRARIES} ${LIBDRM_LIBRARIES})
+  target_link_libraries(${PROJECT_NAME} lvgl ${LIBSDL_LIBRARIES} ${PNG_LIBRARIES})
+  target_include_directories(${PROJECT_NAME} PRIVATE ${LIBSDL_INCLUDE_DIRS})
 else()
   find_package(nlohmann_json 3 REQUIRED)
   find_package(yaml-cpp REQUIRED)

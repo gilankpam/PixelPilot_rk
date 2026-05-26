@@ -95,6 +95,14 @@ void show_error(CommandResult result) {
 }
 
 char* run_command(const char* command) {
+#ifdef USE_SIMULATOR
+    /* On the host simulator gsmenu.sh isn't available; running it just spams
+     * popups for every menu page load. Short-circuit to an empty result. */
+    printf("Running command: %s\n", command);
+    char *out = (char*)malloc(1);
+    if (out) out[0] = '\0';
+    return out;
+#endif
     CommandResult result = { NULL, NULL, NULL, -1 };
 
     result.command = strdup(command);

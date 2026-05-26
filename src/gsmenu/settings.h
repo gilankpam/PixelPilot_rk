@@ -29,7 +29,12 @@ typedef struct {
                        pp_settings_done_cb on_done);
 } pp_settings_provider_t;
 
-/* Install (or replace) the active provider. Pointer must outlive the program. */
+/* Install (or replace) the active provider. Pointer must outlive the program.
+ *
+ * Threading: registration is expected to happen once at startup, before any
+ * pp_settings_set/get/set_async calls. The implementation is not safe under
+ * concurrent register-vs-call. Real-world callers run in a single LVGL UI
+ * thread so this is intentional. */
 void pp_settings_register(const pp_settings_provider_t *provider);
 
 /* Convenience wrappers around the registered provider. Safe to call before

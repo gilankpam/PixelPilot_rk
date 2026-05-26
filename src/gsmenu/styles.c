@@ -11,6 +11,17 @@ lv_style_t style_openipc_section;
 lv_style_t style_openipc_dark_background;
 lv_style_t style_openipc_lightdark_background;
 
+lv_style_t pp_style_panel;
+lv_style_t pp_style_tabbar;
+lv_style_t pp_style_tab;
+lv_style_t pp_style_tab_active;
+lv_style_t pp_style_section_hdr;
+lv_style_t pp_style_row;
+lv_style_t pp_style_row_focus;
+lv_style_t pp_style_value_focus;
+lv_style_t pp_style_divider;
+lv_style_t pp_style_switch_on;
+
 
 int style_init(void) {
     lv_style_reset(&style_rootmenu);
@@ -60,6 +71,80 @@ int style_init(void) {
     lv_style_set_text_color(&style_openipc_disabled, lv_color_darken( lv_color_make(0xff, 0xff, 0xff), 50));
     //lv_style_set_line_color(&style_openipc_disabled, lv_color_hex(0xffd8ce36));
     //lv_style_set_border_color(&style_openipc_disabled, lv_color_hex(0xffe61212));
+
+    /* Color tokens */
+    const lv_color_t c_panel   = lv_color_hex(0x0F1116);
+    const lv_color_t c_tabbar  = lv_color_hex(0x000000);
+    const lv_color_t c_text    = lv_color_hex(0xFFFFFF);
+    const lv_color_t c_accent  = lv_color_hex(0x6B7FFF);
+    const lv_color_t c_accentd = lv_color_hex(0x4C60D8);
+
+    lv_style_init(&pp_style_panel);
+    lv_style_set_bg_color(&pp_style_panel, c_panel);
+    lv_style_set_bg_opa(&pp_style_panel, LV_OPA_COVER);
+    lv_style_set_border_width(&pp_style_panel, 0);
+    lv_style_set_radius(&pp_style_panel, 0);
+    lv_style_set_pad_all(&pp_style_panel, 0);
+
+    lv_style_init(&pp_style_tabbar);
+    lv_style_set_bg_color(&pp_style_tabbar, c_tabbar);
+    lv_style_set_bg_opa(&pp_style_tabbar, 77);
+    lv_style_set_border_side(&pp_style_tabbar, LV_BORDER_SIDE_RIGHT);
+    lv_style_set_border_color(&pp_style_tabbar, lv_color_hex(0xFFFFFF));
+    lv_style_set_border_opa(&pp_style_tabbar, 33);
+    lv_style_set_border_width(&pp_style_tabbar, 1);
+    lv_style_set_pad_ver(&pp_style_tabbar, 16);
+    lv_style_set_radius(&pp_style_tabbar, 0);
+
+    lv_style_init(&pp_style_tab);
+    lv_style_set_bg_opa(&pp_style_tab, LV_OPA_TRANSP);
+    lv_style_set_text_color(&pp_style_tab, c_text);
+    lv_style_set_text_opa(&pp_style_tab, 115);
+    lv_style_set_pad_ver(&pp_style_tab, 12);
+    lv_style_set_radius(&pp_style_tab, 0);
+    lv_style_set_border_width(&pp_style_tab, 0);
+
+    lv_style_init(&pp_style_tab_active);
+    lv_style_set_text_color(&pp_style_tab_active, c_accent);
+    lv_style_set_bg_color(&pp_style_tab_active, c_accentd);
+    lv_style_set_bg_opa(&pp_style_tab_active, 79);
+
+    lv_style_init(&pp_style_section_hdr);
+    lv_style_set_text_color(&pp_style_section_hdr, c_text);
+    lv_style_set_text_opa(&pp_style_section_hdr, 102);
+    lv_style_set_text_letter_space(&pp_style_section_hdr, 2);
+    lv_style_set_pad_top(&pp_style_section_hdr, 8);
+    lv_style_set_pad_left(&pp_style_section_hdr, 20);
+    lv_style_set_pad_bottom(&pp_style_section_hdr, 4);
+
+    lv_style_init(&pp_style_row);
+    lv_style_set_bg_opa(&pp_style_row, LV_OPA_TRANSP);
+    lv_style_set_pad_hor(&pp_style_row, 20);
+    lv_style_set_pad_ver(&pp_style_row, 8);
+    lv_style_set_text_color(&pp_style_row, c_text);
+    lv_style_set_border_side(&pp_style_row, LV_BORDER_SIDE_BOTTOM);
+    lv_style_set_border_color(&pp_style_row, lv_color_hex(0xFFFFFF));
+    lv_style_set_border_opa(&pp_style_row, 33);
+    lv_style_set_border_width(&pp_style_row, 1);
+    lv_style_set_radius(&pp_style_row, 0);
+
+    lv_style_init(&pp_style_row_focus);
+    lv_style_set_bg_color(&pp_style_row_focus, c_accentd);
+    lv_style_set_bg_opa(&pp_style_row_focus, 79);
+    lv_style_set_border_side(&pp_style_row_focus, LV_BORDER_SIDE_LEFT);
+    lv_style_set_border_color(&pp_style_row_focus, c_accent);
+    lv_style_set_border_opa(&pp_style_row_focus, LV_OPA_COVER);
+    lv_style_set_border_width(&pp_style_row_focus, 2);
+    lv_style_set_pad_left(&pp_style_row_focus, 18);
+
+    lv_style_init(&pp_style_value_focus);
+    lv_style_set_text_color(&pp_style_value_focus, c_accent);
+
+    lv_style_init(&pp_style_divider);
+    lv_style_set_border_width(&pp_style_divider, 0);
+
+    lv_style_init(&pp_style_switch_on);
+    lv_style_set_bg_color(&pp_style_switch_on, c_accent);
 
     return 0;
 }

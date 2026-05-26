@@ -207,6 +207,18 @@ if(USE_SIMULATOR)
   add_executable(${PROJECT_NAME} ${SIMULATOR_SOURCES})
   target_link_libraries(${PROJECT_NAME} lvgl ${LIBSDL_LIBRARIES} ${PNG_LIBRARIES})
   target_include_directories(${PROJECT_NAME} PRIVATE ${LIBSDL_INCLUDE_DIRS})
+
+  # Standalone tests for the settings dispatcher — links only what it needs,
+  # avoiding the heavy rockchip/drm/gst deps that pixelpilot_tests pulls in.
+  find_package(Catch2 QUIET)
+  if(Catch2_FOUND)
+    add_executable(settings_tests
+      src/gsmenu/settings.c
+      tests/test_settings.cpp)
+    target_include_directories(settings_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(settings_tests Catch2::Catch2WithMain)
+  endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)
   find_package(yaml-cpp REQUIRED)

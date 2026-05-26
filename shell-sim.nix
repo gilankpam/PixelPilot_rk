@@ -9,5 +9,6 @@ pkgs.mkShell {
     pkgs.cairo
     pkgs.spdlog
     pkgs.fmt
+    pkgs.catch2_3
   ];
 }

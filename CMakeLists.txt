@@ -108,6 +108,9 @@ set(SIMULATOR_SOURCES
         src/gsmenu/ui.c
         src/gsmenu/styles.h
         src/gsmenu/styles.c
+        src/gsmenu/settings.h
+        src/gsmenu/settings.c
+        src/gsmenu/settings_stub.c
         src/lvosd.h
         src/lvosd.c
         src/menu.h
@@ -159,7 +162,10 @@ set(LIB_SOURCE_FILES
         src/gsmenu/gs_connection_checker.c
         src/gsmenu/styles.h
         src/gsmenu/styles.c
-        src/gsmenu/ui.c 
+        src/gsmenu/settings.h
+        src/gsmenu/settings.c
+        src/gsmenu/settings_stub.c
+        src/gsmenu/ui.c
         src/lvosd.h
         src/lvosd.c
         src/menu.h

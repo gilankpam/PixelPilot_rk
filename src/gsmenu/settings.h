@@ -47,6 +47,9 @@ void  pp_settings_set_async(const char *domain, const char *page,
                             const char *key, const char *value,
                             pp_settings_done_cb on_done);
 
+/* Registers the built-in no-op stub provider. */
+void pp_settings_register_stub(void);
+
 #ifdef __cplusplus
 }
 #endif

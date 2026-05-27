@@ -154,3 +154,31 @@ TEST_CASE("integration: PATCH validation error short-circuits apply",
 
     m.stop();
 }
+
+TEST_CASE("integration: dynamic_link_locked rejected client-side",
+          "[fpvd][network]") {
+    FpvdMockServer m;
+    /* Snapshot has dynamicLink.enabled = true so client-side lock check fires
+     * before any network call. */
+    m.get_response =
+      R"({"link":{"channel":161,"width":20,"txpower":1,"mcs":2,)"
+      R"("fec":{"k":8,"n":12}},"video":{"bitrate":8192,"qpDelta":-4,)"
+      R"("roi":{"enabled":true,"qp":0,"center":0.4,"steps":2}},)"
+      R"("dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    for (int i = 0; i < 50 && m.get_calls == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE(pp_settings_is_connected() == true);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "mcs_index") == true);
+
+    /* Attempting to set the locked field should be rejected before any
+     * PATCH; the server sees no patch call. */
+    int before = m.patch_calls;
+    pp_settings_set_async("air", "wfbng", "mcs_index", "5", nullptr, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    REQUIRE(m.patch_calls == before);
+
+    m.stop();
+}

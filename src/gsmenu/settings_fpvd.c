@@ -370,13 +370,16 @@ static void done_dispatch_async(void *ptr) {
 static void schedule_done(pp_settings_done_cb cb, void *ud,
                           int rc, const char *err) {
     if (!cb) return;
+    lv_lock();
     fpvd_done_dispatch_t *d = lv_malloc(sizeof *d);
+    if (!d) { lv_unlock(); return; }
     d->cb = cb;
     d->user_data = ud;
     d->rc = rc;
     if (err) { strncpy(d->err, err, sizeof d->err - 1); d->err[sizeof d->err - 1] = '\0'; }
     else d->err[0] = '\0';
     lv_async_call(done_dispatch_async, d);
+    lv_unlock();
 }
 
 static void listener_dispatch_async(void *ptr) {
@@ -389,7 +392,9 @@ static void listener_dispatch_async(void *ptr) {
 }
 
 static void notify_listener(void) {
+    lv_lock();
     lv_async_call(listener_dispatch_async, NULL);
+    lv_unlock();
 }
 
 /* -------------------------------------------------------------------------
@@ -399,6 +404,7 @@ static void notify_listener(void) {
 static char *url_join(const char *base, const char *path) {
     size_t n = strlen(base) + strlen(path) + 1;
     char *u = malloc(n);
+    if (!u) return NULL;
     snprintf(u, n, "%s%s", base, path);
     return u;
 }
@@ -406,6 +412,7 @@ static char *url_join(const char *base, const char *path) {
 /* Called with G.mu HELD. Releases and re-acquires mutex around the HTTP call. */
 static void refresh_snapshot_unlocked(void) {
     char *u = url_join(G.base_url, "/config");
+    if (!u) { G.connected = false; return; }
     pthread_mutex_unlock(&G.mu);
     fpvd_http_result_t r = fpvd_http_get(u);
     pthread_mutex_lock(&G.mu);
@@ -470,6 +477,11 @@ static void run_job_unlocked(fpvd_job_t job) {
 
     char *patch_url = url_join(G.base_url, "/config");
     char *apply_url = url_join(G.base_url, "/apply");
+    if (!patch_url || !apply_url) {
+        free(patch_url); free(apply_url); if (body_s) free(body_s);
+        schedule_done(job.on_done, job.user_data, -1, "Out of memory");
+        return;
+    }
 
     fpvd_http_result_t r = fpvd_http_patch_json(patch_url, body_s ? body_s : "{}");
     int rc = 0;
@@ -568,7 +580,8 @@ static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
         }
     }
     if (G.queue_n >= FPVD_QUEUE_CAP) {
-        if (cb) cb(-1, "Settings queue full", ud);  /* caller is LVGL thread, safe */
+        /* Schedule deferred so we don't run the callback under G.mu. */
+        schedule_done(cb, ud, -1, "Settings queue full");
         return;
     }
     fpvd_job_t *j = &G.queue[G.queue_n++];
@@ -679,6 +692,7 @@ void pp_settings_register_fpvd(void) {
         pthread_mutex_init(&G.mu, NULL);
         pthread_cond_init(&G.cv, NULL);
     }
+    pthread_mutex_lock(&G.mu);
     G.stop      = false;
     G.visible   = false;
     G.connected = false;
@@ -686,6 +700,8 @@ void pp_settings_register_fpvd(void) {
     G.queue_n   = 0;
     G.listener_cb = NULL;
     G.listener_ud = NULL;
+    pthread_mutex_unlock(&G.mu);
+    pthread_cond_signal(&G.cv);
 
     /* Prime snapshot synchronously (best-effort). */
     pthread_mutex_lock(&G.mu);

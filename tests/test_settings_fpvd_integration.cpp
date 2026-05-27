@@ -128,3 +128,29 @@ TEST_CASE("integration: PATCH + apply happy path", "[fpvd][network]") {
 
     m.stop();
 }
+
+TEST_CASE("integration: PATCH validation error short-circuits apply",
+          "[fpvd][network]") {
+    FpvdMockServer m;
+    m.patch_error_body =
+      R"({"error":"validation","message":"schema validation failed",)"
+      R"("details":[{"path":"link.mcs","message":"must be 0..7"}]})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    for (int i = 0; i < 50 && m.get_calls == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    /* Fire a write; server returns 400 on PATCH. Worker should NOT proceed
+     * to POST /apply. */
+    pp_settings_set_async("air", "wfbng", "mcs_index", "9", nullptr, nullptr);
+    for (int i = 0; i < 200 && m.patch_calls == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(m.patch_calls >= 1);
+    /* Apply should NOT have been called (PATCH 400 short-circuits). */
+    /* Wait a touch longer to be confident the worker has finished the job. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    REQUIRE(m.apply_calls == 0);
+
+    m.stop();
+}

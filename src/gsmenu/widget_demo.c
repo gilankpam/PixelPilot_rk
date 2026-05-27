@@ -2,6 +2,7 @@
 #include "styles.h"
 #include "widgets/pp_section_header.h"
 #include "widgets/pp_row.h"
+#include "widgets/pp_toggle.h"
 
 /* Defined here; subsequent widget tasks append to demo_root via demo_root_obj(). */
 static lv_obj_t *demo_root = NULL;
@@ -30,6 +31,9 @@ void pp_widget_demo_main(void) {
     pp_row_text(demo_root, LV_SYMBOL_SETTINGS, "Version", NULL);
     pp_row_text(demo_root, LV_SYMBOL_SETTINGS, "Disk",    NULL);
     pp_row_text(demo_root, LV_SYMBOL_VIDEO,    "Codec",   "codec");
+
+    pp_toggle(demo_root, LV_SYMBOL_REFRESH, "Mirror", "air", "camera", "mirror");
+    pp_toggle(demo_root, LV_SYMBOL_REFRESH, "Flip",   "air", "camera", "flip");
 
     /* Subsequent widget tasks add demo rows here via demo_root_obj(). */
 }

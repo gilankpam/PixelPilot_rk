@@ -213,3 +213,10 @@ TEST_CASE("lock: prefix overshoot is not a match", "[fpvd][lock]") {
     /* "link.widthful" is not a child of "link.width". */
     REQUIRE(fpvd_is_locked_path("link.widthful") == false);
 }
+
+TEST_CASE("http: GET against impossible host returns transport failure",
+          "[fpvd][http]") {
+    fpvd_http_result_t r = fpvd_http_get("http://127.0.0.1:1/nope");
+    REQUIRE(r.status == 0);
+    fpvd_http_result_free(&r);
+}

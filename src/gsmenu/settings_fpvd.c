@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <sys/types.h>
+#include <curl/curl.h>
 
 static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
@@ -245,6 +246,71 @@ bool fpvd_is_locked_path(const char *path) {
         if (path[lp_len] == '\0' || path[lp_len] == '.') return true;
     }
     return false;
+}
+
+static size_t curl_write_cb(void *ptr, size_t sz, size_t nm, void *ud) {
+    fpvd_http_result_t *r = (fpvd_http_result_t *)ud;
+    size_t add = sz * nm;
+    char *nb = realloc(r->body, r->body_len + add + 1);
+    if (!nb) return 0;
+    r->body = nb;
+    memcpy(r->body + r->body_len, ptr, add);
+    r->body_len += add;
+    r->body[r->body_len] = '\0';
+    return add;
+}
+
+static void fpvd_curl_init_once(void) {
+    static int done = 0;
+    if (!done) { curl_global_init(CURL_GLOBAL_DEFAULT); done = 1; }
+}
+
+static fpvd_http_result_t http_do(const char *url, const char *method,
+                                  const char *body) {
+    fpvd_curl_init_once();
+    fpvd_http_result_t r = { 0, NULL, 0 };
+    CURL *c = curl_easy_init();
+    if (!c) return r;
+    struct curl_slist *hdrs = NULL;
+    curl_easy_setopt(c, CURLOPT_URL, url);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT_MS, 1500L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, 5000L);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &r);
+    curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+    if (body) {
+        hdrs = curl_slist_append(hdrs, "Content-Type: application/json");
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER, hdrs);
+        curl_easy_setopt(c, CURLOPT_POSTFIELDS, body);
+        curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)strlen(body));
+    }
+    if (strcmp(method, "GET") == 0) {
+        /* default */
+    } else if (strcmp(method, "POST") == 0) {
+        curl_easy_setopt(c, CURLOPT_POST, 1L);
+        if (!body) curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, 0L);
+    } else {
+        curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, method);
+    }
+    CURLcode rc = curl_easy_perform(c);
+    if (rc == CURLE_OK) {
+        long code = 0;
+        curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+        r.status = (int)code;
+    }
+    if (hdrs) curl_slist_free_all(hdrs);
+    curl_easy_cleanup(c);
+    return r;
+}
+
+fpvd_http_result_t fpvd_http_get(const char *url)  { return http_do(url, "GET",  NULL); }
+fpvd_http_result_t fpvd_http_post(const char *url) { return http_do(url, "POST", NULL); }
+fpvd_http_result_t fpvd_http_patch_json(const char *url, const char *body) {
+    return http_do(url, "PATCH", body);
+}
+
+void fpvd_http_result_free(fpvd_http_result_t *r) {
+    if (r && r->body) { free(r->body); r->body = NULL; r->body_len = 0; }
 }
 
 void pp_settings_register_fpvd(void) {

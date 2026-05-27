@@ -49,6 +49,18 @@ cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t ty
  * active). */
 bool fpvd_is_locked_path(const char *path);
 
+typedef struct {
+    int   status;          /* 0 = transport failure; else HTTP status */
+    char *body;            /* heap-allocated, may be NULL */
+    size_t body_len;
+} fpvd_http_result_t;
+
+void fpvd_http_result_free(fpvd_http_result_t *r);
+
+fpvd_http_result_t fpvd_http_get(const char *url);
+fpvd_http_result_t fpvd_http_patch_json(const char *url, const char *body);
+fpvd_http_result_t fpvd_http_post(const char *url);
+
 #ifdef __cplusplus
 }
 #endif

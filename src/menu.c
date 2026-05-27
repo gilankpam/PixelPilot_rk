@@ -51,10 +51,12 @@ void pp_menu_main(void)
     lv_obj_clear_flag(pp_menu_screen, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Root row inside the menu screen: tabbar (left) + tab pages (right).
-     * Anchored to left edge; takes 78% width to keep video visible on the right. */
+     * Anchored to left edge; ~45% width fits the row content (icon + 200px
+     * label column + value) without leaving a large empty area between
+     * values and the panel's right edge. Leaves more video visible too. */
     lv_obj_t *root = lv_obj_create(pp_menu_screen);
     lv_obj_remove_style_all(root);
-    lv_obj_set_size(root, LV_PCT(78), LV_PCT(100));
+    lv_obj_set_size(root, LV_PCT(45), LV_PCT(100));
     lv_obj_set_pos(root, 0, 0);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
 

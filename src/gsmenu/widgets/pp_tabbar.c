@@ -60,8 +60,17 @@ static void on_focus(lv_event_t *e) {
  * starts moving through rows. Pressing A (HOME) in the page returns
  * focus to the tabbar — that path is handled in pp_page. */
 static void on_tab_key(lv_event_t *e) {
-    if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     pp_tabbar_t *t = lv_event_get_user_data(e);
+    lv_key_t k = lv_event_get_key(e);
+
+    /* HOME at the root level: emit a cancel event on the tabbar root.
+     * The owner (menu.c) handles it by closing the menu screen. */
+    if (k == LV_KEY_HOME) {
+        lv_obj_send_event(t->root, LV_EVENT_CANCEL, NULL);
+        return;
+    }
+    if (k != LV_KEY_ENTER) return;
+
     lv_group_t *page_group = pp_page_group(t->items[t->active].page);
     if (!page_group || lv_group_get_obj_count(page_group) == 0) return;
     lv_indev_set_group(indev_drv, page_group);

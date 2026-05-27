@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include "lvgl/lvgl.h"
 #include "input.h"
@@ -22,6 +23,16 @@ lv_obj_t   *pp_osd_screen;
 lv_obj_t   *dvr_screen;             /* Legacy. */
 lv_obj_t   *txprofiles_screen;      /* Legacy. */
 lv_group_t *main_group;
+
+extern bool menu_active;   /* defined in src/input.cpp */
+
+static void on_tabbar_cancel(lv_event_t *e) {
+    (void)e;
+    /* User pressed HOME while focus was on the tab strip — close the
+     * menu and return to the OSD screen. */
+    lv_screen_load(pp_osd_screen);
+    menu_active = false;
+}
 
 void pp_menu_main(void)
 {
@@ -72,6 +83,8 @@ void pp_menu_main(void)
     };
     pp_tabbar_t *tabbar = pp_tabbar_create(root, items, 5);
     lv_obj_move_to_index(pp_tabbar_root(tabbar), 0);
+    lv_obj_add_event_cb(pp_tabbar_root(tabbar), on_tabbar_cancel,
+                        LV_EVENT_CANCEL, NULL);
 
     /* Each page builder already adds its own rows to its page group.
      * Here we only wire each page's "back target" to the tabbar group

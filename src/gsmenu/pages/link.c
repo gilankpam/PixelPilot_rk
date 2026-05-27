@@ -18,6 +18,8 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
                 "gs", "wfbng", "bandwidth", "10\n20\n40");
     pp_slider(page, LV_SYMBOL_UP, "TX Power",
               "gs", "wfbng", "txpower", 1, 63);
+    pp_slider(page, LV_SYMBOL_DOWN, "RX Power",
+              "gs", "link", "rx_power", 1, 100);
     pp_slider(page, LV_SYMBOL_SETTINGS, "MCS Index",
               "air", "wfbng", "mcs_index", 0, 7);
     pp_toggle(page, LV_SYMBOL_SETTINGS, "STBC", "air", "wfbng", "stbc");

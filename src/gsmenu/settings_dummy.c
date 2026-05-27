@@ -55,6 +55,7 @@ static const dummy_entry_t g_seed[] = {
     { "gs_channel",   "149" },
     { "bandwidth",    "40" },
     { "txpower",      "20" },
+    { "rx_power",     "50" },
     { "mcs_index",    "2" },
     { "stbc",         "off" },
     { "ldpc",         "on" },

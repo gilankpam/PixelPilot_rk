@@ -8,8 +8,18 @@
 #include <cstdio>
 
 extern "C" {
+#include "lvgl/lvgl.h"
 #include "gsmenu/settings.h"
 #include "gsmenu/settings_fpvd_internal.h"
+}
+
+/* Minimal LVGL initialisation required by the fpvd provider (lv_async_call,
+ * lv_malloc).  Called once per process via a static init guard. */
+static void ensure_lv_init() {
+    static bool done = false;
+    if (done) return;
+    lv_init();
+    done = true;
 }
 
 /* The provider talks HTTP to PP_FPVD_URL. We spin up a cpp-httplib server
@@ -75,6 +85,7 @@ struct FpvdMockServer {
 
 /* Helper: build PP_FPVD_URL, set env, then register provider. */
 static void install_provider_pointing_at(int port) {
+    ensure_lv_init();
     char url[64];
     snprintf(url, sizeof url, "http://127.0.0.1:%d", port);
     setenv("PP_FPVD_URL", url, 1);
@@ -92,5 +103,28 @@ TEST_CASE("fixture: mock server starts and accepts requests",
     REQUIRE(r != nullptr);
     REQUIRE(r->status == 200);
     REQUIRE(m.get_calls.load() == 1);
+    m.stop();
+}
+
+TEST_CASE("integration: PATCH + apply happy path", "[fpvd][network]") {
+    FpvdMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+
+    /* Wait for initial GET /config to land. */
+    for (int i = 0; i < 50 && m.get_calls == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE(m.get_calls >= 1);
+    REQUIRE(pp_settings_is_connected() == true);
+
+    /* Trigger an async set; the callback fires on the LVGL thread which
+     * we don't have a loop for in tests. Instead we observe the server. */
+    pp_settings_set_async("air", "camera", "fps", "90", nullptr, nullptr);
+    for (int i = 0; i < 200 && m.apply_calls == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    REQUIRE(m.patch_calls >= 1);
+    REQUIRE(m.apply_calls >= 1);
+    REQUIRE(m.last_patch_body.find("\"fps\":90") != std::string::npos);
+
     m.stop();
 }

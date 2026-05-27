@@ -38,13 +38,6 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
     pp_slider(page, LV_SYMBOL_UP, "TX Power (%)",
               "gs", "wfbng", "txpower", 0, 100);
     /* Air-side radio params. */
-    pp_dropdown(page, LV_SYMBOL_UP, "Air Power",
-                "air", "wfbng", "power", "0\n1\n2\n3\n4");
-    pp_dropdown(page, LV_SYMBOL_WIFI, "Air Frequency",
-                "air", "wfbng", "air_channel",
-                "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n36\n40\n44\n48\n149\n153\n157\n161\n165");
-    pp_dropdown(page, LV_SYMBOL_WIFI, "Air Bandwidth",
-                "air", "wfbng", "width", "20\n40\n80");
     pp_slider(page, LV_SYMBOL_SETTINGS, "MCS Index",
               "air", "wfbng", "mcs_index", 0, 11);
     pp_toggle(page, LV_SYMBOL_SETTINGS, "STBC", "air", "wfbng", "stbc");
@@ -53,8 +46,6 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
               "air", "wfbng", "fec_k", 1, 32);
     pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_N",
               "air", "wfbng", "fec_n", 1, 32);
-    pp_dropdown(page, LV_SYMBOL_SETTINGS, "MLink",
-                "air", "wfbng", "mlink", "off\non");
 
     pp_section_header(page, "Adaptive Link");
     pp_toggle(page, LV_SYMBOL_REFRESH, "GS Enabled",

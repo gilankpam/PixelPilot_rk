@@ -5,6 +5,7 @@
 #include "../widgets/pp_toggle.h"
 #include "../widgets/pp_slider.h"
 #include "../widgets/pp_dropdown.h"
+#include "../settings.h"
 
 /* Keys mirror those in the old src/gsmenu/air_camera.c. Dropdown option
  * strings are sensible defaults — a real backend will query the air unit
@@ -67,5 +68,14 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
             lv_group_add_obj(grp, c);
         }
     }
+
+    extern void pp_page_reapply_lock_state(lv_obj_t *);
+    /* v1 known limitation: only one snapshot listener slot in the provider
+     * — the Dynamic Link tab installs its own, so this one is overwritten
+     * when that tab builds. Static lock state at construction time still
+     * works. */
+    pp_settings_set_snapshot_listener(
+        (pp_settings_snapshot_cb)pp_page_reapply_lock_state, page);
+    pp_page_reapply_lock_state(page);
     return page;
 }

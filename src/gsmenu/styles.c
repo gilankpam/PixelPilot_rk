@@ -100,6 +100,7 @@ int style_init(void) {
     lv_style_set_bg_opa(&pp_style_tab, LV_OPA_TRANSP);
     lv_style_set_text_color(&pp_style_tab, c_text);
     lv_style_set_text_opa(&pp_style_tab, 115);
+    lv_style_set_text_font(&pp_style_tab, &lv_font_montserrat_14);
     lv_style_set_pad_ver(&pp_style_tab, 12);
     lv_style_set_radius(&pp_style_tab, 0);
     lv_style_set_border_width(&pp_style_tab, 0);
@@ -112,6 +113,7 @@ int style_init(void) {
     lv_style_init(&pp_style_section_hdr);
     lv_style_set_text_color(&pp_style_section_hdr, c_text);
     lv_style_set_text_opa(&pp_style_section_hdr, 102);
+    lv_style_set_text_font(&pp_style_section_hdr, &lv_font_montserrat_14);
     lv_style_set_text_letter_space(&pp_style_section_hdr, 2);
     lv_style_set_pad_top(&pp_style_section_hdr, 8);
     lv_style_set_pad_left(&pp_style_section_hdr, 20);

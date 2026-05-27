@@ -41,24 +41,19 @@ static int32_t step_for(int32_t min, int32_t max) {
     return s;
 }
 
-static void set_chev_state(pp_slider_data_t *d, bool active) {
-    /* Active = bright accent; otherwise muted white. */
+/* Visually mark the spinbox as "currently editing" — chevrons brighten
+ * to accent, and the number turns accent too. NAV-mode focus on the row
+ * intentionally does not highlight the number; the row's own focus
+ * background is enough to show which row is selected. */
+static void set_edit_state(pp_slider_data_t *d, bool active) {
     lv_color_t c = active ? lv_color_hex(0x6B7FFF) : lv_color_hex(0xFFFFFF);
-    lv_opa_t   o = active ? LV_OPA_COVER : 90;        /* ~35% when idle */
+    lv_opa_t   o = active ? LV_OPA_COVER : 90;
     lv_obj_set_style_text_color(d->up_chev,   c, 0);
     lv_obj_set_style_text_color(d->down_chev, c, 0);
     lv_obj_set_style_text_opa(d->up_chev,   o, 0);
     lv_obj_set_style_text_opa(d->down_chev, o, 0);
-}
-
-static void num_mirror_focus(lv_event_t *e) {
-    pp_slider_data_t *d = lv_event_get_user_data(e);
-    if (d && d->num) lv_obj_add_state(d->num, LV_STATE_FOCUS_KEY);
-}
-
-static void num_mirror_defocus(lv_event_t *e) {
-    pp_slider_data_t *d = lv_event_get_user_data(e);
-    if (d && d->num) lv_obj_remove_state(d->num, LV_STATE_FOCUS_KEY);
+    lv_obj_set_style_text_color(d->num,
+        active ? lv_color_hex(0x6B7FFF) : lv_color_hex(0xFFFFFF), 0);
 }
 
 static void on_key(lv_event_t *e) {
@@ -72,10 +67,10 @@ static void on_key(lv_event_t *e) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
             d->saved_val = d->value;
             control_mode = GSMENU_CONTROL_MODE_EDIT;
-            set_chev_state(d, true);
+            set_edit_state(d, true);
         } else {
             control_mode = GSMENU_CONTROL_MODE_NAV;
-            set_chev_state(d, false);
+            set_edit_state(d, false);
             char buf[32];
             snprintf(buf, sizeof buf, "%d", (int)d->value);
             pp_settings_set_async(d->domain, d->page, d->key, buf, NULL);
@@ -99,7 +94,7 @@ static void on_key(lv_event_t *e) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
             d->value = d->saved_val;
             refresh_num(d);
-            set_chev_state(d, false);
+            set_edit_state(d, false);
         }
         control_mode = GSMENU_CONTROL_MODE_NAV;
         consumed = true;
@@ -148,7 +143,6 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_set_style_text_font(up, &lv_font_montserrat_14, 0);
 
     lv_obj_t *num = lv_label_create(col);
-    lv_obj_add_style(num, &pp_style_value_focus, LV_STATE_FOCUS_KEY);
     lv_label_set_text(num, "—");
 
     lv_obj_t *dn = lv_label_create(col);
@@ -170,13 +164,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
 
-    /* The num label is a non-focusable child, so it never receives
-     * LV_STATE_FOCUS_KEY on its own. Mirror the row's focus state onto
-     * it so the conditional pp_style_value_focus fires. */
-    lv_obj_add_event_cb(row, num_mirror_focus,   LV_EVENT_FOCUSED,   d);
-    lv_obj_add_event_cb(row, num_mirror_defocus, LV_EVENT_DEFOCUSED, d);
-
-    set_chev_state(d, false);
+    set_edit_state(d, false);
 
     /* Read initial value via settings provider. */
     char *v = pp_settings_get(domain, page, key);

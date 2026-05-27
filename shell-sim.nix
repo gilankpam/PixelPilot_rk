@@ -10,5 +10,6 @@ pkgs.mkShell {
     pkgs.spdlog
     pkgs.fmt
     pkgs.catch2_3
+    pkgs.curl
   ];
 }

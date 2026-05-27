@@ -8,5 +8,6 @@ pkgs.mkShell {
     pkgs.catch2          # v2.x, header path: catch2/catch.hpp
     pkgs.spdlog
     pkgs.fmt
+    pkgs.curl
   ];
 }

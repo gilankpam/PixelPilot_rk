@@ -182,3 +182,21 @@ TEST_CASE("integration: dynamic_link_locked rejected client-side",
 
     m.stop();
 }
+
+TEST_CASE("integration: offline -> reconnect transitions connected flag",
+          "[fpvd][network]") {
+    /* No server running yet — pointing at a port that should refuse. */
+    setenv("PP_FPVD_URL", "http://127.0.0.1:1", 1);
+    pp_settings_register_fpvd();
+    /* The synchronous prime fails → connected==false. */
+    REQUIRE(pp_settings_is_connected() == false);
+
+    /* Now start a server, repoint the env, re-register (provider re-reads
+     * env in pp_settings_register_fpvd). */
+    FpvdMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+    for (int i = 0; i < 50 && pp_settings_is_connected() == false; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(pp_settings_is_connected() == true);
+    m.stop();
+}

@@ -139,7 +139,7 @@ int style_init(void) {
 
     lv_style_init(&pp_style_panel);
     lv_style_set_bg_color(&pp_style_panel, c_panel);
-    lv_style_set_bg_opa(&pp_style_panel, 250);       /* near-opaque; still < COVER so backdrop blur stays active */
+    lv_style_set_bg_opa(&pp_style_panel, LV_OPA_70); /* lets more video bleed through; backdrop blur active */
     lv_style_set_border_width(&pp_style_panel, 0);
     lv_style_set_radius(&pp_style_panel, 0);
     lv_style_set_pad_all(&pp_style_panel, 0);

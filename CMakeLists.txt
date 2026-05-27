@@ -224,12 +224,13 @@ if(USE_SIMULATOR)
 else()
   find_package(nlohmann_json 3 REQUIRED)
   find_package(yaml-cpp REQUIRED)
+  find_package(CURL REQUIRED)
   pkg_check_modules(LIBGPIOD REQUIRED libgpiod)
   include_directories(${LIBGPIOD_INCLUDE_DIR})
 
   find_path(RGA_INCLUDE_DIRS NAMES rga.h rga/rga.h)
   find_library(RGA_LIBRARIES NAMES rga librga)
-  
+
   # GStreamer setup
   find_package(PkgConfig REQUIRED)
   pkg_search_module(GST REQUIRED
@@ -240,37 +241,45 @@ else()
   pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.4)
   pkg_search_module(gstnet REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.4)
   pkg_search_module(gio REQUIRED IMPORTED_TARGET gio-2.0)
-  
+
+  # fpvd provider sources (device build)
+  list(APPEND SOURCE_FILES
+      src/gsmenu/settings_fpvd.c
+      third_party/cjson/cJSON.c
+  )
+
   add_executable(${PROJECT_NAME} ${SOURCE_FILES})
-  
+
   # Add include directories for the main target
   target_include_directories(${PROJECT_NAME} PRIVATE
       ${PROJECT_SOURCE_DIR}
       ${PROJECT_SOURCE_DIR}/lvgl
+      ${PROJECT_SOURCE_DIR}/third_party/cjson
       ${LIBDRM_INCLUDE_DIRS}
       ${RGA_INCLUDE_DIRS}
   )
-  
-  target_link_libraries(${PROJECT_NAME} 
-      rockchip_mpp 
-      pthread 
-      drm 
-      m 
+
+  target_link_libraries(${PROJECT_NAME}
+      rockchip_mpp
+      pthread
+      drm
+      m
       PkgConfig::CAIRO
-      spdlog::spdlog 
+      spdlog::spdlog
       fmt::fmt
-      nlohmann_json::nlohmann_json 
-      yaml-cpp 
-      rt 
-      lvgl 
-      ${LIBGPIOD_LIBRARIES} 
+      nlohmann_json::nlohmann_json
+      yaml-cpp
+      rt
+      lvgl
+      ${LIBGPIOD_LIBRARIES}
       ${PNG_LIBRARIES}
-      PkgConfig::gstreamer 
+      PkgConfig::gstreamer
       PkgConfig::gstreamer-app
       PkgConfig::gstnet
       PkgConfig::gio
       ${RGA_LIBRARIES}
       EGL GLESv2 gbm
+      CURL::libcurl
   )
 endif()
 

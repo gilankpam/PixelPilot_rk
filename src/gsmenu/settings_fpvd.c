@@ -664,6 +664,12 @@ static const pp_settings_provider_t G_PROVIDER = {
 };
 
 void pp_settings_register_fpvd(void) {
+    /* lv_init is idempotent; calling it ensures the LVGL machinery
+     * (used by lv_async_call/lv_malloc) is available even if our
+     * caller initializes LVGL later. */
+    static int lv_initted = 0;
+    if (!lv_initted) { lv_init(); lv_initted = 1; }
+
     fpvd_curl_init_once();
     const char *u = getenv("PP_FPVD_URL");
     strncpy(G.base_url, u && *u ? u : FPVD_DEFAULT_URL, sizeof G.base_url - 1);

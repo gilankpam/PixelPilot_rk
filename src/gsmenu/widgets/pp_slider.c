@@ -1,5 +1,6 @@
 #include "pp_slider.h"
 #include "pp_slider_bounds.h"
+#include "pp_slider_accel.h"
 #include "pp_toast.h"
 #include "pp_row.h"
 #include "../styles.h"
@@ -32,6 +33,12 @@ struct pp_slider_data {
     char *rel_domain, *rel_page, *rel_key;
     int32_t rel_offset;
     bool    rel_is_max;
+
+    /* Hold-to-accelerate state: tracks consecutive same-key events
+     * within PP_SLIDER_HOLD_GAP_MS to scale the step size. */
+    uint32_t last_key_ms;
+    int32_t  last_key;
+    int32_t  hold_count;
 };
 typedef struct pp_slider_data pp_slider_data_t;
 
@@ -126,6 +133,9 @@ static void on_key(lv_event_t *e) {
                 consumed = true;
             } else {
                 d->saved_val = d->value;
+                d->hold_count = 0;
+                d->last_key = 0;
+                d->last_key_ms = 0;
                 control_mode = GSMENU_CONTROL_MODE_EDIT;
                 set_edit_state(d, true);
                 consumed = true;
@@ -155,16 +165,28 @@ static void on_key(lv_event_t *e) {
         }
     } else if (k == LV_KEY_UP) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            uint32_t now = lv_tick_get();
+            d->hold_count = pp_slider_accel_update(now, d->last_key_ms,
+                                                   d->last_key, k, d->hold_count);
+            d->last_key = k;
+            d->last_key_ms = now;
+            int32_t scaled = pp_slider_accel_step(step, d->hold_count);
             int32_t emax = effective_max(d);
-            d->value += step;
+            d->value += scaled;
             if (d->value > emax) d->value = emax;
             refresh_num(d);
             consumed = true;
         }
     } else if (k == LV_KEY_DOWN) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            uint32_t now = lv_tick_get();
+            d->hold_count = pp_slider_accel_update(now, d->last_key_ms,
+                                                   d->last_key, k, d->hold_count);
+            d->last_key = k;
+            d->last_key_ms = now;
+            int32_t scaled = pp_slider_accel_step(step, d->hold_count);
             int32_t emin = effective_min(d);
-            d->value -= step;
+            d->value -= scaled;
             if (d->value < emin) d->value = emin;
             refresh_num(d);
             consumed = true;

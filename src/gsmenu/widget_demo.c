@@ -1,6 +1,7 @@
 #include <lvgl.h>
 #include "styles.h"
 #include "widgets/pp_section_header.h"
+#include "widgets/pp_row.h"
 
 /* Defined here; subsequent widget tasks append to demo_root via demo_root_obj(). */
 static lv_obj_t *demo_root = NULL;
@@ -25,6 +26,10 @@ void pp_widget_demo_main(void) {
     pp_section_header(demo_root, "Video");
     pp_section_header(demo_root, "Image");
     pp_section_header(demo_root, "ISP");
+
+    pp_row_text(demo_root, LV_SYMBOL_SETTINGS, "Version", NULL);
+    pp_row_text(demo_root, LV_SYMBOL_SETTINGS, "Disk",    NULL);
+    pp_row_text(demo_root, LV_SYMBOL_VIDEO,    "Codec",   "codec");
 
     /* Subsequent widget tasks add demo rows here via demo_root_obj(). */
 }

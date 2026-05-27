@@ -111,6 +111,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/widget_demo.c
         src/gsmenu/widgets/pp_section_header.h
         src/gsmenu/widgets/pp_section_header.c
+        src/gsmenu/widgets/pp_row.h
+        src/gsmenu/widgets/pp_row.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c
@@ -167,6 +169,8 @@ set(LIB_SOURCE_FILES
         src/gsmenu/styles.c
         src/gsmenu/widgets/pp_section_header.h
         src/gsmenu/widgets/pp_section_header.c
+        src/gsmenu/widgets/pp_row.h
+        src/gsmenu/widgets/pp_row.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c

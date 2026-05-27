@@ -58,6 +58,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/widgets/pp_toggle.c
         src/gsmenu/widgets/pp_slider.h
         src/gsmenu/widgets/pp_slider.c
+        src/gsmenu/widgets/pp_slider_bounds.h
+        src/gsmenu/widgets/pp_slider_bounds.c
         src/gsmenu/widgets/pp_dropdown.h
         src/gsmenu/widgets/pp_dropdown.c
         src/gsmenu/widgets/pp_page.h
@@ -110,6 +112,8 @@ set(LIB_SOURCE_FILES
         src/gsmenu/widgets/pp_toggle.c
         src/gsmenu/widgets/pp_slider.h
         src/gsmenu/widgets/pp_slider.c
+        src/gsmenu/widgets/pp_slider_bounds.h
+        src/gsmenu/widgets/pp_slider_bounds.c
         src/gsmenu/widgets/pp_dropdown.h
         src/gsmenu/widgets/pp_dropdown.c
         src/gsmenu/widgets/pp_page.h
@@ -194,8 +198,10 @@ if(USE_SIMULATOR)
     add_executable(settings_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_dummy.c
+      src/gsmenu/widgets/pp_slider_bounds.c
       tests/test_settings.cpp
-      tests/test_settings_failure.cpp)
+      tests/test_settings_failure.cpp
+      tests/test_slider_bounds.cpp)
     target_include_directories(settings_tests PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(settings_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})

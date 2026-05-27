@@ -1,4 +1,5 @@
 #include "pp_slider.h"
+#include "pp_slider_bounds.h"
 #include "pp_toast.h"
 #include "pp_row.h"
 #include "../styles.h"
@@ -35,29 +36,19 @@ struct pp_slider_data {
 typedef struct pp_slider_data pp_slider_data_t;
 
 static int32_t effective_max(pp_slider_data_t *d) {
-    int32_t m = d->max;
     if (d->rel_key && d->rel_is_max) {
-        char *v = pp_settings_get(d->rel_domain, d->rel_page, d->rel_key);
-        if (v && *v) {
-            int32_t bound = atoi(v) + d->rel_offset;
-            if (bound < m) m = bound;
-        }
-        free(v);
+        return pp_slider_bound_max(d->max, d->rel_domain, d->rel_page,
+                                   d->rel_key, d->rel_offset);
     }
-    return m;
+    return d->max;
 }
 
 static int32_t effective_min(pp_slider_data_t *d) {
-    int32_t m = d->min;
     if (d->rel_key && !d->rel_is_max) {
-        char *v = pp_settings_get(d->rel_domain, d->rel_page, d->rel_key);
-        if (v && *v) {
-            int32_t bound = atoi(v) + d->rel_offset;
-            if (bound > m) m = bound;
-        }
-        free(v);
+        return pp_slider_bound_min(d->min, d->rel_domain, d->rel_page,
+                                   d->rel_key, d->rel_offset);
     }
-    return m;
+    return d->min;
 }
 
 /* Forward declaration — defined after struct pp_slider_data below. */

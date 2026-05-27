@@ -264,6 +264,7 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     lv_label_set_text(label_obj, label);
     lv_obj_set_style_min_width(label_obj, 200, 0);
     lv_obj_set_style_pad_right(label_obj, 16, 0);
+    lv_obj_set_flex_grow(label_obj, 1);
 
     lv_obj_t *value_label = lv_label_create(row);
     lv_label_set_text(value_label, "—");

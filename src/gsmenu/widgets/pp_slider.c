@@ -228,6 +228,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_label_set_text(label_obj, label);
     lv_obj_set_style_min_width(label_obj, 200, 0);
     lv_obj_set_style_pad_right(label_obj, 16, 0);
+    lv_obj_set_flex_grow(label_obj, 1);
 
     /* Horizontal spinbox on the right side: ▲ 50 ▼ — keeps the row at the
      * same 36px height as toggle/dropdown. UP/DOWN chevrons still convey

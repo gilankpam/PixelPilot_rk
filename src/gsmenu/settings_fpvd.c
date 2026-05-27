@@ -9,6 +9,43 @@
 #include <math.h>
 #include <sys/types.h>
 #include <curl/curl.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <time.h>
+#include <errno.h>
+#include "lvgl/lvgl.h"   /* for lv_async_call, lv_malloc, lv_free */
+
+#define FPVD_DEFAULT_URL "http://10.5.0.10:8080"
+#define FPVD_QUEUE_CAP   32
+
+typedef struct fpvd_job {
+    char     path[128];           /* dotted json path */
+    char     value[128];          /* UI value string */
+    fpvd_type_t type;
+    pp_settings_done_cb on_done;
+    void    *user_data;
+} fpvd_job_t;
+
+typedef struct {
+    char     base_url[128];
+    pthread_t worker;
+    pthread_mutex_t mu;
+    pthread_cond_t  cv;
+    bool     stop;
+    bool     visible;
+    bool     connected;
+    bool     worker_started;
+
+    cJSON   *snapshot;            /* protected by mu */
+
+    fpvd_job_t queue[FPVD_QUEUE_CAP];
+    size_t     queue_n;
+
+    pp_settings_snapshot_cb listener_cb;
+    void                   *listener_ud;
+} fpvd_state_t;
+
+static fpvd_state_t G;
 
 static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
@@ -313,6 +350,345 @@ void fpvd_http_result_free(fpvd_http_result_t *r) {
     if (r && r->body) { free(r->body); r->body = NULL; r->body_len = 0; }
 }
 
+/* -------------------------------------------------------------------------
+ * Callback-dispatch helpers
+ * ---------------------------------------------------------------------- */
+
+typedef struct {
+    pp_settings_done_cb cb;
+    void *user_data;
+    int   rc;
+    char  err[128];
+} fpvd_done_dispatch_t;
+
+static void done_dispatch_async(void *ptr) {
+    fpvd_done_dispatch_t *d = (fpvd_done_dispatch_t *)ptr;
+    if (d->cb) d->cb(d->rc, d->err[0] ? d->err : NULL, d->user_data);
+    lv_free(d);
+}
+
+static void schedule_done(pp_settings_done_cb cb, void *ud,
+                          int rc, const char *err) {
+    if (!cb) return;
+    fpvd_done_dispatch_t *d = lv_malloc(sizeof *d);
+    d->cb = cb;
+    d->user_data = ud;
+    d->rc = rc;
+    if (err) { strncpy(d->err, err, sizeof d->err - 1); d->err[sizeof d->err - 1] = '\0'; }
+    else d->err[0] = '\0';
+    lv_async_call(done_dispatch_async, d);
+}
+
+static void listener_dispatch_async(void *ptr) {
+    (void)ptr;
+    pthread_mutex_lock(&G.mu);
+    pp_settings_snapshot_cb cb = G.listener_cb;
+    void *ud = G.listener_ud;
+    pthread_mutex_unlock(&G.mu);
+    if (cb) cb(ud);
+}
+
+static void notify_listener(void) {
+    lv_async_call(listener_dispatch_async, NULL);
+}
+
+/* -------------------------------------------------------------------------
+ * URL helper + snapshot refresh
+ * ---------------------------------------------------------------------- */
+
+static char *url_join(const char *base, const char *path) {
+    size_t n = strlen(base) + strlen(path) + 1;
+    char *u = malloc(n);
+    snprintf(u, n, "%s%s", base, path);
+    return u;
+}
+
+/* Called with G.mu HELD. Releases and re-acquires mutex around the HTTP call. */
+static void refresh_snapshot_unlocked(void) {
+    char *u = url_join(G.base_url, "/config");
+    pthread_mutex_unlock(&G.mu);
+    fpvd_http_result_t r = fpvd_http_get(u);
+    pthread_mutex_lock(&G.mu);
+    free(u);
+    bool was_connected = G.connected;
+    if (r.status == 200 && r.body) {
+        cJSON *new_snap = cJSON_Parse(r.body);
+        if (new_snap) {
+            if (G.snapshot) cJSON_Delete(G.snapshot);
+            G.snapshot = new_snap;
+            G.connected = true;
+        }
+    } else {
+        G.connected = false;
+    }
+    fpvd_http_result_free(&r);
+    if (was_connected != G.connected) notify_listener();
+    else if (G.connected) notify_listener();
+}
+
+/* -------------------------------------------------------------------------
+ * Error parsing + job runner
+ * ---------------------------------------------------------------------- */
+
+static const char *parse_error_message(const char *body) {
+    if (!body) return NULL;
+    cJSON *r = cJSON_Parse(body);
+    if (!r) return NULL;
+    cJSON *err = cJSON_GetObjectItemCaseSensitive(r, "error");
+    const char *code = (err && cJSON_IsString(err)) ? err->valuestring : "";
+    static char buf[160];
+    buf[0] = '\0';
+    if (strcmp(code, "dynamic_link_locked") == 0) {
+        snprintf(buf, sizeof buf, "Locked by Dynamic Link");
+    } else if (strcmp(code, "validation") == 0) {
+        cJSON *det = cJSON_GetObjectItemCaseSensitive(r, "details");
+        if (cJSON_IsArray(det) && cJSON_GetArraySize(det) > 0) {
+            cJSON *first = cJSON_GetArrayItem(det, 0);
+            cJSON *msg = first ? cJSON_GetObjectItemCaseSensitive(first, "message") : NULL;
+            if (msg && cJSON_IsString(msg)) {
+                snprintf(buf, sizeof buf, "%s", msg->valuestring);
+            } else {
+                snprintf(buf, sizeof buf, "Validation failed");
+            }
+        } else {
+            snprintf(buf, sizeof buf, "Validation failed");
+        }
+    } else {
+        cJSON *m = cJSON_GetObjectItemCaseSensitive(r, "message");
+        snprintf(buf, sizeof buf, "%s",
+            (m && cJSON_IsString(m)) ? m->valuestring : "Request rejected");
+    }
+    cJSON_Delete(r);
+    return buf[0] ? buf : NULL;
+}
+
+/* Mutex must be RELEASED on entry. */
+static void run_job_unlocked(fpvd_job_t job) {
+    cJSON *body = fpvd_build_patch_body(job.path, job.value, job.type);
+    char *body_s = body ? cJSON_PrintUnformatted(body) : NULL;
+    if (body) cJSON_Delete(body);
+
+    char *patch_url = url_join(G.base_url, "/config");
+    char *apply_url = url_join(G.base_url, "/apply");
+
+    fpvd_http_result_t r = fpvd_http_patch_json(patch_url, body_s ? body_s : "{}");
+    int rc = 0;
+    char err[160] = {0};
+    if (r.status == 0) {
+        rc = -1; snprintf(err, sizeof err, "Drone unreachable");
+        pthread_mutex_lock(&G.mu);
+        bool was = G.connected; G.connected = false;
+        pthread_mutex_unlock(&G.mu);
+        if (was) notify_listener();
+    } else if (r.status >= 400) {
+        rc = -1;
+        const char *m = parse_error_message(r.body);
+        snprintf(err, sizeof err, "%s", m ? m : "Request rejected");
+    }
+    fpvd_http_result_free(&r);
+
+    if (rc == 0) {
+        r = fpvd_http_post(apply_url);
+        if (r.status == 0) {
+            rc = -1; snprintf(err, sizeof err, "Drone unreachable");
+            pthread_mutex_lock(&G.mu);
+            bool was = G.connected; G.connected = false;
+            pthread_mutex_unlock(&G.mu);
+            if (was) notify_listener();
+        } else if (r.status >= 400) {
+            rc = -1;
+            const char *m = parse_error_message(r.body);
+            snprintf(err, sizeof err, "%s", m ? m : "Apply failed");
+        }
+        fpvd_http_result_free(&r);
+    }
+
+    if (rc == 0) {
+        pthread_mutex_lock(&G.mu);
+        refresh_snapshot_unlocked();
+        pthread_mutex_unlock(&G.mu);
+    }
+
+    schedule_done(job.on_done, job.user_data, rc, err[0] ? err : NULL);
+
+    free(patch_url); free(apply_url); if (body_s) free(body_s);
+}
+
+/* -------------------------------------------------------------------------
+ * Worker thread main loop
+ * ---------------------------------------------------------------------- */
+
+static void *worker_main(void *arg) {
+    (void)arg;
+    while (1) {
+        pthread_mutex_lock(&G.mu);
+        while (!G.stop && G.queue_n == 0) {
+            int wait_ms = G.connected ? (G.visible ? 3000 : 60000) : 2000;
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec  += wait_ms / 1000;
+            ts.tv_nsec += (wait_ms % 1000) * 1000000L;
+            if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+            int wr = pthread_cond_timedwait(&G.cv, &G.mu, &ts);
+            if (wr == ETIMEDOUT) {
+                refresh_snapshot_unlocked();
+            }
+        }
+        if (G.stop) { pthread_mutex_unlock(&G.mu); break; }
+
+        /* Pull the head job. */
+        fpvd_job_t job = G.queue[0];
+        for (size_t i = 1; i < G.queue_n; i++) G.queue[i-1] = G.queue[i];
+        G.queue_n--;
+        pthread_mutex_unlock(&G.mu);
+
+        run_job_unlocked(job);
+
+        struct timespec ts2 = { 0, 250 * 1000 * 1000 };
+        nanosleep(&ts2, NULL);
+    }
+    return NULL;
+}
+
+/* -------------------------------------------------------------------------
+ * Enqueue + provider methods
+ * ---------------------------------------------------------------------- */
+
+static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
+                           pp_settings_done_cb cb, void *ud) {
+    for (size_t i = 0; i < G.queue_n; i++) {
+        if (strcmp(G.queue[i].path, e->path) == 0) {
+            /* Coalesce: replace value + callback (the older callback is dropped —
+             * the originating widget will see only the new callback's outcome). */
+            strncpy(G.queue[i].value, value, sizeof G.queue[i].value - 1);
+            G.queue[i].value[sizeof G.queue[i].value - 1] = '\0';
+            G.queue[i].on_done = cb;
+            G.queue[i].user_data = ud;
+            return;
+        }
+    }
+    if (G.queue_n >= FPVD_QUEUE_CAP) {
+        if (cb) cb(-1, "Settings queue full", ud);  /* caller is LVGL thread, safe */
+        return;
+    }
+    fpvd_job_t *j = &G.queue[G.queue_n++];
+    strncpy(j->path,  e->path,  sizeof j->path  - 1); j->path [sizeof j->path -1] = '\0';
+    strncpy(j->value, value,    sizeof j->value - 1); j->value[sizeof j->value-1] = '\0';
+    j->type      = e->type;
+    j->on_done   = cb;
+    j->user_data = ud;
+}
+
+static char *prov_get(const char *d, const char *p, const char *k) {
+    const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
+    if (!e) return strdup("");
+    pthread_mutex_lock(&G.mu);
+    char *out = G.snapshot
+        ? fpvd_snapshot_read_string(G.snapshot, e->path, e->type)
+        : strdup("");
+    pthread_mutex_unlock(&G.mu);
+    return out;
+}
+
+static void prov_set_async(const char *d, const char *p, const char *k,
+                           const char *v, pp_settings_done_cb cb, void *ud) {
+    const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
+    if (!e) { schedule_done(cb, ud, -1, "Unknown setting"); return; }
+    if (fpvd_is_locked_path(e->path)) {
+        pthread_mutex_lock(&G.mu);
+        cJSON *dlink = G.snapshot ? cJSON_GetObjectItemCaseSensitive(G.snapshot, "dynamicLink") : NULL;
+        cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
+        bool dlink_on = en && cJSON_IsTrue(en);
+        pthread_mutex_unlock(&G.mu);
+        if (dlink_on) {
+            schedule_done(cb, ud, -1, "Locked by Dynamic Link");
+            return;
+        }
+    }
+    pthread_mutex_lock(&G.mu);
+    enqueue_locked(e, v, cb, ud);
+    pthread_cond_signal(&G.cv);
+    pthread_mutex_unlock(&G.mu);
+}
+
+/* Fire-and-forget sync set — fall through to async. */
+static void prov_set(const char *d, const char *p, const char *k, const char *v) {
+    prov_set_async(d, p, k, v, NULL, NULL);
+}
+
+static bool prov_is_locked(const char *d, const char *p, const char *k) {
+    const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
+    if (!e) return false;
+    if (!fpvd_is_locked_path(e->path)) return false;
+    pthread_mutex_lock(&G.mu);
+    cJSON *dlink = G.snapshot ? cJSON_GetObjectItemCaseSensitive(G.snapshot, "dynamicLink") : NULL;
+    cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
+    bool dl_on = en && cJSON_IsTrue(en);
+    pthread_mutex_unlock(&G.mu);
+    return dl_on;
+}
+
+static bool prov_is_connected(void) {
+    pthread_mutex_lock(&G.mu);
+    bool c = G.connected;
+    pthread_mutex_unlock(&G.mu);
+    return c;
+}
+
+static void prov_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
+    pthread_mutex_lock(&G.mu);
+    G.listener_cb = cb;
+    G.listener_ud = ud;
+    pthread_mutex_unlock(&G.mu);
+}
+
+static void prov_set_visibility(bool v) {
+    pthread_mutex_lock(&G.mu);
+    G.visible = v;
+    pthread_cond_signal(&G.cv);
+    pthread_mutex_unlock(&G.mu);
+}
+
+/* -------------------------------------------------------------------------
+ * Provider vtable + registration
+ * ---------------------------------------------------------------------- */
+
+static const pp_settings_provider_t G_PROVIDER = {
+    .set                    = prov_set,
+    .get                    = prov_get,
+    .set_async              = prov_set_async,
+    .is_locked              = prov_is_locked,
+    .is_connected           = prov_is_connected,
+    .set_snapshot_listener  = prov_set_snapshot_listener,
+    .set_visibility         = prov_set_visibility,
+};
+
 void pp_settings_register_fpvd(void) {
-    /* Filled in by Task 3.6. */
+    fpvd_curl_init_once();
+    const char *u = getenv("PP_FPVD_URL");
+    strncpy(G.base_url, u && *u ? u : FPVD_DEFAULT_URL, sizeof G.base_url - 1);
+    G.base_url[sizeof G.base_url - 1] = '\0';
+
+    if (!G.worker_started) {
+        pthread_mutex_init(&G.mu, NULL);
+        pthread_cond_init(&G.cv, NULL);
+    }
+    G.stop      = false;
+    G.visible   = false;
+    G.connected = false;
+    if (G.snapshot) { cJSON_Delete(G.snapshot); G.snapshot = NULL; }
+    G.queue_n   = 0;
+    G.listener_cb = NULL;
+    G.listener_ud = NULL;
+
+    /* Prime snapshot synchronously (best-effort). */
+    pthread_mutex_lock(&G.mu);
+    refresh_snapshot_unlocked();
+    pthread_mutex_unlock(&G.mu);
+
+    if (!G.worker_started) {
+        pthread_create(&G.worker, NULL, worker_main, NULL);
+        G.worker_started = true;
+    }
+    pp_settings_register(&G_PROVIDER);
 }

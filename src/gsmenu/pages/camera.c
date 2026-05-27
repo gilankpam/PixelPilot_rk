@@ -17,9 +17,6 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
     pp_dropdown(page, LV_SYMBOL_VIDEO, "Size",
                 "air", "camera", "size",
                 "1920x1080\n1280x720\n960x540");
-    pp_dropdown(page, LV_SYMBOL_VIDEO, "Video Mode",
-                "air", "camera", "video_mode",
-                "normal\nfpv\nhdr");
     pp_dropdown(page, LV_SYMBOL_REFRESH, "FPS",
                 "air", "camera", "fps",
                 "30\n60\n90\n120");
@@ -30,7 +27,7 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
                 "air", "camera", "codec",
                 "h264\nh265");
     pp_slider(page, LV_SYMBOL_SETTINGS, "GOP size",
-              "air", "camera", "gopsize", 0, 60);
+              "air", "camera", "gopsize", 1, 20);
     pp_dropdown(page, LV_SYMBOL_SETTINGS, "RC Mode",
                 "air", "camera", "rc_mode",
                 "cbr\nvbr");
@@ -49,7 +46,7 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
 
     pp_section_header(page, "ISP");
     pp_slider(page, LV_SYMBOL_EYE_OPEN, "Exposure",
-              "air", "camera", "exposure", 0, 100);
+              "air", "camera", "exposure", 1, 20);
     pp_dropdown(page, LV_SYMBOL_SETTINGS, "Antiflicker",
                 "air", "camera", "antiflicker",
                 "off\n50hz\n60hz");

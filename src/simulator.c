@@ -20,7 +20,8 @@ static int sdl_key_watch(void *userdata, SDL_Event *event)
 {
     (void)userdata;
     if (event->type != SDL_KEYDOWN) return 1;
-    if (event->key.repeat) return 1;
+    /* Let OS key-autorepeat through so holding W/S accelerates sliders
+     * (and rapid-scrolls focus in NAV mode). */
     char c = 0;
     switch (event->key.keysym.sym) {
         case SDLK_w: case SDLK_UP:     c = 'w'; break;

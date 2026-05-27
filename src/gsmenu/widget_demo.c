@@ -4,6 +4,7 @@
 #include "widgets/pp_row.h"
 #include "widgets/pp_toggle.h"
 #include "widgets/pp_slider.h"
+#include "widgets/pp_dropdown.h"
 
 /* Defined here; subsequent widget tasks append to demo_root via demo_root_obj(). */
 static lv_obj_t *demo_root = NULL;
@@ -38,6 +39,10 @@ void pp_widget_demo_main(void) {
 
     pp_slider(demo_root, LV_SYMBOL_AUDIO, "Bitrate",
               "air", "camera", "bitrate", 1, 50);
+
+    pp_dropdown(demo_root, LV_SYMBOL_VIDEO, "Resolution",
+                "air", "camera", "resolution",
+                "1080p60\n720p120\n540p60");
 
     /* Subsequent widget tasks add demo rows here via demo_root_obj(). */
 }

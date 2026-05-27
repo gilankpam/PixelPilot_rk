@@ -1,47 +1,60 @@
 #include "pp_toggle.h"
 #include "pp_toast.h"
+#include "pp_row.h"
 #include "../styles.h"
 #include "../settings.h"
 #include <stdlib.h>
 #include <string.h>
 
-struct toggle_ctx {
-    lv_obj_t *sw;
-    bool prev_on;
-};
-
-static void toggle_done_cb(int rc, const char *err, void *user_data) {
-    struct toggle_ctx *ctx = (struct toggle_ctx *)user_data;
-    if (rc != 0) {
-        pp_toast_error(err ? err : "Failed to apply toggle");
-        /* Revert the switch to its prior visual state. */
-        if (ctx->prev_on) lv_obj_add_state(ctx->sw, LV_STATE_CHECKED);
-        else              lv_obj_remove_state(ctx->sw, LV_STATE_CHECKED);
-    }
-    lv_free(ctx);
-}
-
 typedef struct {
     char *domain, *page, *key;
     lv_obj_t *sw;
+    lv_obj_t *row;
+    bool      in_flight;
 } pp_toggle_data_t;
+
+struct toggle_ctx {
+    pp_toggle_data_t *d;
+    bool target_on;       /* the value we *attempted* to write */
+};
 
 static void on_delete(lv_event_t *e) {
     pp_toggle_data_t *d = lv_event_get_user_data(e);
     if (d) { free(d->domain); free(d->page); free(d->key); free(d); }
 }
 
+static void toggle_done_cb(int rc, const char *err, void *user_data) {
+    struct toggle_ctx *ctx = (struct toggle_ctx *)user_data;
+    pp_toggle_data_t *d = ctx->d;
+    pp_row_set_busy(d->row, false);
+    d->in_flight = false;
+    if (rc == 0) {
+        if (ctx->target_on) lv_obj_add_state(d->sw, LV_STATE_CHECKED);
+        else                lv_obj_remove_state(d->sw, LV_STATE_CHECKED);
+    } else {
+        pp_toast_error(err ? err : "Failed to apply toggle");
+        /* Switch position unchanged — we never flipped it. */
+    }
+    lv_free(ctx);
+}
+
 static void on_key(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     pp_toggle_data_t *d = lv_event_get_user_data(e);
+    if (d->in_flight) { lv_event_stop_bubbling(e); return; }
+    if (pp_row_get_locked(d->row) != PP_ROW_UNLOCKED) {
+        pp_toast_error("Locked by Dynamic Link");
+        lv_event_stop_bubbling(e);
+        return;
+    }
     bool prev_on = lv_obj_has_state(d->sw, LV_STATE_CHECKED);
-    bool now = !prev_on;
-    if (now) lv_obj_add_state(d->sw, LV_STATE_CHECKED);
-    else     lv_obj_remove_state(d->sw, LV_STATE_CHECKED);
+    bool target  = !prev_on;
+    d->in_flight = true;
+    pp_row_set_busy(d->row, true);
     struct toggle_ctx *ctx = lv_malloc(sizeof(*ctx));
-    ctx->sw = d->sw;
-    ctx->prev_on = prev_on;
-    pp_settings_set_async(d->domain, d->page, d->key, now ? "on" : "off",
+    ctx->d = d;
+    ctx->target_on = target;
+    pp_settings_set_async(d->domain, d->page, d->key, target ? "on" : "off",
                           toggle_done_cb, ctx);
     lv_event_stop_bubbling(e);
 }
@@ -81,14 +94,18 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
     d->page   = strdup(page);
     d->key    = strdup(key);
     d->sw     = sw;
+    d->row    = row;
     lv_obj_set_user_data(row, d);
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
 
-    /* Initial read */
     char *v = pp_settings_get(domain, page, key);
     if (v && strcmp(v, "on") == 0) lv_obj_add_state(sw, LV_STATE_CHECKED);
     free(v);
+
+    if (pp_settings_is_locked(domain, page, key)) {
+        pp_row_set_locked(row, PP_ROW_LOCKED_DYNAMIC);
+    }
 
     return row;
 }

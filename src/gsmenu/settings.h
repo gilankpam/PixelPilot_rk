@@ -57,6 +57,10 @@ void pp_settings_register_stub(void);
  * nothing is persisted to disk. Intended only for the simulator. */
 void pp_settings_register_dummy(void);
 
+/* Registers the on-drone fpvd HTTP provider. URL defaults to
+ * http://10.5.0.10:8080, overridable via the PP_FPVD_URL env var. */
+void pp_settings_register_fpvd(void);
+
 #ifdef __cplusplus
 }
 #endif

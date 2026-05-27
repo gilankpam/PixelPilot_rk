@@ -183,6 +183,10 @@ if(USE_SIMULATOR)
   # avoiding the heavy rockchip/drm/gst deps that pixelpilot_tests pulls in.
   find_package(Catch2 QUIET)
   if(Catch2_FOUND)
+    set(PP_CJSON_SOURCES ${PROJECT_SOURCE_DIR}/third_party/cjson/cJSON.c)
+    set(PP_CJSON_INC     ${PROJECT_SOURCE_DIR}/third_party/cjson)
+    find_package(CURL REQUIRED)
+
     add_executable(settings_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_dummy.c
@@ -197,6 +201,21 @@ if(USE_SIMULATOR)
     target_include_directories(lvgl_state_tests PRIVATE
       ${PROJECT_SOURCE_DIR})
     target_link_libraries(lvgl_state_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    # fpvd provider unit + integration tests
+    add_executable(fpvd_tests
+      src/gsmenu/settings.c
+      src/gsmenu/settings_fpvd.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_fpvd.cpp
+      tests/test_settings_fpvd_integration.cpp)
+    target_include_directories(fpvd_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC}
+      ${PROJECT_SOURCE_DIR}/third_party/cpp-httplib)
+    target_link_libraries(fpvd_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} CURL::libcurl pthread)
+    target_compile_definitions(fpvd_tests PRIVATE PP_FPVD_TEST=1)
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

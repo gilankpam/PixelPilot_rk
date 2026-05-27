@@ -16,14 +16,27 @@ struct pp_tabbar {
     lv_obj_t **tab_objs;
 };
 
+static void anim_opa_cb(void *obj, int32_t v) {
+    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)v, 0);
+}
+
 static void apply_active(pp_tabbar_t *t) {
     for (size_t i = 0; i < t->n; i++) {
+        lv_obj_t *page = t->items[i].page;
         if (i == t->active) {
             lv_obj_add_state(t->tab_objs[i], LV_STATE_CHECKED);
-            lv_obj_remove_flag(t->items[i].page, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(page, LV_OBJ_FLAG_HIDDEN);
+            /* Fade incoming page in. */
+            lv_obj_set_style_opa(page, LV_OPA_TRANSP, 0);
+            lv_anim_t v; lv_anim_init(&v);
+            lv_anim_set_var(&v, page);
+            lv_anim_set_exec_cb(&v, anim_opa_cb);
+            lv_anim_set_values(&v, LV_OPA_TRANSP, LV_OPA_COVER);
+            lv_anim_set_duration(&v, 120);
+            lv_anim_start(&v);
         } else {
             lv_obj_remove_state(t->tab_objs[i], LV_STATE_CHECKED);
-            lv_obj_add_flag(t->items[i].page, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(page, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }

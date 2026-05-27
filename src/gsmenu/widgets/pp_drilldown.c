@@ -14,6 +14,10 @@ static void on_key(lv_event_t *e) {
     if (lv_event_get_key(e) == LV_KEY_HOME) pp_drilldown_close();
 }
 
+static void anim_x_cb(void *obj, int32_t v) {
+    lv_obj_set_x((lv_obj_t *)obj, v);
+}
+
 lv_obj_t *pp_drilldown_open(lv_obj_t *anchor_page, const char *title,
                             pp_drilldown_build_fn build, void *user) {
     if (g_overlay) pp_drilldown_close();
@@ -23,8 +27,18 @@ lv_obj_t *pp_drilldown_open(lv_obj_t *anchor_page, const char *title,
     lv_obj_remove_style_all(g_overlay);
     lv_obj_add_style(g_overlay, &pp_style_panel, 0);
     lv_obj_set_size(g_overlay, LV_PCT(78), LV_PCT(100));
-    lv_obj_set_pos(g_overlay, 0, 0);
     lv_obj_set_flex_flow(g_overlay, LV_FLEX_FLOW_COLUMN);
+
+    /* Slide-in from the right edge of the panel. */
+    int32_t panel_w = lv_obj_get_width(parent);
+    if (panel_w <= 0) panel_w = lv_display_get_horizontal_resolution(NULL);
+    lv_obj_set_pos(g_overlay, panel_w, 0);
+    lv_anim_t a; lv_anim_init(&a);
+    lv_anim_set_var(&a, g_overlay);
+    lv_anim_set_exec_cb(&a, anim_x_cb);
+    lv_anim_set_values(&a, panel_w, 0);
+    lv_anim_set_duration(&a, 180);
+    lv_anim_start(&a);
 
     /* Dim the underlying anchor page so it's still visible. */
     g_dimmed_page = anchor_page;

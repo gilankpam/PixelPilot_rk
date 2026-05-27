@@ -252,6 +252,16 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(gs_rxpower_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    add_executable(gs_enum_tests
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_gs_enum.cpp)
+    target_include_directories(gs_enum_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
+    target_link_libraries(gs_enum_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

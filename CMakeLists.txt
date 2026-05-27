@@ -103,6 +103,7 @@ set(SIMULATOR_SOURCES
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c
+        src/gsmenu/settings_dummy.c
         src/lvosd.h
         src/lvosd.c
         src/menu.h

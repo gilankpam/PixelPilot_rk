@@ -50,6 +50,11 @@ void  pp_settings_set_async(const char *domain, const char *page,
 /* Registers the built-in no-op stub provider. */
 void pp_settings_register_stub(void);
 
+/* Registers an in-memory dummy provider with seeded values for every
+ * key the page builders use. Writes update a per-session overlay;
+ * nothing is persisted to disk. Intended only for the simulator. */
+void pp_settings_register_dummy(void);
+
 #ifdef __cplusplus
 }
 #endif

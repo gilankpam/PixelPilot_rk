@@ -218,7 +218,12 @@
         #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 4
     #endif
 
-    #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NONE
+    /** Use NEON SIMD acceleration on ARM targets; fall back to plain C on x86/sim */
+    #ifdef __ARM_NEON__
+        #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NEON
+    #else
+        #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NONE
+    #endif
 
     #if LV_USE_DRAW_SW_ASM == LV_DRAW_SW_ASM_CUSTOM
         #define  LV_DRAW_SW_ASM_CUSTOM_INCLUDE ""

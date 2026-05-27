@@ -2054,12 +2054,15 @@ void my_flush_cb(lv_display_t * display, const lv_area_t * area, uint8_t * px_ma
 
     struct modeset_buf *buf1 = &p->out->osd_bufs[0];
     struct modeset_buf *buf2 = &p->out->osd_bufs[1];
+    struct modeset_buf *buf3 = &p->out->osd_bufs[2];
 	int ret = pthread_mutex_lock(&osd_mutex);
-	assert(!ret);	
+	assert(!ret);
     if (px_map == buf1->map) {
 		p->out->osd_buf_switch = 0;
     } else if (px_map == buf2->map) {
 		p->out->osd_buf_switch = 1;
+    } else if (px_map == buf3->map) {
+		p->out->osd_buf_switch = 2;
     } else {
         spdlog::error("Unknown buffer being flushed");
     }
@@ -2108,12 +2111,16 @@ void setup_lvgl(osd_thread_params *p) {
     struct modeset_buf *buf = &p->out->osd_bufs[p->out->osd_buf_switch];
 	display = lv_display_create(buf->width, buf->height);
 
-	// Get the first two buffers from the OSD buffers
+	// Get all three DRM-allocated OSD buffers
 	struct modeset_buf *buf1 = &p->out->osd_bufs[0];
 	struct modeset_buf *buf2 = &p->out->osd_bufs[1];
+	struct modeset_buf *buf3 = &p->out->osd_bufs[2];
 
-	// Set the buffers in LVGL
-	lv_display_set_buffers(display, buf1->map, buf2->map, buf1->size, LV_DISPLAY_RENDER_MODE_DIRECT);
+	// Triple-buffer: buf1 stays on-screen while LVGL double-buffers into buf2+buf3.
+	// The flush_cb recognises all three so osd_buf_switch is set correctly for page-flip.
+	// At 1080p XRGB8888 each buffer is 1920*1080*4 = ~8 MB; total ~24 MB.
+	LV_LOG_INFO("Display buffers: 3 x %u bytes = %u total", buf1->size, 3 * buf1->size);
+	lv_display_set_buffers(display, buf2->map, buf3->map, buf2->size, LV_DISPLAY_RENDER_MODE_DIRECT);
 
 	lv_display_set_flush_cb(display, my_flush_cb);
 

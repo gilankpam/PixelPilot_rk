@@ -19,7 +19,7 @@ typedef struct {
 /* Read-only seed table. Keyed by the "key" component only — sufficient
  * because every page builder uses a unique key. */
 static const dummy_entry_t g_seed[] = {
-    /* read-only info rows (System tab) */
+    /* System tab info rows (kept) */
     { "Version",      "1.3.0-sim" },
     { "Disk",         "12.4 / 64 GB" },
     { "Channel",      "149" },
@@ -28,69 +28,73 @@ static const dummy_entry_t g_seed[] = {
 
     /* Camera — Video */
     { "size",         "1920x1080" },
-    { "video_mode",   "fpv" },
     { "fps",          "60" },
     { "bitrate",      "15M" },
     { "codec",        "h265" },
-    { "gopsize",      "30" },
+    { "gopsize",      "1" },
     { "rc_mode",      "cbr" },
+    { "qp_delta",     "-4" },
+
+    /* Camera — ROI */
+    { "roi_enabled",  "on" },
+    { "roi_qp",       "0" },
+    { "roi_center",   "40" },
+    { "roi_steps",    "2" },
 
     /* Camera — Image */
     { "mirror",       "off" },
     { "flip",         "off" },
-    { "contrast",     "50" },
-    { "hue",          "50" },
-    { "saturation",   "50" },
-    { "luminace",     "50" },
+    { "rotate",       "0" },
 
-    /* Camera — ISP */
-    { "exposure",     "50" },
-    { "antiflicker",  "50hz" },
-    { "sensor_file",  "imx415_4k" },
-
-    /* Camera — FPV / Recording */
-    { "fpv_enable",   "on" },
-    { "noiselevel",   "20" },
+    /* Camera — Recording */
     { "rec_enable",   "off" },
-    { "rec_split",    "10" },
-    { "rec_maxusage", "80" },
+    { "rec_split",    "5" },
+    { "rec_maxmb",    "500" },
 
-    /* Link — WFB-NG (gs) */
+    /* Link — WFB-NG */
     { "gs_channel",   "149" },
     { "bandwidth",    "40" },
-    { "txpower",      "50" },
-    /* Link — WFB-NG (air) */
-    { "power",        "3" },
-    { "air_channel",  "149" },
-    { "width",        "40" },
-    { "mcs_index",    "5" },
+    { "txpower",      "20" },
+    { "mcs_index",    "2" },
     { "stbc",         "off" },
     { "ldpc",         "on" },
     { "fec_k",        "8" },
     { "fec_n",        "12" },
-    { "mlink",        "on" },
-    /* Link — Adaptive */
-    { "adaptivelink", "on" },
-    /* Link — AALink */
-    { "power_level_0_to_4",    "3" },
-    { "fallback_ms",           "1500" },
-    { "hold_fallback_mode_s",  "5" },
-    { "min_between_changes_ms","800" },
-    { "hold_modes_down_s",     "10" },
-    { "hysteresis_percent",    "20" },
-    { "allow_request_keyframe","on" },
-    { "idr_every_change",      "off" },
-    /* Link — AP-FPV */
-    { "channel",      "6" },
 
-    /* Display */
+    /* Dynamic Link — General */
+    { "enabled",            "off" },
+    { "interleaving",       "on" },
+    { "mavlink_enable",     "on" },
+    /* Dynamic Link — OSD */
+    { "osd_enabled",        "on" },
+    { "osd_debug_latency",  "off" },
+    /* Dynamic Link — Timing */
+    { "health_timeout_ms",  "10000" },
+    { "min_idr_interval_ms","500" },
+    { "apply_stagger_ms",   "50" },
+    { "apply_subpace_ms",   "5" },
+    /* Dynamic Link — ROI QP */
+    { "roiqp_threshold_kbps", "6000" },
+    { "roiqp_low_anchor_kbps","2000" },
+    { "roiqp_floor",          "-24" },
+    { "roiqp_step",           "3" },
+    /* Dynamic Link — Safe Ceilings */
+    { "safe_mcs",         "1" },
+    { "safe_k",           "8" },
+    { "safe_n",           "12" },
+    { "safe_depth",       "1" },
+    { "safe_bandwidth",   "20" },
+    { "safe_txpower_dbm", "20" },
+    { "safe_bitrate_kbps","2000" },
+
+    /* Display (kept for the unmodified Display tab) */
     { "hdmi_mode",        "1920x1080@60" },
     { "video_scale",      "100" },
     { "color_correction", "off" },
     { "cc_gain",          "25" },
     { "cc_offset",        "0" },
 
-    /* DVR */
+    /* DVR (kept) */
     { "rec_enabled",          "on" },
     { "dvr_mode",             "reencode" },
     { "rec_fps",              "60" },
@@ -101,15 +105,11 @@ static const dummy_entry_t g_seed[] = {
     { "dvr_reenc_bitrate",    "8000" },
     { "dvr_osd",              "on" },
 
-    /* System — Receiver */
+    /* System — Receiver / Network / Telemetry (kept) */
     { "rx_codec",     "h265" },
     { "rx_mode",      "wfb" },
-
-    /* System — Network */
     { "hotspot",      "off" },
     { "restream",     "off" },
-
-    /* System — Telemetry */
     { "serial",       "ttyS2" },
     { "router",       "mavfwd" },
     { "osd_fps",      "30" },

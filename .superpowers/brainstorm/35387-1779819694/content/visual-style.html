@@ -1,0 +1,140 @@
+<h2>Which visual style?</h2>
+<p class="subtitle">Same layout B, three flavors. Differences: background treatment, accent color, row density, divider style.</p>
+
+<style>
+  .layout-card { background: #111; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; position: relative; font-family: -apple-system, "SF Pro", system-ui, sans-serif; color: #fff; }
+  .video-bg { position: absolute; inset: 0; background: linear-gradient(135deg, #2d5a3d 0%, #1a3a2a 40%, #0d1f15 100%); }
+  .video-bg::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 30% 40%, rgba(255,255,255,0.05) 0%, transparent 50%); }
+
+  .panel { position: absolute; left: 0; top: 0; bottom: 0; width: 78%; display: flex; }
+  .tabs { width: 72px; padding: 16px 0; display: flex; flex-direction: column; }
+  .tab { display: flex; flex-direction: column; align-items: center; padding: 12px 0; font-size: 9px; color: rgba(255,255,255,0.45); gap: 5px; letter-spacing: 0.3px; }
+  .tab .glyph { width: 20px; height: 20px; border: 1.5px solid currentColor; border-radius: 5px; }
+  .body { flex: 1; padding: 16px 0; }
+  .body h4 { font-size: 12px; margin: 0 20px 14px; color: rgba(255,255,255,0.4); font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+
+  .row { display: flex; align-items: center; padding: 9px 20px; font-size: 11px; }
+  .row .label { flex: 1; }
+  .row .value { font-weight: 500; }
+  .row .icon { width: 14px; opacity: 0.7; margin-right: 12px; }
+  .icon-sq { display: inline-block; width: 10px; height: 10px; background: currentColor; border-radius: 2px; }
+
+  /* Style A — DJI-faithful: dark translucent + blur, cyan accent */
+  .A .panel { background: rgba(8,12,18,0.78); backdrop-filter: blur(10px); }
+  .A .tab.active { color: #00d8ff; }
+  .A .tab.active .glyph { background: rgba(0,216,255,0.15); border-color: #00d8ff; }
+  .A .tabs { background: rgba(0,0,0,0.25); }
+  .A .row.focus { background: rgba(0,216,255,0.12); }
+  .A .row.focus .label { color: #fff; }
+  .A .row.focus .value { color: #00d8ff; }
+  .A .row .value { color: rgba(255,255,255,0.6); }
+
+  /* Style B — OpenIPC-modernized: opaque near-black, blue accent, subtle dividers */
+  .B .panel { background: rgba(15,17,22,0.97); }
+  .B .tabs { background: rgba(0,0,0,0.3); border-right: 1px solid rgba(255,255,255,0.05); }
+  .B .tab.active { color: #6b7fff; }
+  .B .tab.active .glyph { background: rgba(76,96,216,0.2); border-color: #6b7fff; }
+  .B .row { border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .B .row.focus { background: rgba(76,96,216,0.12); border-left: 2px solid #6b7fff; padding-left: 18px; }
+  .B .row.focus .value { color: #6b7fff; }
+  .B .row .value { color: rgba(255,255,255,0.55); }
+
+  /* Style C — Minimalist: fully transparent over video, white-on-glass, cyan accent */
+  .C .panel { background: linear-gradient(90deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 100%); }
+  .C .tabs { padding: 24px 0; }
+  .C .tab { padding: 14px 0; }
+  .C .tab.active { color: #00e0ff; }
+  .C .tab.active .glyph { border-color: #00e0ff; box-shadow: 0 0 8px rgba(0,224,255,0.5); }
+  .C .row { padding: 12px 20px; }
+  .C .row.focus .label { color: #00e0ff; }
+  .C .row.focus .value { color: #00e0ff; font-weight: 600; }
+  .C .row .value { color: rgba(255,255,255,0.75); text-shadow: 0 0 4px rgba(0,0,0,0.6); }
+  .C .row .label { text-shadow: 0 0 4px rgba(0,0,0,0.6); }
+  .C .body h4 { color: rgba(255,255,255,0.55); }
+
+  .options { grid-template-columns: 1fr; }
+  .option .content { width: 100%; }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="A" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>DJI-faithful</h3>
+      <p>Dark translucent panel with backdrop blur. Cyan accent <code>#00D8FF</code>. No row dividers — focus shown by background tint only. Generous spacing.</p>
+      <div class="layout-card A">
+        <div class="video-bg"></div>
+        <div class="panel">
+          <div class="tabs">
+            <div class="tab"><div class="glyph"></div>Display</div>
+            <div class="tab active"><div class="glyph"></div>Camera</div>
+            <div class="tab"><div class="glyph"></div>Link</div>
+            <div class="tab"><div class="glyph"></div>DVR</div>
+            <div class="tab"><div class="glyph"></div>System</div>
+          </div>
+          <div class="body">
+            <h4>Camera</h4>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Resolution</span><span class="value">1080p60</span></div>
+            <div class="row focus"><span class="icon"><span class="icon-sq"></span></span><span class="label">Bitrate</span><span class="value">25 Mbps</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">ISP Profile</span><span class="value">Default</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Mirror</span><span class="value">Off</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="B" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>OpenIPC-modernized</h3>
+      <p>Opaque near-black panel (no blur, faster to render). Brightened OpenIPC blue accent <code>#6B7FFF</code>. Subtle dividers between rows; focus has a 2px left border + tint. Moderate density.</p>
+      <div class="layout-card B">
+        <div class="video-bg"></div>
+        <div class="panel">
+          <div class="tabs">
+            <div class="tab"><div class="glyph"></div>Display</div>
+            <div class="tab active"><div class="glyph"></div>Camera</div>
+            <div class="tab"><div class="glyph"></div>Link</div>
+            <div class="tab"><div class="glyph"></div>DVR</div>
+            <div class="tab"><div class="glyph"></div>System</div>
+          </div>
+          <div class="body">
+            <h4>Camera</h4>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Resolution</span><span class="value">1080p60</span></div>
+            <div class="row focus"><span class="icon"><span class="icon-sq"></span></span><span class="label">Bitrate</span><span class="value">25 Mbps</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">ISP Profile</span><span class="value">Default</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Mirror</span><span class="value">Off</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="C" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Minimalist (transparent overlay)</h3>
+      <p>Light gradient over video — keeps maximum video visibility. Text has subtle dark stroke for readability. Cyan accent with subtle glow on active tab. No card chrome.</p>
+      <div class="layout-card C">
+        <div class="video-bg"></div>
+        <div class="panel">
+          <div class="tabs">
+            <div class="tab"><div class="glyph"></div>Display</div>
+            <div class="tab active"><div class="glyph"></div>Camera</div>
+            <div class="tab"><div class="glyph"></div>Link</div>
+            <div class="tab"><div class="glyph"></div>DVR</div>
+            <div class="tab"><div class="glyph"></div>System</div>
+          </div>
+          <div class="body">
+            <h4>Camera</h4>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Resolution</span><span class="value">1080p60</span></div>
+            <div class="row focus"><span class="icon"><span class="icon-sq"></span></span><span class="label">Bitrate</span><span class="value">25 Mbps</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">ISP Profile</span><span class="value">Default</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Mirror</span><span class="value">Off</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

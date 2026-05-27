@@ -23,7 +23,7 @@ lv_obj_t   *pp_menu_screen;
 lv_obj_t   *pp_osd_screen;
 lv_obj_t   *dvr_screen;             /* Legacy. */
 lv_obj_t   *txprofiles_screen;      /* Legacy. */
-extern lv_group_t *main_group;      /* Defined in gsmenu/ui.c. */
+lv_group_t *main_group;
 
 static void add_focusable_children(lv_obj_t *page, lv_group_t *grp) {
     uint32_t n = lv_obj_get_child_cnt(page);

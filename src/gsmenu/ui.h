@@ -1,7 +1,9 @@
 #pragma once
 
 #include "../../lvgl/lvgl.h"
-#include "ui.h"
+
+/* Types kept for compatibility with helper.h's legacy create_* APIs.
+ * The new menu (src/menu.c + widgets/ + pages/) does not use these. */
 
 typedef void (*ReloadFunc)(lv_obj_t * page, lv_obj_t * target);
 
@@ -19,6 +21,3 @@ typedef struct {
     size_t entry_count;
     PageEntry *page_entries;
 } menu_page_data_t;
-
-lv_obj_t * pp_header_create(lv_obj_t * screen);
-lv_obj_t * pp_menu_create(lv_obj_t * screen);

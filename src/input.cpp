@@ -17,7 +17,6 @@
 #include "main.h"
 #include "lvgl/lvgl.h"
 #include "input.h"
-#include "gsmenu/gs_system.h"
 
 #ifndef USE_SIMULATOR
 extern YAML::Node config;

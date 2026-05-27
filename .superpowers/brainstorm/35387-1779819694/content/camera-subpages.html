@@ -1,0 +1,140 @@
+<h2>How should Camera's sub-pages work?</h2>
+<p class="subtitle">Camera today has 5 sub-pages: Video, Image, ISP, FPV, Recording. Same visual style B in all three. Same content in all three.</p>
+
+<style>
+  .layout-card { background: #111; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; position: relative; font-family: -apple-system, "SF Pro", system-ui, sans-serif; color: #fff; }
+  .video-bg { position: absolute; inset: 0; background: linear-gradient(135deg, #2d5a3d 0%, #1a3a2a 40%, #0d1f15 100%); }
+
+  .panel { position: absolute; left: 0; top: 0; bottom: 0; width: 78%; display: flex; background: rgba(15,17,22,0.97); }
+  .tabs { width: 72px; padding: 16px 0; display: flex; flex-direction: column; background: rgba(0,0,0,0.3); border-right: 1px solid rgba(255,255,255,0.05); }
+  .tab { display: flex; flex-direction: column; align-items: center; padding: 12px 0; font-size: 9px; color: rgba(255,255,255,0.45); gap: 5px; letter-spacing: 0.3px; }
+  .tab .glyph { width: 20px; height: 20px; border: 1.5px solid currentColor; border-radius: 5px; }
+  .tab.active { color: #6b7fff; }
+  .tab.active .glyph { background: rgba(76,96,216,0.2); border-color: #6b7fff; }
+  .body { flex: 1; padding: 16px 0; overflow: hidden; }
+  .body h4 { font-size: 10px; margin: 0 20px 8px; color: rgba(255,255,255,0.4); font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+  .body h5 { font-size: 9px; margin: 12px 20px 6px; color: rgba(107,127,255,0.7); font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; }
+
+  .row { display: flex; align-items: center; padding: 7px 20px; font-size: 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .row .label { flex: 1; }
+  .row .value { font-weight: 500; color: rgba(255,255,255,0.55); }
+  .row .icon { width: 12px; opacity: 0.7; margin-right: 10px; }
+  .row.focus { background: rgba(76,96,216,0.12); border-left: 2px solid #6b7fff; padding-left: 18px; }
+  .row.focus .value { color: #6b7fff; }
+  .row .chev { color: rgba(255,255,255,0.3); margin-left: 8px; font-size: 11px; }
+  .icon-sq { display: inline-block; width: 9px; height: 9px; background: currentColor; border-radius: 2px; }
+
+  /* C: mini tabs inside */
+  .subtabs { display: flex; gap: 18px; padding: 0 20px 8px; border-bottom: 1px solid rgba(255,255,255,0.06); margin-bottom: 8px; font-size: 9px; }
+  .subtab { color: rgba(255,255,255,0.4); padding-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .subtab.active { color: #fff; border-bottom: 2px solid #6b7fff; margin-bottom: -9px; }
+
+  .body-scroll { overflow-y: hidden; height: 100%; position: relative; }
+  .scroll-hint { position: absolute; right: 4px; top: 10%; bottom: 10%; width: 2px; background: rgba(255,255,255,0.1); border-radius: 1px; }
+  .scroll-hint::after { content: ""; position: absolute; top: 0; height: 30%; left: 0; right: 0; background: rgba(107,127,255,0.6); border-radius: 1px; }
+
+  .options { grid-template-columns: 1fr; }
+  .option .content { width: 100%; }
+
+  .common-tabs { width: 72px; }
+</style>
+
+<div class="options">
+  <!-- A: Inline sections -->
+  <div class="option" data-choice="A" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A — Inline sections (one long scroll)</h3>
+      <p>Camera tab shows all 5 sub-pages stacked with section headers. W/S scrolls through the whole list. No drill-down. Most DJI-like.</p>
+      <div class="layout-card">
+        <div class="video-bg"></div>
+        <div class="panel">
+          <div class="tabs common-tabs">
+            <div class="tab"><div class="glyph"></div>Display</div>
+            <div class="tab active"><div class="glyph"></div>Camera</div>
+            <div class="tab"><div class="glyph"></div>Link</div>
+            <div class="tab"><div class="glyph"></div>DVR</div>
+            <div class="tab"><div class="glyph"></div>System</div>
+          </div>
+          <div class="body body-scroll">
+            <div class="scroll-hint"></div>
+            <h4>Camera</h4>
+            <h5>Video</h5>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Resolution</span><span class="value">1080p60</span></div>
+            <div class="row focus"><span class="icon"><span class="icon-sq"></span></span><span class="label">Bitrate</span><span class="value">25 Mbps</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Codec</span><span class="value">H.265</span></div>
+            <h5>Image</h5>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Mirror</span><span class="value">Off</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Flip</span><span class="value">Off</span></div>
+            <h5>ISP</h5>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Profile</span><span class="value">Default</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B: drill-down -->
+  <div class="option" data-choice="B" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>B — Drill-down (current model, restyled)</h3>
+      <p>Camera tab shows 5 row items. D enters the chosen sub-page; A goes back. Same as today, just in the new visual style. Familiar; better if any sub-page is long.</p>
+      <div class="layout-card">
+        <div class="video-bg"></div>
+        <div class="panel">
+          <div class="tabs common-tabs">
+            <div class="tab"><div class="glyph"></div>Display</div>
+            <div class="tab active"><div class="glyph"></div>Camera</div>
+            <div class="tab"><div class="glyph"></div>Link</div>
+            <div class="tab"><div class="glyph"></div>DVR</div>
+            <div class="tab"><div class="glyph"></div>System</div>
+          </div>
+          <div class="body">
+            <h4>Camera</h4>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Video</span><span class="value">1080p60</span><span class="chev">›</span></div>
+            <div class="row focus"><span class="icon"><span class="icon-sq"></span></span><span class="label">Image</span><span class="value">Default</span><span class="chev">›</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">ISP</span><span class="value">Default</span><span class="chev">›</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">FPV</span><span class="value">On</span><span class="chev">›</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Recording</span><span class="value">Off</span><span class="chev">›</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C: mini-tabs -->
+  <div class="option" data-choice="C" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>C — Mini-tabs inside Camera</h3>
+      <p>Camera tab shows a secondary horizontal tab strip (Video / Image / ISP / FPV / Recording) above the rows. W/S nav rows; sub-tab change needs an extra binding (e.g., shoulder buttons, or Left/Right from the leftmost row).</p>
+      <div class="layout-card">
+        <div class="video-bg"></div>
+        <div class="panel">
+          <div class="tabs common-tabs">
+            <div class="tab"><div class="glyph"></div>Display</div>
+            <div class="tab active"><div class="glyph"></div>Camera</div>
+            <div class="tab"><div class="glyph"></div>Link</div>
+            <div class="tab"><div class="glyph"></div>DVR</div>
+            <div class="tab"><div class="glyph"></div>System</div>
+          </div>
+          <div class="body">
+            <h4>Camera</h4>
+            <div class="subtabs">
+              <div class="subtab">Video</div>
+              <div class="subtab active">Image</div>
+              <div class="subtab">ISP</div>
+              <div class="subtab">FPV</div>
+              <div class="subtab">Recording</div>
+            </div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Mirror</span><span class="value">Off</span></div>
+            <div class="row focus"><span class="icon"><span class="icon-sq"></span></span><span class="label">Flip</span><span class="value">Off</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Brightness</span><span class="value">50</span></div>
+            <div class="row"><span class="icon"><span class="icon-sq"></span></span><span class="label">Saturation</span><span class="value">50</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

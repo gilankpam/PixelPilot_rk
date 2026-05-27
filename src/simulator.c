@@ -9,8 +9,6 @@
 #include "menu.h"
 #include "input.h"
 #include "gsmenu/helper.h"
-#include "gsmenu/air_actions.h"
-#include "gsmenu/gs_actions.h"
 #include "gsmenu/settings.h"
 
 void dispatch_input_char(char c);
@@ -48,11 +46,6 @@ const char *dvr_template = "/tmp/record_%Y-%m-%d_%H-%M-%S.mp4";
 bool enable_live_colortrans = false;
 float live_colortrans_gain = 2.5f;
 float live_colortrans_offset = -0.15f;
-
-MenuAction airactions[MAX_ACTIONS];
-size_t airactions_count = 0;
-MenuAction gsactions[MAX_ACTIONS];
-size_t gsactions_count = 0;
 
 bool restream_get_enabled(void)                       { return false; }
 void restream_scan_clients(char *buf, size_t buf_len) { if (buf && buf_len) buf[0] = '\0'; }

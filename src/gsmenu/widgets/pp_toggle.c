@@ -82,7 +82,7 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
 
     lv_obj_t *label_obj = lv_label_create(row);
     lv_label_set_text(label_obj, label);
-    lv_obj_set_flex_grow(label_obj, 1);
+    lv_obj_set_style_pad_right(label_obj, 16, 0);
 
     lv_obj_t *sw = lv_switch_create(row);
     lv_obj_add_style(sw, &pp_style_switch_on,

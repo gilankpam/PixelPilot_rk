@@ -97,6 +97,11 @@ typedef struct {
     bool           busy;
 } pp_row_state_t;
 
+static void row_state_delete_cb(lv_event_t *e) {
+    pp_row_state_t *s = (pp_row_state_t *)lv_event_get_user_data(e);
+    if (s) lv_free(s);
+}
+
 static pp_row_state_t *row_state(lv_obj_t *row) {
     /* Stored in a child object marked with LV_OBJ_FLAG_USER_2; if no
      * state child exists we create one. */
@@ -119,6 +124,7 @@ static pp_row_state_t *row_state(lv_obj_t *row) {
     s->lock_state = PP_ROW_UNLOCKED;
     s->busy = false;
     lv_obj_set_user_data(holder, s);
+    lv_obj_add_event_cb(holder, row_state_delete_cb, LV_EVENT_DELETE, s);
     return s;
 }
 

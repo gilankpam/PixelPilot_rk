@@ -3,6 +3,7 @@
 #include "widgets/pp_section_header.h"
 #include "widgets/pp_row.h"
 #include "widgets/pp_toggle.h"
+#include "widgets/pp_slider.h"
 
 /* Defined here; subsequent widget tasks append to demo_root via demo_root_obj(). */
 static lv_obj_t *demo_root = NULL;
@@ -34,6 +35,9 @@ void pp_widget_demo_main(void) {
 
     pp_toggle(demo_root, LV_SYMBOL_REFRESH, "Mirror", "air", "camera", "mirror");
     pp_toggle(demo_root, LV_SYMBOL_REFRESH, "Flip",   "air", "camera", "flip");
+
+    pp_slider(demo_root, LV_SYMBOL_AUDIO, "Bitrate",
+              "air", "camera", "bitrate", 1, 50);
 
     /* Subsequent widget tasks add demo rows here via demo_root_obj(). */
 }

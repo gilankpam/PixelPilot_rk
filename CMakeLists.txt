@@ -133,6 +133,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/pages/link.c
         src/gsmenu/pages/dvr.h
         src/gsmenu/pages/dvr.c
+        src/gsmenu/pages/system.h
+        src/gsmenu/pages/system.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c
@@ -211,6 +213,8 @@ set(LIB_SOURCE_FILES
         src/gsmenu/pages/link.c
         src/gsmenu/pages/dvr.h
         src/gsmenu/pages/dvr.c
+        src/gsmenu/pages/system.h
+        src/gsmenu/pages/system.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c

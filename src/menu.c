@@ -13,6 +13,7 @@
 #include "gsmenu/pages/camera.h"
 #include "gsmenu/pages/link.h"
 #include "gsmenu/pages/dvr.h"
+#include "gsmenu/pages/system.h"
 #include "lvosd.h"
 
 lv_obj_t   *menu;                   /* Legacy; kept for ABI w/ old code paths. */
@@ -79,7 +80,9 @@ void pp_menu_main(void)
     lv_obj_t *dvr = build_dvr_tab(root);
     lv_obj_set_flex_grow(dvr, 1);
     lv_obj_set_height(dvr, LV_PCT(100));
-    lv_obj_t *sys = stub_page(root, "System");
+    lv_obj_t *sys = build_system_tab(root);
+    lv_obj_set_flex_grow(sys, 1);
+    lv_obj_set_height(sys, LV_PCT(100));
 
     pp_tabbar_item_t items[5] = {
         { "Camera",  LV_SYMBOL_IMAGE,     cam },

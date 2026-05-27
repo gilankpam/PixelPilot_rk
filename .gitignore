@@ -66,3 +66,6 @@ output/
 debian-*-generic-arm64.tar.xz
 disk.raw
 pixelpilot
+
+# Scratch directory written by superpowers skills (brainstorming, etc.)
+.superpowers/

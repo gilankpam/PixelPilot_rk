@@ -21,6 +21,7 @@ static void on_key(lv_event_t *e) {
     if (now) lv_obj_add_state(d->sw, LV_STATE_CHECKED);
     else     lv_obj_remove_state(d->sw, LV_STATE_CHECKED);
     pp_settings_set_async(d->domain, d->page, d->key, now ? "on" : "off", NULL);
+    lv_event_stop_bubbling(e);
 }
 
 lv_obj_t *pp_toggle(lv_obj_t *parent_page,

@@ -27,6 +27,7 @@ static void on_key(lv_event_t *e) {
     pp_slider_data_t *d = lv_event_get_user_data(e);
     lv_key_t k = lv_event_get_key(e);
     extern gsmenu_control_mode_t control_mode;
+    bool consumed = false;
     if (k == LV_KEY_ENTER) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
             d->saved_val = lv_slider_get_value(d->slider);
@@ -37,19 +38,28 @@ static void on_key(lv_event_t *e) {
             snprintf(buf, sizeof buf, "%d", (int)lv_slider_get_value(d->slider));
             pp_settings_set_async(d->domain, d->page, d->key, buf, NULL);
         }
+        consumed = true;
     } else if (k == LV_KEY_RIGHT) {
         lv_slider_set_value(d->slider, lv_slider_get_value(d->slider) + 1, LV_ANIM_OFF);
         update_label(d);
+        consumed = true;
     } else if (k == LV_KEY_LEFT) {
         lv_slider_set_value(d->slider, lv_slider_get_value(d->slider) - 1, LV_ANIM_OFF);
         update_label(d);
+        consumed = true;
     } else if (k == LV_KEY_ESC) {
         if (control_mode == GSMENU_CONTROL_MODE_SLIDER) {
             lv_slider_set_value(d->slider, d->saved_val, LV_ANIM_OFF);
             update_label(d);
         }
         control_mode = GSMENU_CONTROL_MODE_NAV;
+        consumed = true;
     }
+    /* Stop bubbling for any key we handle: otherwise LVGL's base event
+     * handler on the parent scrollable page would auto-scroll on
+     * LEFT/RIGHT/UP/DOWN. HOME isn't consumed here so it still bubbles
+     * to pp_page::on_key for the back-to-tabbar handling. */
+    if (consumed) lv_event_stop_bubbling(e);
 }
 
 lv_obj_t *pp_slider(lv_obj_t *parent_page,

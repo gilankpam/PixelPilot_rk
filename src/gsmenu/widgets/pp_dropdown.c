@@ -26,6 +26,7 @@ static void on_key(lv_event_t *e) {
     pp_dd_data_t *d = lv_event_get_user_data(e);
     lv_key_t k = lv_event_get_key(e);
     extern gsmenu_control_mode_t control_mode;
+    bool consumed = false;
     if (k == LV_KEY_ENTER) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
             d->saved_sel = lv_dropdown_get_selected(d->dd);
@@ -36,20 +37,32 @@ static void on_key(lv_event_t *e) {
             lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
             pp_settings_set_async(d->domain, d->page, d->key, buf, NULL);
         }
+        consumed = true;
     } else if (k == LV_KEY_UP) {
-        uint16_t s = lv_dropdown_get_selected(d->dd);
-        if (s > 0) lv_dropdown_set_selected(d->dd, s - 1);
-        refresh_label(d);
+        if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            uint16_t s = lv_dropdown_get_selected(d->dd);
+            if (s > 0) lv_dropdown_set_selected(d->dd, s - 1);
+            refresh_label(d);
+            consumed = true;
+        }
     } else if (k == LV_KEY_DOWN) {
-        uint16_t s = lv_dropdown_get_selected(d->dd);
-        if (s + 1 < lv_dropdown_get_option_count(d->dd))
-            lv_dropdown_set_selected(d->dd, s + 1);
-        refresh_label(d);
+        if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            uint16_t s = lv_dropdown_get_selected(d->dd);
+            if (s + 1 < lv_dropdown_get_option_count(d->dd))
+                lv_dropdown_set_selected(d->dd, s + 1);
+            refresh_label(d);
+            consumed = true;
+        }
     } else if (k == LV_KEY_ESC) {
         lv_dropdown_set_selected(d->dd, d->saved_sel);
         refresh_label(d);
         control_mode = GSMENU_CONTROL_MODE_NAV;
+        consumed = true;
     }
+    /* Same scroll-bubbling guard as pp_slider — only stop bubbling for
+     * keys we consumed in EDIT mode. In NAV mode, UP/DOWN go to the
+     * page group's focus traversal (which is what we want for row nav). */
+    if (consumed) lv_event_stop_bubbling(e);
 }
 
 lv_obj_t *pp_dropdown(lv_obj_t *parent_page,

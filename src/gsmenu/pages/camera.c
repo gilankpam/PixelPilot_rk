@@ -31,44 +31,34 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
     pp_dropdown(page, LV_SYMBOL_SETTINGS, "RC Mode",
                 "air", "camera", "rc_mode",
                 "cbr\nvbr");
+    pp_slider(page, LV_SYMBOL_SETTINGS, "QP Delta",
+              "air", "camera", "qp_delta", -32, 0);
+
+    pp_section_header(page, "ROI");
+    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Enabled",
+              "air", "camera", "roi_enabled");
+    pp_slider(page, LV_SYMBOL_EYE_OPEN, "QP",
+              "air", "camera", "roi_qp", -24, 0);
+    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Center",
+              "air", "camera", "roi_center", 0, 100);
+    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Steps",
+              "air", "camera", "roi_steps", 1, 8);
 
     pp_section_header(page, "Image");
     pp_toggle(page, LV_SYMBOL_REFRESH, "Mirror", "air", "camera", "mirror");
     pp_toggle(page, LV_SYMBOL_REFRESH, "Flip",   "air", "camera", "flip");
-    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Contrast",
-              "air", "camera", "contrast", 0, 100);
-    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Hue",
-              "air", "camera", "hue", 0, 100);
-    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Saturation",
-              "air", "camera", "saturation", 0, 100);
-    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Luminance",
-              "air", "camera", "luminace", 0, 100);
-
-    pp_section_header(page, "ISP");
-    pp_slider(page, LV_SYMBOL_EYE_OPEN, "Exposure",
-              "air", "camera", "exposure", 1, 20);
-    pp_dropdown(page, LV_SYMBOL_SETTINGS, "Antiflicker",
-                "air", "camera", "antiflicker",
-                "off\n50hz\n60hz");
-    pp_dropdown(page, LV_SYMBOL_SETTINGS, "Sensor File",
-                "air", "camera", "sensor_file",
-                "default\nimx415_4k\nimx335");
-
-    pp_section_header(page, "FPV");
-    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Enabled",
-              "air", "camera", "fpv_enable");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Noise level",
-              "air", "camera", "noiselevel", 0, 100);
+    pp_dropdown(page, LV_SYMBOL_REFRESH, "Rotate",
+                "air", "camera", "rotate",
+                "0\n90\n180\n270");
 
     pp_section_header(page, "Recording");
     pp_toggle(page, LV_SYMBOL_VIDEO, "Enabled",
               "air", "camera", "rec_enable");
     pp_slider(page, LV_SYMBOL_VIDEO, "Split (min)",
-              "air", "camera", "rec_split", 0, 60);
-    pp_slider(page, LV_SYMBOL_SD_CARD, "Max usage (%)",
-              "air", "camera", "rec_maxusage", 50, 100);
+              "air", "camera", "rec_split", 1, 60);
+    pp_slider(page, LV_SYMBOL_SD_CARD, "Max size (MB)",
+              "air", "camera", "rec_maxmb", 100, 10000);
 
-    /* Add focusable rows to the page's group. */
     lv_group_t *grp = pp_page_group(page);
     uint32_t n = lv_obj_get_child_cnt(page);
     for (uint32_t i = 0; i < n; i++) {

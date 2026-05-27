@@ -185,6 +185,12 @@ if(USE_SIMULATOR)
     target_include_directories(settings_tests PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(settings_tests Catch2::Catch2WithMain)
+
+    add_executable(lvgl_state_tests
+      tests/test_lvgl_alt_state.cpp)
+    target_include_directories(lvgl_state_tests PRIVATE
+      ${PROJECT_SOURCE_DIR})
+    target_link_libraries(lvgl_state_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

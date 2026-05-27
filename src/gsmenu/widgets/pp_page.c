@@ -41,6 +41,7 @@ lv_obj_t *pp_page_create(lv_obj_t *parent,
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_remove_style_all(p);
     lv_obj_add_style(p, &pp_style_panel, 0);
+    lv_obj_add_style(p, &pp_style_panel_alt, LV_PART_MAIN | LV_STATE_ALT);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_ACTIVE);

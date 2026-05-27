@@ -50,6 +50,7 @@ lv_style_t style_openipc_dark_background;
 lv_style_t style_openipc_lightdark_background;
 
 lv_style_t pp_style_panel;
+lv_style_t pp_style_panel_alt;
 lv_style_t pp_style_tabbar;
 lv_style_t pp_style_tab;
 lv_style_t pp_style_tab_active;
@@ -156,6 +157,13 @@ int style_init(void) {
     lv_style_set_drop_shadow_opa(&pp_style_panel, LV_OPA_50);
     lv_style_set_drop_shadow_color(&pp_style_panel, lv_color_black());
     lv_style_set_drop_shadow_offset_y(&pp_style_panel, 4);
+
+    /* ALT state variant — distinguishing bg color for future day/night theme.
+     * Applied when LV_STATE_ALT is set on the panel object; no user-facing
+     * toggle yet (this is the seam only). */
+    lv_style_init(&pp_style_panel_alt);
+    lv_style_set_bg_color(&pp_style_panel_alt, lv_color_hex(0x1A1F2E));
+    lv_style_set_bg_opa(&pp_style_panel_alt, LV_OPA_90);
 
     lv_style_init(&pp_style_tabbar);
     lv_style_set_bg_color(&pp_style_tabbar, c_tabbar);

@@ -20,6 +20,7 @@ int style_init(void);
 
 /* New widget style tokens (Visual spec in 2026-05-27 design). */
 extern lv_style_t pp_style_panel;        /* main panel bg */
+extern lv_style_t pp_style_panel_alt;    /* alt-state panel bg (day/night seam) */
 extern lv_style_t pp_style_tabbar;       /* tab strip bg */
 extern lv_style_t pp_style_tab;          /* tab item base */
 extern lv_style_t pp_style_tab_active;   /* tab item active */

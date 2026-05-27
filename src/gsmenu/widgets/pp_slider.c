@@ -160,8 +160,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_add_style(row, &pp_style_row, 0);
     lv_obj_add_style(row, &pp_style_row_focus, LV_STATE_FOCUS_KEY);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, LV_SIZE_CONTENT);
-    lv_obj_set_style_min_height(row, 36, 0);
+    lv_obj_set_height(row, 36);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
@@ -177,15 +176,18 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_label_set_text(label_obj, label);
     lv_obj_set_flex_grow(label_obj, 1);
 
-    /* Spinbox column on the right side. */
+    /* Horizontal spinbox on the right side: ▲ 50 ▼ — keeps the row at the
+     * same 36px height as toggle/dropdown. UP/DOWN chevrons still convey
+     * the UP/DOWN key affordance even when laid out horizontally. */
     lv_obj_t *col = lv_obj_create(row);
     lv_obj_remove_style_all(col);
-    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_set_width(col, LV_SIZE_CONTENT);
     lv_obj_set_height(col, LV_SIZE_CONTENT);
     lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_column(col, 6, 0);
 
     lv_obj_t *up = lv_label_create(col);
     lv_label_set_text(up, LV_SYMBOL_UP);

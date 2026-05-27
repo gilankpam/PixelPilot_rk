@@ -74,6 +74,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/pages/camera.c
         src/gsmenu/pages/link.h
         src/gsmenu/pages/link.c
+        src/gsmenu/pages/dynamiclink.h
+        src/gsmenu/pages/dynamiclink.c
         src/gsmenu/pages/dvr.h
         src/gsmenu/pages/dvr.c
         src/gsmenu/pages/system.h
@@ -124,6 +126,8 @@ set(LIB_SOURCE_FILES
         src/gsmenu/pages/camera.c
         src/gsmenu/pages/link.h
         src/gsmenu/pages/link.c
+        src/gsmenu/pages/dynamiclink.h
+        src/gsmenu/pages/dynamiclink.c
         src/gsmenu/pages/dvr.h
         src/gsmenu/pages/dvr.c
         src/gsmenu/pages/system.h

@@ -226,6 +226,27 @@ cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t ty
     return cur;
 }
 
+static const char *LOCKED_PATHS[] = {
+    "link.mcs",
+    "link.txpower",
+    "link.fec",
+    "link.width",
+    "video.bitrate",
+    "video.qpDelta",
+    "video.roi",
+};
+static const size_t LOCKED_PATHS_N = sizeof(LOCKED_PATHS) / sizeof(LOCKED_PATHS[0]);
+
+bool fpvd_is_locked_path(const char *path) {
+    for (size_t i = 0; i < LOCKED_PATHS_N; i++) {
+        size_t lp_len = strlen(LOCKED_PATHS[i]);
+        if (strncmp(path, LOCKED_PATHS[i], lp_len) != 0) continue;
+        /* Match either exact or extended by a '.' (subtree). */
+        if (path[lp_len] == '\0' || path[lp_len] == '.') return true;
+    }
+    return false;
+}
+
 void pp_settings_register_fpvd(void) {
     /* Filled in by Task 3.6. */
 }

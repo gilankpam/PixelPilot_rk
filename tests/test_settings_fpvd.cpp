@@ -186,3 +186,30 @@ TEST_CASE("patch: enum stored as string", "[fpvd][patch]") {
     free(s);
     cJSON_Delete(body);
 }
+
+TEST_CASE("lock: matches exact locked paths", "[fpvd][lock]") {
+    REQUIRE(fpvd_is_locked_path("link.mcs") == true);
+    REQUIRE(fpvd_is_locked_path("link.txpower") == true);
+    REQUIRE(fpvd_is_locked_path("link.width") == true);
+    REQUIRE(fpvd_is_locked_path("video.bitrate") == true);
+    REQUIRE(fpvd_is_locked_path("video.qpDelta") == true);
+}
+
+TEST_CASE("lock: matches subtrees", "[fpvd][lock]") {
+    REQUIRE(fpvd_is_locked_path("link.fec.k") == true);
+    REQUIRE(fpvd_is_locked_path("link.fec.n") == true);
+    REQUIRE(fpvd_is_locked_path("video.roi.enabled") == true);
+    REQUIRE(fpvd_is_locked_path("video.roi.center") == true);
+}
+
+TEST_CASE("lock: does not match unrelated", "[fpvd][lock]") {
+    REQUIRE(fpvd_is_locked_path("link.channel") == false);
+    REQUIRE(fpvd_is_locked_path("video.fps") == false);
+    REQUIRE(fpvd_is_locked_path("video.codec") == false);
+    REQUIRE(fpvd_is_locked_path("image.mirror") == false);
+}
+
+TEST_CASE("lock: prefix overshoot is not a match", "[fpvd][lock]") {
+    /* "link.widthful" is not a child of "link.width". */
+    REQUIRE(fpvd_is_locked_path("link.widthful") == false);
+}

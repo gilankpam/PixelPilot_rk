@@ -44,6 +44,11 @@ char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type)
  * value parse error. Caller frees with cJSON_Delete. */
 cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t type);
 
+/* Returns true iff `path` is an exact match or subtree child of any locked
+ * JSON path (i.e. the paths owned by fpvd's dl-applier when dynamicLink is
+ * active). */
+bool fpvd_is_locked_path(const char *path);
+
 #ifdef __cplusplus
 }
 #endif

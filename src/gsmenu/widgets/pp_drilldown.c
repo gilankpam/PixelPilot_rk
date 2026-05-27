@@ -58,6 +58,11 @@ lv_obj_t *pp_drilldown_open(lv_obj_t *anchor_page, const char *title,
     lv_obj_set_flex_grow(g_body, 1);
     lv_obj_set_flex_flow(g_body, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(g_body, LV_DIR_VER);
+    /* LV_EVENT_KEY goes to the focused row in g_group. For on_key on
+     * g_overlay to fire on LV_KEY_HOME, the event must bubble up two
+     * levels (focused child -> g_body -> g_overlay). Flag this level
+     * here; children get flagged below when they're added to the group. */
+    lv_obj_add_flag(g_body, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     g_group = lv_group_create();
     g_prev_group = lv_indev_get_group(indev_drv);
@@ -66,12 +71,15 @@ lv_obj_t *pp_drilldown_open(lv_obj_t *anchor_page, const char *title,
     lv_obj_add_event_cb(g_overlay, on_key, LV_EVENT_KEY, NULL);
 
     if (build) build(g_body, user);
-    /* Auto-add focusable body children to the drilldown group. */
+    /* Auto-add focusable body children to the drilldown group. Each
+     * one also needs LV_OBJ_FLAG_EVENT_BUBBLE so LV_KEY_HOME bubbles
+     * up to g_overlay's on_key handler (same pattern as pp_page). */
     uint32_t n = lv_obj_get_child_cnt(g_body);
     for (uint32_t i = 0; i < n; i++) {
         lv_obj_t *c = lv_obj_get_child(g_body, i);
         if (lv_obj_check_type(c, &lv_obj_class)) {
             lv_group_add_obj(g_group, c);
+            lv_obj_add_flag(c, LV_OBJ_FLAG_EVENT_BUBBLE);
         }
     }
     return g_overlay;

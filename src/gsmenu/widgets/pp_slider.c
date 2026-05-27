@@ -75,6 +75,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
+    lv_obj_add_flag(row, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
 
     if (icon_text) {
         lv_obj_t *icon = lv_label_create(row);

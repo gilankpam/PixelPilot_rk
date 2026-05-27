@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "cJSON.h"
+#include "settings.h"
 
 #ifdef __cplusplus
 extern "C" {

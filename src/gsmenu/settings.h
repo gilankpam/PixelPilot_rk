@@ -99,6 +99,14 @@ void pp_settings_register_fpvd(void);
  * that must be written to both. Replaces register_fpvd in the device build. */
 void pp_settings_register_router(void);
 
+/* Returns a newline-joined list of valid option strings for the given key,
+ * or NULL if no enumerator is available. Caller frees with free().
+ * The current implementation supports:
+ *   ("gs","wfbng","gs_channel")  -> iw list channels
+ *   ("gs","display","hdmi_mode") -> drm_info modes
+ * All other tuples return NULL. */
+char *pp_settings_get_options(const char *domain, const char *page, const char *key);
+
 #ifdef __cplusplus
 }
 #endif

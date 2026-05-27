@@ -1,6 +1,8 @@
 #include "settings.h"
+#include "settings_gs_enum.h"
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 static const pp_settings_provider_t *g_provider = NULL;
 
@@ -105,4 +107,13 @@ void pp_settings_set_visibility(bool visible) {
     if (g_provider && g_provider->set_visibility) {
         g_provider->set_visibility(visible);
     }
+}
+
+char *pp_settings_get_options(const char *domain, const char *page, const char *key) {
+    if (!domain || !page || !key) return NULL;
+    if (strcmp(domain, "gs") == 0 && strcmp(page, "wfbng") == 0 && strcmp(key, "gs_channel") == 0)
+        return pp_gs_enum_channels();
+    if (strcmp(domain, "gs") == 0 && strcmp(page, "display") == 0 && strcmp(key, "hdmi_mode") == 0)
+        return pp_gs_enum_hdmi_modes();
+    return NULL;
 }

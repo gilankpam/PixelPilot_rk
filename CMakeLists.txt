@@ -206,6 +206,8 @@ if(USE_SIMULATOR)
     add_executable(settings_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_dummy.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
       src/gsmenu/widgets/pp_slider_bounds.c
       src/gsmenu/widgets/pp_slider_accel.c
       tests/test_settings.cpp
@@ -213,7 +215,8 @@ if(USE_SIMULATOR)
       tests/test_slider_bounds.cpp
       tests/test_slider_accel.cpp)
     target_include_directories(settings_tests PRIVATE
-      ${PROJECT_SOURCE_DIR}/src)
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
     target_link_libraries(settings_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
     add_executable(lvgl_state_tests
@@ -226,6 +229,7 @@ if(USE_SIMULATOR)
     add_executable(fpvd_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_fpvd.c
+      src/gsmenu/settings_gs_enum.c
       ${PP_CJSON_SOURCES}
       tests/test_settings_fpvd.cpp
       tests/test_settings_fpvd_integration.cpp)
@@ -266,9 +270,12 @@ if(USE_SIMULATOR)
     add_executable(router_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_router.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
       tests/test_settings_router.cpp)
     target_include_directories(router_tests PRIVATE
-      ${PROJECT_SOURCE_DIR}/src)
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
     target_link_libraries(router_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
     target_compile_definitions(router_tests PRIVATE PP_ROUTER_TEST=1)
   endif()

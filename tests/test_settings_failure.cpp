@@ -31,6 +31,7 @@ static void test_cb(int rc, const char *err, void *user_data) {
 TEST_CASE("PP_SIM_FAIL makes dummy_set_async report failure and skip the write",
           "[settings][failure]") {
     pp_settings_register_dummy();
+    setenv("PP_SIM_LATENCY_MS", "0", 1);
 
     /* Seed a known starting value. */
     pp_settings_set("gs", "wifi", "hotspot", "off");
@@ -61,6 +62,7 @@ TEST_CASE("PP_SIM_FAIL makes dummy_set_async report failure and skip the write",
 TEST_CASE("Normal dummy_set_async writes the value and reports success",
           "[settings][failure]") {
     pp_settings_register_dummy();
+    setenv("PP_SIM_LATENCY_MS", "0", 1);
     unsetenv("PP_SIM_FAIL");
 
     pp_settings_set("gs", "wifi", "hotspot", "off");

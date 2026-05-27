@@ -163,17 +163,57 @@ static char *dummy_get(const char *d, const char *p, const char *k) {
     return strdup(v ? v : "");
 }
 
+typedef struct {
+    char *domain, *page, *key, *value;
+    pp_settings_done_cb on_done;
+    void *user_data;
+    bool will_fail;
+} dummy_deferred_t;
+
+static void deferred_timer_cb(lv_timer_t *t) {
+    dummy_deferred_t *ctx = (dummy_deferred_t *)lv_timer_get_user_data(t);
+    if (!ctx->will_fail) {
+        dummy_set(ctx->domain, ctx->page, ctx->key, ctx->value);
+    }
+    if (ctx->on_done) {
+        ctx->on_done(ctx->will_fail ? 1 : 0,
+                     ctx->will_fail ? "simulated failure (PP_SIM_FAIL set)" : NULL,
+                     ctx->user_data);
+    }
+    free(ctx->domain); free(ctx->page); free(ctx->key); free(ctx->value);
+    free(ctx);
+    lv_timer_delete(t);
+}
+
 static void dummy_set_async(const char *d, const char *p, const char *k,
                             const char *v, pp_settings_done_cb on_done,
                             void *user_data) {
-    const char *fail = getenv("PP_SIM_FAIL");
-    if (fail && *fail) {
-        /* Don't apply the value — simulate a backend failure. */
-        if (on_done) on_done(1, "simulated failure (PP_SIM_FAIL set)", user_data);
+    const char *fail   = getenv("PP_SIM_FAIL");
+    const char *latstr = getenv("PP_SIM_LATENCY_MS");
+    int latency_ms = latstr ? atoi(latstr) : 200;
+    if (latency_ms < 0) latency_ms = 0;
+
+    if (latency_ms == 0) {
+        /* Preserve prior synchronous behavior. */
+        if (fail && *fail) {
+            if (on_done) on_done(1, "simulated failure (PP_SIM_FAIL set)", user_data);
+            return;
+        }
+        dummy_set(d, p, k, v);
+        if (on_done) on_done(0, NULL, user_data);
         return;
     }
-    dummy_set(d, p, k, v);
-    if (on_done) on_done(0, NULL, user_data);
+
+    dummy_deferred_t *ctx = calloc(1, sizeof(*ctx));
+    ctx->domain   = strdup(d);
+    ctx->page     = strdup(p);
+    ctx->key      = strdup(k);
+    ctx->value    = strdup(v ? v : "");
+    ctx->on_done  = on_done;
+    ctx->user_data= user_data;
+    ctx->will_fail= (fail && *fail);
+    lv_timer_t *t = lv_timer_create(deferred_timer_cb, latency_ms, ctx);
+    lv_timer_set_repeat_count(t, 1);
 }
 
 static const pp_settings_provider_t g_dummy = {

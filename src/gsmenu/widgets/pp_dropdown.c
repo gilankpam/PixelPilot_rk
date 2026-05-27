@@ -1,36 +1,44 @@
 #include "pp_dropdown.h"
 #include "pp_toast.h"
+#include "pp_row.h"
 #include "../styles.h"
 #include "../settings.h"
 #include "../../input.h"
 #include <stdlib.h>
 #include <string.h>
 
-struct dropdown_ctx {
-    lv_obj_t  *dd;
-    lv_obj_t  *value_label;
-    uint16_t   prev_sel;
-};
+typedef struct pp_dd_data pp_dd_data_t;
 
-static void dropdown_done_cb(int rc, const char *err, void *user_data) {
-    struct dropdown_ctx *ctx = (struct dropdown_ctx *)user_data;
-    if (rc != 0) {
-        pp_toast_error(err ? err : "Failed to apply dropdown");
-        /* Revert the selection to what it was before the commit. */
-        lv_dropdown_set_selected(ctx->dd, ctx->prev_sel);
-        char buf[64];
-        lv_dropdown_get_selected_str(ctx->dd, buf, sizeof buf);
-        lv_label_set_text(ctx->value_label, buf);
-    }
-    lv_free(ctx);
-}
-
-typedef struct {
+struct pp_dd_data {
     char *domain, *page, *key;
     lv_obj_t *dd, *value_label, *row;
     lv_obj_t *popup;            /* floating options list while in EDIT */
     uint16_t saved_sel;
-} pp_dd_data_t;
+    bool      in_flight;
+};
+
+struct dropdown_ctx {
+    pp_dd_data_t *d;
+    uint16_t      target_sel;
+};
+
+static void dropdown_done_cb(int rc, const char *err, void *user_data) {
+    struct dropdown_ctx *ctx = (struct dropdown_ctx *)user_data;
+    pp_dd_data_t *d = ctx->d;
+    pp_row_set_busy(d->row, false);
+    d->in_flight = false;
+    if (rc == 0) {
+        lv_dropdown_set_selected(d->dd, ctx->target_sel);
+        /* refresh the value label using the existing helper. */
+        char buf[64];
+        lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
+        lv_label_set_text(d->value_label, buf);
+    } else {
+        pp_toast_error(err ? err : "Failed to apply dropdown");
+        /* Selection already at saved_sel — we never moved it. */
+    }
+    lv_free(ctx);
+}
 
 static void popup_close(pp_dd_data_t *d);
 
@@ -168,23 +176,39 @@ static void on_key(lv_event_t *e) {
     extern gsmenu_control_mode_t control_mode;
     bool consumed = false;
     if (k == LV_KEY_ENTER) {
-        if (control_mode == GSMENU_CONTROL_MODE_NAV) {
-            d->saved_sel = lv_dropdown_get_selected(d->dd);
-            control_mode = GSMENU_CONTROL_MODE_EDIT;
-            popup_open(d);
+        if (d->in_flight) {
+            consumed = true;
+        } else if (control_mode == GSMENU_CONTROL_MODE_NAV) {
+            if (pp_row_get_locked(d->row) != PP_ROW_UNLOCKED) {
+                pp_toast_error("Locked by Dynamic Link");
+                consumed = true;
+            } else {
+                d->saved_sel = lv_dropdown_get_selected(d->dd);
+                control_mode = GSMENU_CONTROL_MODE_EDIT;
+                popup_open(d);
+                consumed = true;
+            }
         } else {
             control_mode = GSMENU_CONTROL_MODE_NAV;
-            char buf[64];
-            lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
-            struct dropdown_ctx *ctx = lv_malloc(sizeof(*ctx));
-            ctx->dd          = d->dd;
-            ctx->value_label = d->value_label;
-            ctx->prev_sel    = d->saved_sel;
-            pp_settings_set_async(d->domain, d->page, d->key, buf,
-                                  dropdown_done_cb, ctx);
+            uint16_t attempted = lv_dropdown_get_selected(d->dd);
             popup_close(d);
+            if (attempted != d->saved_sel) {
+                char buf[64];
+                lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
+                /* Revert visible selection to saved_sel; callback flips
+                 * to attempted on success. */
+                lv_dropdown_set_selected(d->dd, d->saved_sel);
+                refresh_label(d);
+                d->in_flight = true;
+                pp_row_set_busy(d->row, true);
+                struct dropdown_ctx *ctx = lv_malloc(sizeof(*ctx));
+                ctx->d          = d;
+                ctx->target_sel = attempted;
+                pp_settings_set_async(d->domain, d->page, d->key, buf,
+                                      dropdown_done_cb, ctx);
+            }
+            consumed = true;
         }
-        consumed = true;
     } else if (k == LV_KEY_UP) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
             uint16_t s = lv_dropdown_get_selected(d->dd);
@@ -279,6 +303,10 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
         }
     }
     free(v);
+
+    if (pp_settings_is_locked(domain, page, key)) {
+        pp_row_set_locked(row, PP_ROW_LOCKED_DYNAMIC);
+    }
 
     return row;
 }

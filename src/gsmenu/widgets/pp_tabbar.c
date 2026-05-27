@@ -65,12 +65,11 @@ static void on_tab_key(lv_event_t *e) {
     lv_group_t *page_group = pp_page_group(t->items[t->active].page);
     if (!page_group) return;
     lv_indev_set_group(indev_drv, page_group);
-    /* Focus the first object in the page's group so the user sees a
-     * focus indicator immediately. */
-    if (lv_group_get_obj_count(page_group) > 0) {
-        lv_group_focus_obj(lv_group_get_focused(page_group)
-                           ? lv_group_get_focused(page_group)
-                           : lv_obj_get_child(t->items[t->active].page, 0));
+    /* If nothing is focused in the group yet, advance focus so the
+     * user sees a focus indicator without having to press an extra W/S. */
+    if (lv_group_get_obj_count(page_group) > 0 &&
+        lv_group_get_focused(page_group) == NULL) {
+        lv_group_focus_next(page_group);
     }
 }
 

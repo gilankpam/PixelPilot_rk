@@ -23,16 +23,6 @@ lv_obj_t   *dvr_screen;             /* Legacy. */
 lv_obj_t   *txprofiles_screen;      /* Legacy. */
 lv_group_t *main_group;
 
-static void add_focusable_children(lv_obj_t *page, lv_group_t *grp) {
-    uint32_t n = lv_obj_get_child_cnt(page);
-    for (uint32_t i = 0; i < n; i++) {
-        lv_obj_t *c = lv_obj_get_child(page, i);
-        if (lv_obj_check_type(c, &lv_obj_class)) {
-            lv_group_add_obj(grp, c);
-        }
-    }
-}
-
 void pp_menu_main(void)
 {
     style_init();
@@ -83,14 +73,14 @@ void pp_menu_main(void)
     pp_tabbar_t *tabbar = pp_tabbar_create(root, items, 5);
     lv_obj_move_to_index(pp_tabbar_root(tabbar), 0);
 
-    /* Each page's rows go into its own group; the tabbar group is what
-     * input.cpp's toggle_screen() switches focus to when the menu opens.
-     * Wire each page's "back target" to the tabbar group so A (HOME)
-     * from inside a page returns focus to the tab strip. */
+    /* Each page builder already adds its own rows to its page group.
+     * Here we only wire each page's "back target" to the tabbar group
+     * so A (HOME) from inside a page returns focus to the tab strip.
+     * pp_page_set_back_group also enables LV_OBJ_FLAG_EVENT_BUBBLE on
+     * each child so the page's HOME handler actually receives the key. */
     lv_obj_t *pages[5] = { cam, lnk, dsp, dvr, sys };
     main_group = pp_tabbar_group(tabbar);
     for (int i = 0; i < 5; i++) {
-        add_focusable_children(pages[i], pp_page_group(pages[i]));
         pp_page_set_back_group(pages[i], main_group);
     }
 

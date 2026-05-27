@@ -94,6 +94,11 @@ void pp_settings_register_dummy(void);
  * http://10.5.0.10:8080, overridable via the PP_FPVD_URL env var. */
 void pp_settings_register_fpvd(void);
 
+/* Registers the composite router provider: fpvd (drone-side HTTP) plus
+ * settings_gs_local (GS-side file writers), with a fan-out table for keys
+ * that must be written to both. Replaces register_fpvd in the device build. */
+void pp_settings_register_router(void);
+
 #ifdef __cplusplus
 }
 #endif

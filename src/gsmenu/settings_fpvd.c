@@ -676,6 +676,10 @@ static const pp_settings_provider_t G_PROVIDER = {
     .set_visibility         = prov_set_visibility,
 };
 
+const pp_settings_provider_t *pp_fpvd_provider_for_router(void) {
+    return &G_PROVIDER;
+}
+
 void pp_settings_register_fpvd(void) {
     /* lv_init is idempotent; calling it ensures the LVGL machinery
      * (used by lv_async_call/lv_malloc) is available even if our

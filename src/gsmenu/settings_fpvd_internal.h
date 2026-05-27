@@ -61,6 +61,9 @@ fpvd_http_result_t fpvd_http_get(const char *url);
 fpvd_http_result_t fpvd_http_patch_json(const char *url, const char *body);
 fpvd_http_result_t fpvd_http_post(const char *url);
 
+/* For use by settings_router only. Returns the static provider table. */
+const pp_settings_provider_t *pp_fpvd_provider_for_router(void);
+
 #ifdef __cplusplus
 }
 #endif

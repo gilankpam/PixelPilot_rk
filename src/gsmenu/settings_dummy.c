@@ -152,9 +152,45 @@ static void overlay_set(const char *key, const char *value) {
     }
 }
 
+/* Single-slot listener — the dispatcher's fanout function plugs in here
+ * and re-broadcasts to its internal subscriber list. */
+static pp_settings_snapshot_cb g_dummy_listener_cb = NULL;
+static void                   *g_dummy_listener_ud = NULL;
+
+static void dummy_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
+    g_dummy_listener_cb = cb;
+    g_dummy_listener_ud = ud;
+}
+
+static void dummy_fire_listener(void) {
+    if (g_dummy_listener_cb) g_dummy_listener_cb(g_dummy_listener_ud);
+}
+
+/* UI keys that fpvd would mark read-only when dynamicLink.enabled=true.
+ * Mirrors the LOCKED_PATHS list in settings_fpvd.c at the UI-key level. */
+static const char *g_dummy_locked_keys[] = {
+    "mcs_index", "txpower", "fec_k", "fec_n",
+    "bandwidth", /* link.width */
+    "bitrate",
+    "qp_delta",
+    "roi_enabled", "roi_qp", "roi_center", "roi_steps",
+};
+
+static bool dummy_is_locked(const char *d, const char *p, const char *k) {
+    (void)d; (void)p;
+    const char *enabled = find_value("enabled");
+    bool dlink_on = enabled && strcmp(enabled, "on") == 0;
+    if (!dlink_on) return false;
+    for (size_t i = 0; i < sizeof(g_dummy_locked_keys)/sizeof(g_dummy_locked_keys[0]); i++) {
+        if (strcmp(g_dummy_locked_keys[i], k) == 0) return true;
+    }
+    return false;
+}
+
 static void dummy_set(const char *d, const char *p, const char *k, const char *v) {
     LV_LOG_USER("dummy.set %s/%s/%s = %s", d, p, k, v ? v : "(null)");
     overlay_set(k, v);
+    dummy_fire_listener();
 }
 
 static char *dummy_get(const char *d, const char *p, const char *k) {
@@ -220,6 +256,8 @@ static const pp_settings_provider_t g_dummy = {
     .set       = dummy_set,
     .get       = dummy_get,
     .set_async = dummy_set_async,
+    .is_locked = dummy_is_locked,
+    .set_snapshot_listener = dummy_set_snapshot_listener,
 };
 
 void pp_settings_register_dummy(void) {

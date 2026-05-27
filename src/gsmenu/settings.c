@@ -4,7 +4,33 @@
 
 static const pp_settings_provider_t *g_provider = NULL;
 
+/* Multi-listener fanout. The provider's single set_snapshot_listener slot
+ * holds our dispatcher_fanout function; we maintain our own list of
+ * subscribers so multiple page builders can each register independently. */
+#define PP_SETTINGS_MAX_LISTENERS 16
+
+typedef struct {
+    pp_settings_snapshot_cb cb;
+    void *ud;
+} pp_listener_entry_t;
+
+static pp_listener_entry_t g_listeners[PP_SETTINGS_MAX_LISTENERS];
+static size_t              g_listeners_n   = 0;
+static bool                g_fanout_armed  = false;
+
+static void dispatcher_fanout(void *ud) {
+    (void)ud;
+    /* Snapshot the list under no lock — this is fine because all calls run
+     * on the LVGL thread by contract (listeners are dispatched via
+     * lv_async_call which drains on the main thread). */
+    for (size_t i = 0; i < g_listeners_n; i++) {
+        if (g_listeners[i].cb) g_listeners[i].cb(g_listeners[i].ud);
+    }
+}
+
 void pp_settings_register(const pp_settings_provider_t *provider) {
+    g_listeners_n = 0;
+    g_fanout_armed = false;
     g_provider = provider;
 }
 
@@ -51,8 +77,27 @@ bool pp_settings_is_connected(void) {
 }
 
 void pp_settings_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
-    if (g_provider && g_provider->set_snapshot_listener) {
-        g_provider->set_snapshot_listener(cb, ud);
+    if (!cb) {
+        /* cb=NULL clears all listeners (rare; mainly for tests). */
+        g_listeners_n = 0;
+        if (g_provider && g_provider->set_snapshot_listener) {
+            g_provider->set_snapshot_listener(NULL, NULL);
+            g_fanout_armed = false;
+        }
+        return;
+    }
+    /* Append (silently ignore duplicates of (cb, ud)). */
+    for (size_t i = 0; i < g_listeners_n; i++) {
+        if (g_listeners[i].cb == cb && g_listeners[i].ud == ud) return;
+    }
+    if (g_listeners_n >= PP_SETTINGS_MAX_LISTENERS) return;
+    g_listeners[g_listeners_n].cb = cb;
+    g_listeners[g_listeners_n].ud = ud;
+    g_listeners_n++;
+    /* Arm the dispatcher_fanout once. */
+    if (!g_fanout_armed && g_provider && g_provider->set_snapshot_listener) {
+        g_provider->set_snapshot_listener(dispatcher_fanout, NULL);
+        g_fanout_armed = true;
     }
 }
 

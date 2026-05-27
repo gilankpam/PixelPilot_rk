@@ -70,10 +70,8 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
     }
 
     extern void pp_page_reapply_lock_state(lv_obj_t *);
-    /* v1 known limitation: only one snapshot listener slot in the provider
-     * — the Dynamic Link tab installs its own, so this one is overwritten
-     * when that tab builds. Static lock state at construction time still
-     * works. */
+    /* The dispatcher supports multiple listeners via fanout, so this
+     * registration coexists with the Dynamic Link tab's own listener. */
     pp_settings_set_snapshot_listener(
         (pp_settings_snapshot_cb)pp_page_reapply_lock_state, page);
     pp_page_reapply_lock_state(page);

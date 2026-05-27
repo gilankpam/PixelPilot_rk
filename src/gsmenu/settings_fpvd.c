@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/types.h>
 
 static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
@@ -150,6 +151,79 @@ char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type)
         break;
     }
     return strdup("");
+}
+
+static cJSON *value_to_cjson(const char *value, fpvd_type_t type) {
+    switch (type) {
+    case FPVD_T_INT: {
+        char *end;
+        long v = strtol(value, &end, 10);
+        if (end == value) return NULL;
+        return cJSON_CreateNumber((double)v);
+    }
+    case FPVD_T_FLOAT: {
+        char *end;
+        double v = strtod(value, &end);
+        if (end == value) return NULL;
+        return cJSON_CreateNumber(v);
+    }
+    case FPVD_T_BOOL:
+        if (strcmp(value, "on") == 0 || strcmp(value, "true") == 0)
+            return cJSON_CreateBool(1);
+        return cJSON_CreateBool(0);
+    case FPVD_T_STRING:
+    case FPVD_T_ENUM:
+        return cJSON_CreateString(value);
+    case FPVD_T_BITRATE_KBPS: {
+        /* "15M" → 15000; bare "15000" → 15000. */
+        char *end;
+        long v = strtol(value, &end, 10);
+        if (end == value) return NULL;
+        if (*end == 'M' || *end == 'm') v *= 1000;
+        return cJSON_CreateNumber((double)v);
+    }
+    case FPVD_T_SECONDS_FROM_MIN: {
+        char *end;
+        long v = strtol(value, &end, 10);
+        if (end == value) return NULL;
+        return cJSON_CreateNumber((double)(v * 60));
+    }
+    case FPVD_T_PERCENT_TO_FRAC: {
+        char *end;
+        long v = strtol(value, &end, 10);
+        if (end == value) return NULL;
+        return cJSON_CreateNumber((double)v / 100.0);
+    }
+    }
+    return NULL;
+}
+
+cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t type) {
+    cJSON *leaf = value_to_cjson(value, type);
+    if (!leaf) return NULL;
+
+    char buf[256];
+    strncpy(buf, path, sizeof buf - 1); buf[sizeof buf - 1] = '\0';
+
+    /* Split into segments (in-place via strchr/null-terminate). */
+    const char *segs[16];
+    size_t nsegs = 0;
+    char *tok = buf;
+    while (tok && *tok && nsegs < 16) {
+        segs[nsegs++] = tok;
+        char *dot = strchr(tok, '.');
+        if (!dot) break;
+        *dot = '\0';
+        tok = dot + 1;
+    }
+
+    cJSON *cur = leaf;
+    for (ssize_t i = (ssize_t)nsegs - 1; i >= 0; i--) {
+        cJSON *parent = cJSON_CreateObject();
+        cJSON_AddItemToObject(parent, segs[i], cur);
+        cur = parent;
+    }
+    return cur;
 }
 
 void pp_settings_register_fpvd(void) {

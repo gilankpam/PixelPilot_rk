@@ -40,6 +40,10 @@ const fpvd_keymap_entry_t *fpvd_keymap_at(size_t i);
  * if path is missing or types are incompatible. Never returns NULL. */
 char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type);
 
+/* Build a sparse nested cJSON object for a single field. Returns NULL on
+ * value parse error. Caller frees with cJSON_Delete. */
+cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t type);
+
 #ifdef __cplusplus
 }
 #endif

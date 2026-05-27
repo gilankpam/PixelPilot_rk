@@ -114,3 +114,75 @@ TEST_CASE("snapshot: seconds_from_min divides", "[fpvd][snapshot]") {
     REQUIRE(std::strcmp(v, "5") == 0); free(v);    /* 300 / 60 = 5 */
     cJSON_Delete(root);
 }
+
+TEST_CASE("patch: build sparse body — flat int", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("video.fps", "90", FPVD_T_INT);
+    REQUIRE(body != nullptr);
+    char *s = cJSON_PrintUnformatted(body);
+    REQUIRE(std::string(s) == R"({"video":{"fps":90}})");
+    free(s);
+    cJSON_Delete(body);
+}
+
+TEST_CASE("patch: build sparse body — nested int", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("link.fec.k", "7", FPVD_T_INT);
+    char *s = cJSON_PrintUnformatted(body);
+    REQUIRE(std::string(s) == R"({"link":{"fec":{"k":7}}})");
+    free(s);
+    cJSON_Delete(body);
+}
+
+TEST_CASE("patch: build sparse body — bool", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("link.stbc", "on", FPVD_T_BOOL);
+    char *s = cJSON_PrintUnformatted(body);
+    REQUIRE(std::string(s) == R"({"link":{"stbc":true}})");
+    free(s);
+    cJSON_Delete(body);
+}
+
+TEST_CASE("patch: bitrate M-suffix parsed to kbps int", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("video.bitrate", "15M", FPVD_T_BITRATE_KBPS);
+    char *s = cJSON_PrintUnformatted(body);
+    REQUIRE(std::string(s) == R"({"video":{"bitrate":15000}})");
+    free(s);
+    cJSON_Delete(body);
+}
+
+TEST_CASE("patch: seconds_from_min multiplies", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("recording.maxSeconds", "5",
+                                        FPVD_T_SECONDS_FROM_MIN);
+    char *s = cJSON_PrintUnformatted(body);
+    REQUIRE(std::string(s) == R"({"recording":{"maxSeconds":300}})");
+    free(s);
+    cJSON_Delete(body);
+}
+
+TEST_CASE("patch: percent_to_frac divides by 100", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("video.roi.center", "40",
+                                        FPVD_T_PERCENT_TO_FRAC);
+    /* cJSON formats doubles; accept either "0.4" or "0.40" (or scientific). */
+    char *s = cJSON_PrintUnformatted(body);
+    std::string out(s);
+    /* Confirm it's a numeric value ~= 0.4 by checking key presence and
+     * that it parses back. */
+    REQUIRE(out.find("\"center\":") != std::string::npos);
+    cJSON *parsed = cJSON_Parse(s);
+    REQUIRE(parsed != nullptr);
+    cJSON *video = cJSON_GetObjectItemCaseSensitive(parsed, "video");
+    cJSON *roi = cJSON_GetObjectItemCaseSensitive(video, "roi");
+    cJSON *center = cJSON_GetObjectItemCaseSensitive(roi, "center");
+    REQUIRE(cJSON_IsNumber(center));
+    REQUIRE(center->valuedouble >= 0.39);
+    REQUIRE(center->valuedouble <= 0.41);
+    cJSON_Delete(parsed);
+    free(s);
+    cJSON_Delete(body);
+}
+
+TEST_CASE("patch: enum stored as string", "[fpvd][patch]") {
+    cJSON *body = fpvd_build_patch_body("video.codec", "h264", FPVD_T_ENUM);
+    char *s = cJSON_PrintUnformatted(body);
+    REQUIRE(std::string(s) == R"({"video":{"codec":"h264"}})");
+    free(s);
+    cJSON_Delete(body);
+}

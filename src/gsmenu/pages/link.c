@@ -15,7 +15,7 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
                 "gs", "wfbng", "gs_channel",
                 "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n36\n40\n44\n48\n149\n153\n157\n161\n165");
     pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",
-                "gs", "wfbng", "bandwidth", "20\n40");
+                "gs", "wfbng", "bandwidth", "10\n20\n40");
     pp_slider(page, LV_SYMBOL_UP, "TX Power",
               "gs", "wfbng", "txpower", 1, 63);
     pp_slider(page, LV_SYMBOL_SETTINGS, "MCS Index",

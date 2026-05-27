@@ -82,7 +82,7 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
     pp_slider(page, LV_SYMBOL_SETTINGS, "Block Depth",
               "air", "dlink", "safe_depth", 1, 8);
     pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",
-                "air", "dlink", "safe_bandwidth", "20\n40");
+                "air", "dlink", "safe_bandwidth", "10\n20\n40");
     pp_slider(page, LV_SYMBOL_UP, "TX Power (dBm)",
               "air", "dlink", "safe_txpower_dbm", -10, 30);
     pp_slider(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",

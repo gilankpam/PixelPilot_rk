@@ -7,8 +7,6 @@
 #include "gsmenu/styles.h"
 #include "gsmenu/widgets/pp_tabbar.h"
 #include "gsmenu/widgets/pp_page.h"
-#include "gsmenu/widgets/pp_section_header.h"
-#include "gsmenu/widgets/pp_row.h"
 #include "gsmenu/pages/display.h"
 #include "gsmenu/pages/camera.h"
 #include "gsmenu/pages/link.h"
@@ -33,15 +31,6 @@ static void add_focusable_children(lv_obj_t *page, lv_group_t *grp) {
             lv_group_add_obj(grp, c);
         }
     }
-}
-
-static lv_obj_t *stub_page(lv_obj_t *parent, const char *name) {
-    lv_obj_t *p = pp_page_create(parent, "gs", name);
-    lv_obj_set_flex_grow(p, 1);
-    lv_obj_set_height(p, LV_PCT(100));
-    pp_section_header(p, name);
-    pp_row_text(p, LV_SYMBOL_SETTINGS, "(not implemented yet)", NULL);
-    return p;
 }
 
 void pp_menu_main(void)
@@ -95,12 +84,15 @@ void pp_menu_main(void)
     lv_obj_move_to_index(pp_tabbar_root(tabbar), 0);
 
     /* Each page's rows go into its own group; the tabbar group is what
-     * input.cpp's toggle_screen() switches focus to when the menu opens. */
+     * input.cpp's toggle_screen() switches focus to when the menu opens.
+     * Wire each page's "back target" to the tabbar group so A (HOME)
+     * from inside a page returns focus to the tab strip. */
     lv_obj_t *pages[5] = { cam, lnk, dsp, dvr, sys };
+    main_group = pp_tabbar_group(tabbar);
     for (int i = 0; i < 5; i++) {
         add_focusable_children(pages[i], pp_page_group(pages[i]));
+        pp_page_set_back_group(pages[i], main_group);
     }
-    main_group = pp_tabbar_group(tabbar);
 
     pp_osd_main();
     lv_screen_load(pp_osd_screen);

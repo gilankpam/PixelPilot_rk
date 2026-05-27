@@ -9,6 +9,7 @@
 typedef struct {
     char *domain, *page, *key;
     lv_obj_t *slider, *value_label;
+    int32_t saved_val;
 } pp_slider_data_t;
 
 static void on_delete(lv_event_t *e) {
@@ -28,6 +29,7 @@ static void on_key(lv_event_t *e) {
     extern gsmenu_control_mode_t control_mode;
     if (k == LV_KEY_ENTER) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
+            d->saved_val = lv_slider_get_value(d->slider);
             control_mode = GSMENU_CONTROL_MODE_SLIDER;
         } else {
             control_mode = GSMENU_CONTROL_MODE_NAV;
@@ -42,6 +44,10 @@ static void on_key(lv_event_t *e) {
         lv_slider_set_value(d->slider, lv_slider_get_value(d->slider) - 1, LV_ANIM_OFF);
         update_label(d);
     } else if (k == LV_KEY_ESC) {
+        if (control_mode == GSMENU_CONTROL_MODE_SLIDER) {
+            lv_slider_set_value(d->slider, d->saved_val, LV_ANIM_OFF);
+            update_label(d);
+        }
         control_mode = GSMENU_CONTROL_MODE_NAV;
     }
 }

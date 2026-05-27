@@ -99,12 +99,18 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     if (v && *v) {
         uint16_t n = lv_dropdown_get_option_count(dd);
         char buf[64];
+        bool matched = false;
         for (uint16_t i = 0; i < n; i++) {
             lv_dropdown_set_selected(dd, i);
             lv_dropdown_get_selected_str(dd, buf, sizeof buf);
-            if (strcmp(buf, v) == 0) break;
+            if (strcmp(buf, v) == 0) { matched = true; break; }
         }
-        refresh_label(d);
+        if (matched) {
+            refresh_label(d);
+        } else {
+            lv_dropdown_set_selected(dd, 0);
+            /* keep placeholder em-dash in the label */
+        }
     }
     free(v);
 

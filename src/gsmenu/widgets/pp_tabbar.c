@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern lv_indev_t *indev_drv;
+
 #define PP_TAB_W 72
 #define PP_TAB_H 56
 
@@ -54,6 +56,24 @@ static void on_focus(lv_event_t *e) {
     }
 }
 
+/* Pressing ENTER on a tab hands focus to that tab's page's group so W/S
+ * starts moving through rows. Pressing A (HOME) in the page returns
+ * focus to the tabbar — that path is handled in pp_page. */
+static void on_tab_key(lv_event_t *e) {
+    if (lv_event_get_key(e) != LV_KEY_ENTER) return;
+    pp_tabbar_t *t = lv_event_get_user_data(e);
+    lv_group_t *page_group = pp_page_group(t->items[t->active].page);
+    if (!page_group) return;
+    lv_indev_set_group(indev_drv, page_group);
+    /* Focus the first object in the page's group so the user sees a
+     * focus indicator immediately. */
+    if (lv_group_get_obj_count(page_group) > 0) {
+        lv_group_focus_obj(lv_group_get_focused(page_group)
+                           ? lv_group_get_focused(page_group)
+                           : lv_obj_get_child(t->items[t->active].page, 0));
+    }
+}
+
 pp_tabbar_t *pp_tabbar_create(lv_obj_t *parent,
                               const pp_tabbar_item_t *items, size_t n) {
     pp_tabbar_t *t = calloc(1, sizeof(*t));
@@ -87,7 +107,8 @@ pp_tabbar_t *pp_tabbar_create(lv_obj_t *parent,
         lv_obj_t *label = lv_label_create(tab);
         lv_label_set_text(label, items[i].label);
 
-        lv_obj_add_event_cb(tab, on_focus, LV_EVENT_FOCUSED, t);
+        lv_obj_add_event_cb(tab, on_focus,  LV_EVENT_FOCUSED, t);
+        lv_obj_add_event_cb(tab, on_tab_key, LV_EVENT_KEY,    t);
         lv_group_add_obj(t->group, tab);
         t->tab_objs[i] = tab;
     }

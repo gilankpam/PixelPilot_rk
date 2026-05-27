@@ -18,30 +18,6 @@ endif()
 set(LV_CONF_BUILD_DISABLE_DEMOS 1)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES 1)
 
-# Apply local LVGL patches before adding the subdirectory. The simulator
-# needs lv_sdl_keyboard to ignore non-SDL KEYPAD indevs (otherwise it
-# dereferences NULL driver_data on the project's virtual keyboard).
-if(USE_SIMULATOR)
-  set(_lvgl_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/lvgl-sdl-keyboard.patch")
-  if(EXISTS "${_lvgl_patch}")
-    execute_process(
-      COMMAND git apply --check --reverse --allow-empty "${_lvgl_patch}"
-      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lvgl"
-      RESULT_VARIABLE _patch_already_applied
-      OUTPUT_QUIET ERROR_QUIET)
-    if(NOT _patch_already_applied EQUAL 0)
-      message(STATUS "Applying ${_lvgl_patch}")
-      execute_process(
-        COMMAND git apply --allow-empty "${_lvgl_patch}"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lvgl"
-        RESULT_VARIABLE _patch_result)
-      if(NOT _patch_result EQUAL 0)
-        message(FATAL_ERROR "Failed to apply ${_lvgl_patch}")
-      endif()
-    endif()
-  endif()
-endif()
-
 add_subdirectory(lvgl)
 
 # Set include directories for LVGL BEFORE any other targets

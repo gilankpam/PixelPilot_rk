@@ -463,7 +463,6 @@ extern "C" void dispatch_input_char(char c) {
                     break;
                 }
                 next_key_pressed = true;
-                printf("Up\n");
                 break;
             case 's':
             case 'S':
@@ -485,7 +484,6 @@ extern "C" void dispatch_input_char(char c) {
                     break;
                 } 
                 next_key_pressed = true;
-                printf("Down\n");
                 break;
             case 'a':
             case 'A':
@@ -506,7 +504,6 @@ extern "C" void dispatch_input_char(char c) {
                     break;
                 }
                 next_key_pressed = true;
-                printf("Left\n");
                 break;
             case 'd':
             case 'D':
@@ -528,12 +525,10 @@ extern "C" void dispatch_input_char(char c) {
                     break;
                 }        
                 next_key_pressed = true;
-                printf("Right\n");
                 break;
             case '\n':
                 next_key = LV_KEY_ENTER;
                 next_key_pressed = true;
-                printf("Enter\n");
                 break;
 #ifdef USE_SIMULATOR
             case 't':

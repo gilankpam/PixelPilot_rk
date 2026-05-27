@@ -63,10 +63,23 @@ lv_style_t pp_style_switch_on;
 
 int style_init(void) {
     /* Load Geist TTF at the sizes we use. If unavailable, the
-     * pp_font_geist_* accessors return Montserrat as a fallback. */
-    if (!g_font_geist_14) g_font_geist_14 = load_geist(14);
-    if (!g_font_geist_16) g_font_geist_16 = load_geist(16);
-    if (!g_font_geist_22) g_font_geist_22 = load_geist(22);
+     * pp_font_geist_* accessors return Montserrat as a fallback.
+     *
+     * Geist is a normal text typeface and does not include the
+     * LV_SYMBOL_* private-use glyphs. Chain Montserrat at the same
+     * size as the fallback font so icons keep rendering inline. */
+    if (!g_font_geist_14) {
+        g_font_geist_14 = load_geist(14);
+        if (g_font_geist_14) g_font_geist_14->fallback = &lv_font_montserrat_14;
+    }
+    if (!g_font_geist_16) {
+        g_font_geist_16 = load_geist(16);
+        if (g_font_geist_16) g_font_geist_16->fallback = &lv_font_montserrat_16;
+    }
+    if (!g_font_geist_22) {
+        g_font_geist_22 = load_geist(22);
+        if (g_font_geist_22) g_font_geist_22->fallback = &lv_font_montserrat_22;
+    }
 
     lv_style_reset(&style_rootmenu);
     lv_style_init(&style_rootmenu);

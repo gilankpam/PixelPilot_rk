@@ -98,3 +98,48 @@ TEST_CASE("dispatch: set_async with no provider invokes callback with rc=-1") {
     REQUIRE(cb_calls == 1);
     REQUIRE(cb_last_rc == -1);
 }
+
+TEST_CASE("dispatch: is_locked returns false when provider lacks it") {
+    pp_settings_register(&rec_provider);
+    REQUIRE(pp_settings_is_locked("a", "b", "c") == false);
+}
+
+TEST_CASE("dispatch: is_connected returns true when provider lacks it") {
+    pp_settings_register(&rec_provider);
+    REQUIRE(pp_settings_is_connected() == true);
+}
+
+TEST_CASE("dispatch: set_visibility is a no-op when provider lacks it") {
+    pp_settings_register(&rec_provider);
+    pp_settings_set_visibility(true);
+    pp_settings_set_visibility(false);
+    /* No crash. */
+    REQUIRE(true);
+}
+
+TEST_CASE("dispatch: set_snapshot_listener is a no-op when provider lacks it") {
+    pp_settings_register(&rec_provider);
+    pp_settings_set_snapshot_listener(nullptr, nullptr);
+    REQUIRE(true);
+}
+
+TEST_CASE("dispatch: forwards is_locked / is_connected when provider has them") {
+    static bool locked_called = false;
+    static bool connected_called = false;
+    static auto _is_locked = +[](const char *, const char *, const char *) -> bool {
+        locked_called = true; return true;
+    };
+    static auto _is_connected = +[]() -> bool {
+        connected_called = true; return false;
+    };
+    static const pp_settings_provider_t full = {
+        .set = rec_set, .get = rec_get, .set_async = rec_set_async,
+        .is_locked = _is_locked, .is_connected = _is_connected,
+        .set_snapshot_listener = nullptr, .set_visibility = nullptr,
+    };
+    pp_settings_register(&full);
+    REQUIRE(pp_settings_is_locked("x", "y", "z") == true);
+    REQUIRE(locked_called == true);
+    REQUIRE(pp_settings_is_connected() == false);
+    REQUIRE(connected_called == true);
+}

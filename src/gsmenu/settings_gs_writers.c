@@ -97,6 +97,7 @@ static char *cfg_upsert(const char *src, const char *key, const char *value_line
         }
     }
     if (!replaced) {
+        if (out[0] && out[strlen(out)-1] != '\n') strcat(out, "\n");
         strcat(out, value_line);
         strcat(out, "\n");
     }
@@ -142,10 +143,28 @@ pp_gs_write_result_t pp_gs_env_set(const char *env_path, const char *key, const 
             *c == '$' || *c == '`' || *c == '\\') { needs_quote = true; break; }
     }
     char vbuf[512];
-    if (needs_quote)
-        snprintf(vbuf, sizeof vbuf, "\"%s\"", value);
-    else
+    if (needs_quote) {
+        /* Single-quote the value; escape embedded single quotes via '\''. */
+        char *o = vbuf;
+        char *end = vbuf + sizeof vbuf - 1;
+        *o++ = '\'';
+        for (const char *c = value; *c && o < end - 3; c++) {
+            if (*c == '\'') {
+                /* Close quote, escaped single quote, reopen quote. */
+                if (o + 4 > end) break;
+                *o++ = '\'';
+                *o++ = '\\';
+                *o++ = '\'';
+                *o++ = '\'';
+            } else {
+                *o++ = *c;
+            }
+        }
+        if (o < end) *o++ = '\'';
+        *o = '\0';
+    } else {
         snprintf(vbuf, sizeof vbuf, "%s", value);
+    }
     char line[768];
     snprintf(line, sizeof line, "%s=%s", key, vbuf);
 

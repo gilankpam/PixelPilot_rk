@@ -20,13 +20,20 @@ static void on_delete(lv_event_t *e) {
 
 /* When a child row receives HOME (A in NAV mode), hand focus back to
  * the registered back_group (the tabbar). Events from group-focused
- * children bubble up to the page object. */
+ * children bubble up to the page object.
+ *
+ * lv_indev_set_group doesn't fire LV_EVENT_DEFOCUSED on the previously-
+ * focused row, so its LV_STATE_FOCUS_KEY (the blue highlight) would
+ * stick. Manually clear it before swapping. */
 static void on_key(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_HOME) return;
     pp_page_data_t *d = lv_event_get_user_data(e);
-    if (d && d->back_group) {
-        lv_indev_set_group(indev_drv, d->back_group);
-    }
+    if (!d || !d->back_group) return;
+
+    lv_obj_t *focused = lv_group_get_focused(d->group);
+    if (focused) lv_obj_remove_state(focused, LV_STATE_FOCUS_KEY);
+
+    lv_indev_set_group(indev_drv, d->back_group);
 }
 
 lv_obj_t *pp_page_create(lv_obj_t *parent,

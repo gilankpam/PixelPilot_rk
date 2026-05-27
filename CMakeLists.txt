@@ -331,6 +331,9 @@ install(TARGETS ${PROJECT_NAME}
 install(FILES ${ICONS}
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}
 )
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/gsmenu/fonts/Geist-Regular.ttf
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/fonts
+)
 
 # Install configuration files to /etc
 install(FILES ${OSD_CONFIGS}

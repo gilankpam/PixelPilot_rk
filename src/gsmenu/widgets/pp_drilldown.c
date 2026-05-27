@@ -2,6 +2,8 @@
 #include "../styles.h"
 #include <stdlib.h>
 
+extern const lv_font_t *pp_font_geist_22(void);
+
 static lv_obj_t   *g_overlay = NULL;
 static lv_obj_t   *g_body    = NULL;
 static lv_group_t *g_group   = NULL;
@@ -47,7 +49,7 @@ lv_obj_t *pp_drilldown_open(lv_obj_t *anchor_page, const char *title,
     lv_obj_t *header = lv_label_create(g_overlay);
     lv_label_set_text(header, title);
     lv_obj_set_style_text_color(header, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(header, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(header, pp_font_geist_22(), 0);
     lv_obj_set_style_pad_all(header, 12, 0);
 
     g_body = lv_obj_create(g_overlay);

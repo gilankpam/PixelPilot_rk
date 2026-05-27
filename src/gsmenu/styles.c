@@ -1,4 +1,42 @@
 #include "lvgl/lvgl.h"
+#include "lvgl/src/libs/tiny_ttf/lv_tiny_ttf.h"
+#include <stdio.h>
+#include <stddef.h>
+
+/* Geist font instances loaded via lv_tiny_ttf at startup. NULL if the
+ * TTF wasn't found at any known prefix — the styles fall back to the
+ * built-in Montserrat in that case. */
+static lv_font_t *g_font_geist_14 = NULL;
+static lv_font_t *g_font_geist_16 = NULL;
+static lv_font_t *g_font_geist_22 = NULL;
+
+static lv_font_t *load_geist(int size) {
+    const char *rel = "Geist-Regular.ttf";
+    /* Prefer the search prefixes used by find_resource_file. Tiny TTF
+     * needs a real path with "A:" prefix (LVGL POSIX FS driver). */
+    const char *prefixes[] = {
+        "A:/usr/local/share/pixelpilot/fonts",
+        "A:/usr/share/pixelpilot/fonts",
+        "A:./src/gsmenu/fonts",
+    };
+    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++) {
+        char path[256];
+        snprintf(path, sizeof path, "%s/%s", prefixes[i], rel);
+        lv_font_t *f = lv_tiny_ttf_create_file(path, size);
+        if (f) return f;
+    }
+    return NULL;
+}
+
+const lv_font_t *pp_font_geist_14(void) {
+    return g_font_geist_14 ? g_font_geist_14 : &lv_font_montserrat_14;
+}
+const lv_font_t *pp_font_geist_16(void) {
+    return g_font_geist_16 ? g_font_geist_16 : &lv_font_montserrat_16;
+}
+const lv_font_t *pp_font_geist_22(void) {
+    return g_font_geist_22 ? g_font_geist_22 : &lv_font_montserrat_22;
+}
 
 
 lv_style_t style_rootmenu;
@@ -24,6 +62,12 @@ lv_style_t pp_style_switch_on;
 
 
 int style_init(void) {
+    /* Load Geist TTF at the sizes we use. If unavailable, the
+     * pp_font_geist_* accessors return Montserrat as a fallback. */
+    if (!g_font_geist_14) g_font_geist_14 = load_geist(14);
+    if (!g_font_geist_16) g_font_geist_16 = load_geist(16);
+    if (!g_font_geist_22) g_font_geist_22 = load_geist(22);
+
     lv_style_reset(&style_rootmenu);
     lv_style_init(&style_rootmenu);
     lv_style_set_bg_color(&style_rootmenu, lv_color_darken( lv_color_make(0xcd, 0xcd, 0xcd), 50));
@@ -100,7 +144,7 @@ int style_init(void) {
     lv_style_set_bg_opa(&pp_style_tab, LV_OPA_TRANSP);
     lv_style_set_text_color(&pp_style_tab, c_text);
     lv_style_set_text_opa(&pp_style_tab, 115);
-    lv_style_set_text_font(&pp_style_tab, &lv_font_montserrat_14);
+    lv_style_set_text_font(&pp_style_tab, pp_font_geist_14());
     lv_style_set_pad_ver(&pp_style_tab, 12);
     lv_style_set_radius(&pp_style_tab, 0);
     lv_style_set_border_width(&pp_style_tab, 0);
@@ -113,7 +157,7 @@ int style_init(void) {
     lv_style_init(&pp_style_section_hdr);
     lv_style_set_text_color(&pp_style_section_hdr, c_text);
     lv_style_set_text_opa(&pp_style_section_hdr, 102);
-    lv_style_set_text_font(&pp_style_section_hdr, &lv_font_montserrat_14);
+    lv_style_set_text_font(&pp_style_section_hdr, pp_font_geist_14());
     lv_style_set_text_letter_space(&pp_style_section_hdr, 2);
     lv_style_set_pad_top(&pp_style_section_hdr, 8);
     lv_style_set_pad_left(&pp_style_section_hdr, 20);
@@ -124,6 +168,7 @@ int style_init(void) {
     lv_style_set_pad_hor(&pp_style_row, 20);
     lv_style_set_pad_ver(&pp_style_row, 8);
     lv_style_set_text_color(&pp_style_row, c_text);
+    lv_style_set_text_font(&pp_style_row, pp_font_geist_16());
     lv_style_set_border_side(&pp_style_row, LV_BORDER_SIDE_BOTTOM);
     lv_style_set_border_color(&pp_style_row, lv_color_hex(0xFFFFFF));
     lv_style_set_border_opa(&pp_style_row, 33);

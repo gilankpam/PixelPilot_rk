@@ -200,3 +200,27 @@ TEST_CASE("integration: offline -> reconnect transitions connected flag",
     REQUIRE(pp_settings_is_connected() == true);
     m.stop();
 }
+
+TEST_CASE("integration: rapid same-path writes coalesce to one PATCH",
+          "[fpvd][network]") {
+    FpvdMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+    for (int i = 0; i < 50 && m.get_calls == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    int before = m.patch_calls;
+    for (int i = 0; i < 5; i++) {
+        char buf[8]; snprintf(buf, sizeof buf, "%d", 30 + i*10);
+        pp_settings_set_async("air", "camera", "fps", buf, nullptr, nullptr);
+    }
+    /* Wait long enough for worker to drain (250ms debounce + http). */
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+
+    /* Worker may process the first job, then coalesce the rest into one
+     * follow-up. So expect AT MOST 2 PATCH calls, not 5. */
+    REQUIRE((m.patch_calls - before) <= 2);
+    /* The final value '70' (i=4) wins. */
+    REQUIRE(m.last_patch_body.find("\"fps\":70") != std::string::npos);
+
+    m.stop();
+}

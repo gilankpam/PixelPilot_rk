@@ -232,6 +232,14 @@ if(USE_SIMULATOR)
     target_link_libraries(fpvd_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} CURL::libcurl pthread)
     target_compile_definitions(fpvd_tests PRIVATE PP_FPVD_TEST=1)
+
+    add_executable(gs_writers_tests
+      src/gsmenu/settings_gs_writers.c
+      tests/test_settings_gs_writers.cpp)
+    target_include_directories(gs_writers_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(gs_writers_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} pthread)
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

@@ -1,25 +1,34 @@
 #ifndef PP_ROW_H
 #define PP_ROW_H
 #include <lvgl.h>
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Creates a focusable horizontal row.
- *   icon_text: NULL or an LV_SYMBOL_* constant
- *   label:     left-aligned text
- *   key:       settings key (used to read the value via pp_settings_get).
- *              May be NULL for static rows (no value reload).
- *
- * The row stores its (domain, page, key) triple in user_data so other
- * widgets (toggle/slider/dropdown) can build on top. */
 lv_obj_t *pp_row_text(lv_obj_t *parent_page,
                       const char *icon_text,
                       const char *label,
                       const char *key);
 
-/* Update a row's value label to a new string. */
 void pp_row_set_value(lv_obj_t *row, const char *value);
+
+/* Show/hide a small spinner at the row's trailing edge, disable child
+ * widget input while busy. Calls are nestable — call with the same flag
+ * idempotently. Safe to call on rows that don't have a child input. */
+void pp_row_set_busy(lv_obj_t *row, bool busy);
+
+/* Mark the row as read-only. Disables input and applies a greyed style.
+ * `reason` selects the lock icon (LOCK = dynamic link, OFFLINE = drone
+ * unreachable). When false, restores the row to interactive state. */
+typedef enum {
+    PP_ROW_UNLOCKED = 0,
+    PP_ROW_LOCKED_DYNAMIC = 1,
+    PP_ROW_LOCKED_OFFLINE = 2,
+} pp_row_lock_t;
+
+void pp_row_set_locked(lv_obj_t *row, pp_row_lock_t state);
+pp_row_lock_t pp_row_get_locked(lv_obj_t *row);
 
 #ifdef __cplusplus
 }

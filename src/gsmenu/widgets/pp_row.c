@@ -80,3 +80,101 @@ void pp_row_set_value(lv_obj_t *row, const char *value) {
     pp_row_data_t *d = lv_obj_get_user_data(row);
     if (d && d->value_label) lv_label_set_text(d->value_label, value);
 }
+
+/* Per-row UX-state storage attached as a side struct via lv_obj_set_user_data
+ * on a hidden child. We don't want to disturb existing user_data on the row
+ * which other widgets already use. Instead we look up a dedicated label
+ * child by name. */
+
+#define PP_ROW_BUSY_ICON LV_SYMBOL_LOOP
+#define PP_ROW_LOCK_ICON_DYNAMIC LV_SYMBOL_SETTINGS
+#define PP_ROW_LOCK_ICON_OFFLINE LV_SYMBOL_WARNING
+
+typedef struct {
+    lv_obj_t      *spinner;       /* small label, hidden when not busy */
+    lv_obj_t      *lock_label;    /* small label, hidden when not locked */
+    pp_row_lock_t  lock_state;
+    bool           busy;
+} pp_row_state_t;
+
+static pp_row_state_t *row_state(lv_obj_t *row) {
+    /* Stored in a child object marked with LV_OBJ_FLAG_USER_2; if no
+     * state child exists we create one. */
+    uint32_t n = lv_obj_get_child_cnt(row);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *c = lv_obj_get_child(row, i);
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_USER_2)) {
+            return (pp_row_state_t *)lv_obj_get_user_data(c);
+        }
+    }
+    /* Create the state holder: an empty 0-size object marked with USER_2. */
+    lv_obj_t *holder = lv_obj_create(row);
+    lv_obj_remove_style_all(holder);
+    lv_obj_set_size(holder, 0, 0);
+    lv_obj_add_flag(holder, LV_OBJ_FLAG_USER_2);
+    lv_obj_clear_flag(holder, LV_OBJ_FLAG_CLICKABLE);
+    pp_row_state_t *s = lv_malloc(sizeof(*s));
+    s->spinner = NULL;
+    s->lock_label = NULL;
+    s->lock_state = PP_ROW_UNLOCKED;
+    s->busy = false;
+    lv_obj_set_user_data(holder, s);
+    return s;
+}
+
+static lv_obj_t *ensure_spinner(lv_obj_t *row, pp_row_state_t *s) {
+    if (s->spinner) return s->spinner;
+    s->spinner = lv_label_create(row);
+    lv_label_set_text(s->spinner, PP_ROW_BUSY_ICON);
+    lv_obj_set_style_text_color(s->spinner, lv_color_hex(0x6B7FFF), 0);
+    lv_obj_set_style_pad_left(s->spinner, 6, 0);
+    lv_obj_add_flag(s->spinner, LV_OBJ_FLAG_HIDDEN);
+    return s->spinner;
+}
+
+static lv_obj_t *ensure_lock_label(lv_obj_t *row, pp_row_state_t *s) {
+    if (s->lock_label) return s->lock_label;
+    s->lock_label = lv_label_create(row);
+    lv_label_set_text(s->lock_label, PP_ROW_LOCK_ICON_DYNAMIC);
+    lv_obj_set_style_text_color(s->lock_label, lv_color_hex(0xAAAAAA), 0);
+    lv_obj_set_style_pad_left(s->lock_label, 6, 0);
+    lv_obj_add_flag(s->lock_label, LV_OBJ_FLAG_HIDDEN);
+    return s->lock_label;
+}
+
+void pp_row_set_busy(lv_obj_t *row, bool busy) {
+    pp_row_state_t *s = row_state(row);
+    if (s->busy == busy) return;
+    s->busy = busy;
+    lv_obj_t *spin = ensure_spinner(row, s);
+    if (busy) {
+        lv_obj_clear_flag(spin, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_state(row, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_flag(spin, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_state(row, LV_STATE_DISABLED);
+    }
+}
+
+void pp_row_set_locked(lv_obj_t *row, pp_row_lock_t state) {
+    pp_row_state_t *s = row_state(row);
+    if (s->lock_state == state) return;
+    s->lock_state = state;
+    lv_obj_t *lbl = ensure_lock_label(row, s);
+    if (state == PP_ROW_UNLOCKED) {
+        lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_state(row, LV_STATE_DISABLED);
+        lv_obj_set_style_opa(row, LV_OPA_COVER, 0);
+    } else {
+        lv_label_set_text(lbl,
+            state == PP_ROW_LOCKED_OFFLINE ? PP_ROW_LOCK_ICON_OFFLINE
+                                           : PP_ROW_LOCK_ICON_DYNAMIC);
+        lv_obj_clear_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_state(row, LV_STATE_DISABLED);
+        lv_obj_set_style_opa(row, LV_OPA_60, 0);
+    }
+}
+
+pp_row_lock_t pp_row_get_locked(lv_obj_t *row) {
+    return row_state(row)->lock_state;
+}

@@ -25,14 +25,14 @@ if(USE_SIMULATOR)
   set(_lvgl_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/lvgl-sdl-keyboard.patch")
   if(EXISTS "${_lvgl_patch}")
     execute_process(
-      COMMAND git apply --check --reverse "${_lvgl_patch}"
+      COMMAND git apply --check --reverse --allow-empty "${_lvgl_patch}"
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lvgl"
       RESULT_VARIABLE _patch_already_applied
       OUTPUT_QUIET ERROR_QUIET)
     if(NOT _patch_already_applied EQUAL 0)
       message(STATUS "Applying ${_lvgl_patch}")
       execute_process(
-        COMMAND git apply "${_lvgl_patch}"
+        COMMAND git apply --allow-empty "${_lvgl_patch}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/lvgl"
         RESULT_VARIABLE _patch_result)
       if(NOT _patch_result EQUAL 0)

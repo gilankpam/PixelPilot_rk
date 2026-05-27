@@ -41,14 +41,6 @@ lv_obj_t *build_system_tab(lv_obj_t *parent) {
     pp_row_text(page, LV_SYMBOL_EYE_OPEN, "HDMI-OUT", "HDMI-OUT");
     pp_row_text(page, LV_SYMBOL_WIFI,     "WFB-NG NICs", "WFB_NICS");
 
-    pp_section_header(page, "Receiver");
-    pp_dropdown(page, LV_SYMBOL_VIDEO, "RX Codec",
-                "gs", "system", "rx_codec",
-                "h264\nh265");
-    pp_dropdown(page, LV_SYMBOL_SETTINGS, "RX Mode",
-                "gs", "system", "rx_mode",
-                "wfb\napfpv");
-
     pp_section_header(page, "Network");
     lv_obj_t *wifi_row = pp_row_text(page, LV_SYMBOL_WIFI,
                                      "WiFi networks…", NULL);

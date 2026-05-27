@@ -68,7 +68,17 @@ int main(int argc, char **argv)
     pp_settings_register_dummy();
     lv_log_register_print_cb(my_log_cb);
     lv_init();
-    lv_disp_t * disp = lv_sdl_window_create(1920,1080);
+    /* Default to the hardware OSD resolution. Dev machines with a smaller
+     * logical desktop (e.g. macOS Retina at 2x) can override via env vars;
+     * LVGL renders directly at the requested size, so output stays crisp
+     * (no SDL downscaler). Layouts won't be pixel-identical to hardware at
+     * non-default sizes, so use 1920x1080 for final visual sign-off. */
+    int sim_w = 1920, sim_h = 1080;
+    const char * w_env = getenv("PP_SIM_WIDTH");
+    const char * h_env = getenv("PP_SIM_HEIGHT");
+    if (w_env && *w_env) sim_w = atoi(w_env);
+    if (h_env && *h_env) sim_h = atoi(h_env);
+    lv_disp_t * disp = lv_sdl_window_create(sim_w, sim_h);
     SDL_AddEventWatch(sdl_key_watch, NULL);
 
     lv_obj_t * bottom = lv_display_get_layer_bottom(disp);

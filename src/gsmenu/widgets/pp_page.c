@@ -63,5 +63,15 @@ const char *pp_page_name(lv_obj_t *page) {
 }
 void pp_page_set_back_group(lv_obj_t *page, lv_group_t *back_group) {
     pp_page_data_t *d = lv_obj_get_user_data(page);
-    if (d) d->back_group = back_group;
+    if (!d) return;
+    d->back_group = back_group;
+
+    /* LV_EVENT_KEY is delivered to the focused object (a row), not to
+     * the page. Enable event bubbling on every child so the page's
+     * on_key handler can intercept LV_KEY_HOME. Call this AFTER all
+     * children have been added — done from menu.c after page-build. */
+    uint32_t n = lv_obj_get_child_cnt(page);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_add_flag(lv_obj_get_child(page, i), LV_OBJ_FLAG_EVENT_BUBBLE);
+    }
 }

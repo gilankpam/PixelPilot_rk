@@ -3,6 +3,10 @@
 #include "settings_fpvd_internal.h"
 
 #include <string.h>
+#include "cJSON.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 
 static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
@@ -79,6 +83,73 @@ const fpvd_keymap_entry_t *fpvd_keymap_lookup(const char *d, const char *p, cons
 const fpvd_keymap_entry_t *fpvd_keymap_at(size_t i) {
     if (i >= KEYMAP_N) return NULL;
     return &KEYMAP[i];
+}
+
+static cJSON *walk_path(cJSON *root, const char *path) {
+    cJSON *node = root;
+    const char *p = path;
+    char seg[64];
+    while (*p && node) {
+        size_t i = 0;
+        while (*p && *p != '.' && i + 1 < sizeof seg) { seg[i++] = *p++; }
+        seg[i] = '\0';
+        if (*p == '.') p++;
+        node = cJSON_GetObjectItemCaseSensitive(node, seg);
+    }
+    return node;
+}
+
+char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type) {
+    cJSON *node = walk_path(root, path);
+    if (!node) return strdup("");
+    char buf[64];
+    switch (type) {
+    case FPVD_T_INT:
+        if (cJSON_IsNumber(node)) {
+            snprintf(buf, sizeof buf, "%d", (int)node->valuedouble);
+            return strdup(buf);
+        }
+        break;
+    case FPVD_T_FLOAT:
+        if (cJSON_IsNumber(node)) {
+            double v = node->valuedouble;
+            if (fabs(v - (int)v) < 1e-6) snprintf(buf, sizeof buf, "%d", (int)v);
+            else snprintf(buf, sizeof buf, "%.3g", v);
+            return strdup(buf);
+        }
+        break;
+    case FPVD_T_BOOL:
+        if (cJSON_IsBool(node))
+            return strdup(cJSON_IsTrue(node) ? "on" : "off");
+        break;
+    case FPVD_T_STRING:
+    case FPVD_T_ENUM:
+        if (cJSON_IsString(node) && node->valuestring)
+            return strdup(node->valuestring);
+        break;
+    case FPVD_T_BITRATE_KBPS:
+        if (cJSON_IsNumber(node)) {
+            int kbps = (int)node->valuedouble;
+            snprintf(buf, sizeof buf, "%dM", kbps / 1000);
+            return strdup(buf);
+        }
+        break;
+    case FPVD_T_SECONDS_FROM_MIN:
+        if (cJSON_IsNumber(node)) {
+            int secs = (int)node->valuedouble;
+            snprintf(buf, sizeof buf, "%d", secs / 60);
+            return strdup(buf);
+        }
+        break;
+    case FPVD_T_PERCENT_TO_FRAC:
+        if (cJSON_IsNumber(node)) {
+            int pct = (int)(node->valuedouble * 100.0 + 0.5);
+            snprintf(buf, sizeof buf, "%d", pct);
+            return strdup(buf);
+        }
+        break;
+    }
+    return strdup("");
 }
 
 void pp_settings_register_fpvd(void) {

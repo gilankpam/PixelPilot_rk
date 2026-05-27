@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include "cJSON.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,11 @@ const fpvd_keymap_entry_t *fpvd_keymap_lookup(const char *domain,
 
 /* Iterate all entries (returns NULL on end). i starts at 0. */
 const fpvd_keymap_entry_t *fpvd_keymap_at(size_t i);
+
+/* Walk `root` along the dotted `path`, format the leaf value as a string
+ * according to `type`. Returns a heap-allocated string. Returns strdup("")
+ * if path is missing or types are incompatible. Never returns NULL. */
+char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type);
 
 #ifdef __cplusplus
 }

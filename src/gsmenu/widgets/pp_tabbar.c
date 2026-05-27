@@ -63,12 +63,18 @@ static void on_tab_key(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     pp_tabbar_t *t = lv_event_get_user_data(e);
     lv_group_t *page_group = pp_page_group(t->items[t->active].page);
-    if (!page_group) return;
+    if (!page_group || lv_group_get_obj_count(page_group) == 0) return;
     lv_indev_set_group(indev_drv, page_group);
-    /* If nothing is focused in the group yet, advance focus so the
-     * user sees a focus indicator without having to press an extra W/S. */
-    if (lv_group_get_obj_count(page_group) > 0 &&
-        lv_group_get_focused(page_group) == NULL) {
+
+    /* Restore (or initialize) the focus highlight. lv_indev_set_group
+     * doesn't fire LV_EVENT_FOCUSED, and pp_page's HOME handler strips
+     * LV_STATE_FOCUS_KEY on exit, so the group's remembered focused obj
+     * needs its state re-applied. If nothing was ever focused, advance
+     * to the first object. */
+    lv_obj_t *focused = lv_group_get_focused(page_group);
+    if (focused) {
+        lv_obj_add_state(focused, LV_STATE_FOCUS_KEY);
+    } else {
         lv_group_focus_next(page_group);
     }
 }

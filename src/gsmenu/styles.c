@@ -138,10 +138,24 @@ int style_init(void) {
 
     lv_style_init(&pp_style_panel);
     lv_style_set_bg_color(&pp_style_panel, c_panel);
-    lv_style_set_bg_opa(&pp_style_panel, LV_OPA_COVER);
+    lv_style_set_bg_opa(&pp_style_panel, LV_OPA_90); /* < COVER so backdrop blur shows through */
     lv_style_set_border_width(&pp_style_panel, 0);
     lv_style_set_radius(&pp_style_panel, 0);
     lv_style_set_pad_all(&pp_style_panel, 0);
+
+    /* Native backdrop blur — blurs the live-video content behind each page panel
+     * (LVGL v9.5+). Radius 8 is a conservative starting value; tune after
+     * interactive verification. blur_backdrop=true requires bg_opa < LV_OPA_COVER
+     * so the blurred content bleeds through the semi-transparent background. */
+    lv_style_set_blur_radius(&pp_style_panel, 8);
+    lv_style_set_blur_backdrop(&pp_style_panel, true);
+
+    /* Drop shadow — rendered by the new v9.5 drop_shadow API (Gaussian blur,
+     * CPU-only; distinct from the legacy lv_style_set_shadow_* box shadow). */
+    lv_style_set_drop_shadow_radius(&pp_style_panel, 24);
+    lv_style_set_drop_shadow_opa(&pp_style_panel, LV_OPA_50);
+    lv_style_set_drop_shadow_color(&pp_style_panel, lv_color_black());
+    lv_style_set_drop_shadow_offset_y(&pp_style_panel, 4);
 
     lv_style_init(&pp_style_tabbar);
     lv_style_set_bg_color(&pp_style_tabbar, c_tabbar);

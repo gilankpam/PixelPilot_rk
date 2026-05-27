@@ -10,6 +10,7 @@
 #include "gsmenu/widgets/pp_section_header.h"
 #include "gsmenu/widgets/pp_row.h"
 #include "gsmenu/pages/display.h"
+#include "gsmenu/pages/camera.h"
 #include "lvosd.h"
 
 lv_obj_t   *menu;                   /* Legacy; kept for ABI w/ old code paths. */
@@ -63,8 +64,10 @@ void pp_menu_main(void)
     lv_obj_set_pos(root, 0, 0);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
 
-    /* Build pages — Display is real, the others are placeholders for now. */
-    lv_obj_t *cam = stub_page(root, "Camera");
+    /* Build pages — Camera + Display are real, others are placeholders. */
+    lv_obj_t *cam = build_camera_tab(root);
+    lv_obj_set_flex_grow(cam, 1);
+    lv_obj_set_height(cam, LV_PCT(100));
     lv_obj_t *lnk = stub_page(root, "Link");
     lv_obj_t *dsp = build_display_tab(root);
     lv_obj_set_flex_grow(dsp, 1);

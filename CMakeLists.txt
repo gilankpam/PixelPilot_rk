@@ -127,6 +127,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/widgets/pp_drilldown.c
         src/gsmenu/pages/display.h
         src/gsmenu/pages/display.c
+        src/gsmenu/pages/camera.h
+        src/gsmenu/pages/camera.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c
@@ -199,6 +201,8 @@ set(LIB_SOURCE_FILES
         src/gsmenu/widgets/pp_drilldown.c
         src/gsmenu/pages/display.h
         src/gsmenu/pages/display.c
+        src/gsmenu/pages/camera.h
+        src/gsmenu/pages/camera.c
         src/gsmenu/settings.h
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c

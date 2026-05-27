@@ -195,6 +195,10 @@ if(USE_SIMULATOR)
   # avoiding the heavy rockchip/drm/gst deps that pixelpilot_tests pulls in.
   find_package(Catch2 QUIET)
   if(Catch2_FOUND)
+    get_target_property(PP_CATCH2_INC Catch2::Catch2 INTERFACE_INCLUDE_DIRECTORIES)
+    # Nix clang-wrapper: Catch2 include ends up in CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES,
+    # so CMake deduplicates it out of per-target flags. Force it via CXX_FLAGS.
+    string(APPEND CMAKE_CXX_FLAGS " -I${PP_CATCH2_INC}")
     set(PP_CJSON_SOURCES ${PROJECT_SOURCE_DIR}/third_party/cjson/cJSON.c)
     set(PP_CJSON_INC     ${PROJECT_SOURCE_DIR}/third_party/cjson)
     find_package(CURL REQUIRED)
@@ -240,6 +244,14 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(gs_writers_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} pthread)
+
+    add_executable(gs_rxpower_tests
+      src/gsmenu/settings_gs_rxpower.c
+      tests/test_settings_gs_rxpower.cpp)
+    target_include_directories(gs_rxpower_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(gs_rxpower_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

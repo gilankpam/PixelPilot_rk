@@ -6,10 +6,20 @@
 #include <string.h>
 #include <stdio.h>
 
+/* Spinbox layout in the value column:
+ *     ▲      <- up chevron
+ *    50      <- big number (accent when focused)
+ *     ▼      <- down chevron
+ *
+ * Chevrons start dim and brighten when the row enters EDIT mode so the
+ * user has a clear cue that W/S now adjusts the number. */
+
 typedef struct {
     char *domain, *page, *key;
-    lv_obj_t *slider, *value_label;
+    int32_t min, max;
+    int32_t value;
     int32_t saved_val;
+    lv_obj_t *num, *up_chev, *down_chev;
 } pp_slider_data_t;
 
 static void on_delete(lv_event_t *e) {
@@ -17,10 +27,38 @@ static void on_delete(lv_event_t *e) {
     if (d) { free(d->domain); free(d->page); free(d->key); free(d); }
 }
 
-static void update_label(pp_slider_data_t *d) {
-    char buf[32];
-    snprintf(buf, sizeof buf, "%d", (int)lv_slider_get_value(d->slider));
-    lv_label_set_text(d->value_label, buf);
+static void refresh_num(pp_slider_data_t *d) {
+    char buf[16];
+    snprintf(buf, sizeof buf, "%d", (int)d->value);
+    lv_label_set_text(d->num, buf);
+}
+
+static int32_t step_for(int32_t min, int32_t max) {
+    int32_t range = max - min;
+    if (range < 0) range = -range;
+    int32_t s = range / 20;
+    if (s < 1) s = 1;
+    return s;
+}
+
+static void set_chev_state(pp_slider_data_t *d, bool active) {
+    /* Active = bright accent; otherwise muted white. */
+    lv_color_t c = active ? lv_color_hex(0x6B7FFF) : lv_color_hex(0xFFFFFF);
+    lv_opa_t   o = active ? LV_OPA_COVER : 90;        /* ~35% when idle */
+    lv_obj_set_style_text_color(d->up_chev,   c, 0);
+    lv_obj_set_style_text_color(d->down_chev, c, 0);
+    lv_obj_set_style_text_opa(d->up_chev,   o, 0);
+    lv_obj_set_style_text_opa(d->down_chev, o, 0);
+}
+
+static void num_mirror_focus(lv_event_t *e) {
+    pp_slider_data_t *d = lv_event_get_user_data(e);
+    if (d && d->num) lv_obj_add_state(d->num, LV_STATE_FOCUS_KEY);
+}
+
+static void num_mirror_defocus(lv_event_t *e) {
+    pp_slider_data_t *d = lv_event_get_user_data(e);
+    if (d && d->num) lv_obj_remove_state(d->num, LV_STATE_FOCUS_KEY);
 }
 
 static void on_key(lv_event_t *e) {
@@ -28,37 +66,44 @@ static void on_key(lv_event_t *e) {
     lv_key_t k = lv_event_get_key(e);
     extern gsmenu_control_mode_t control_mode;
     bool consumed = false;
+    int32_t step = step_for(d->min, d->max);
+
     if (k == LV_KEY_ENTER) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
-            d->saved_val = lv_slider_get_value(d->slider);
-            control_mode = GSMENU_CONTROL_MODE_SLIDER;
+            d->saved_val = d->value;
+            control_mode = GSMENU_CONTROL_MODE_EDIT;
+            set_chev_state(d, true);
         } else {
             control_mode = GSMENU_CONTROL_MODE_NAV;
+            set_chev_state(d, false);
             char buf[32];
-            snprintf(buf, sizeof buf, "%d", (int)lv_slider_get_value(d->slider));
+            snprintf(buf, sizeof buf, "%d", (int)d->value);
             pp_settings_set_async(d->domain, d->page, d->key, buf, NULL);
         }
         consumed = true;
-    } else if (k == LV_KEY_RIGHT) {
-        lv_slider_set_value(d->slider, lv_slider_get_value(d->slider) + 1, LV_ANIM_OFF);
-        update_label(d);
-        consumed = true;
-    } else if (k == LV_KEY_LEFT) {
-        lv_slider_set_value(d->slider, lv_slider_get_value(d->slider) - 1, LV_ANIM_OFF);
-        update_label(d);
-        consumed = true;
+    } else if (k == LV_KEY_UP) {
+        if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            d->value += step;
+            if (d->value > d->max) d->value = d->max;
+            refresh_num(d);
+            consumed = true;
+        }
+    } else if (k == LV_KEY_DOWN) {
+        if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            d->value -= step;
+            if (d->value < d->min) d->value = d->min;
+            refresh_num(d);
+            consumed = true;
+        }
     } else if (k == LV_KEY_ESC) {
-        if (control_mode == GSMENU_CONTROL_MODE_SLIDER) {
-            lv_slider_set_value(d->slider, d->saved_val, LV_ANIM_OFF);
-            update_label(d);
+        if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            d->value = d->saved_val;
+            refresh_num(d);
+            set_chev_state(d, false);
         }
         control_mode = GSMENU_CONTROL_MODE_NAV;
         consumed = true;
     }
-    /* Stop bubbling for any key we handle: otherwise LVGL's base event
-     * handler on the parent scrollable page would auto-scroll on
-     * LEFT/RIGHT/UP/DOWN. HOME isn't consumed here so it still bubbles
-     * to pp_page::on_key for the back-to-tabbar handling. */
     if (consumed) lv_event_stop_bubbling(e);
 }
 
@@ -71,7 +116,8 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_add_style(row, &pp_style_row, 0);
     lv_obj_add_style(row, &pp_style_row_focus, LV_STATE_FOCUS_KEY);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, 36);
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_style_min_height(row, 36, 0);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
@@ -87,30 +133,58 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_label_set_text(label_obj, label);
     lv_obj_set_flex_grow(label_obj, 1);
 
-    lv_obj_t *value_label = lv_label_create(row);
-    lv_label_set_text(value_label, "—");
-    lv_obj_set_style_pad_right(value_label, 8, 0);
+    /* Spinbox column on the right side. */
+    lv_obj_t *col = lv_obj_create(row);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_width(col, LV_SIZE_CONTENT);
+    lv_obj_set_height(col, LV_SIZE_CONTENT);
+    lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *slider = lv_slider_create(row);
-    lv_slider_set_range(slider, min, max);
-    lv_obj_set_width(slider, 80);
-    lv_obj_add_state(slider, LV_STATE_DISABLED);    /* keys-only adjust */
+    lv_obj_t *up = lv_label_create(col);
+    lv_label_set_text(up, LV_SYMBOL_UP);
+    lv_obj_set_style_text_font(up, &lv_font_montserrat_14, 0);
+
+    lv_obj_t *num = lv_label_create(col);
+    lv_obj_add_style(num, &pp_style_value_focus, LV_STATE_FOCUS_KEY);
+    lv_label_set_text(num, "—");
+
+    lv_obj_t *dn = lv_label_create(col);
+    lv_label_set_text(dn, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_font(dn, &lv_font_montserrat_14, 0);
 
     pp_slider_data_t *d = calloc(1, sizeof(*d));
     d->domain = strdup(domain);
     d->page   = strdup(page);
     d->key    = strdup(key);
-    d->slider = slider;
-    d->value_label = value_label;
+    d->min    = min;
+    d->max    = max;
+    d->value  = min;
+    d->num    = num;
+    d->up_chev   = up;
+    d->down_chev = dn;
 
     lv_obj_set_user_data(row, d);
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
 
+    /* The num label is a non-focusable child, so it never receives
+     * LV_STATE_FOCUS_KEY on its own. Mirror the row's focus state onto
+     * it so the conditional pp_style_value_focus fires. */
+    lv_obj_add_event_cb(row, num_mirror_focus,   LV_EVENT_FOCUSED,   d);
+    lv_obj_add_event_cb(row, num_mirror_defocus, LV_EVENT_DEFOCUSED, d);
+
+    set_chev_state(d, false);
+
+    /* Read initial value via settings provider. */
     char *v = pp_settings_get(domain, page, key);
     if (v && *v) {
-        lv_slider_set_value(slider, atoi(v), LV_ANIM_OFF);
-        update_label(d);
+        d->value = atoi(v);
+        if (d->value < min) d->value = min;
+        if (d->value > max) d->value = max;
+        refresh_num(d);
     }
     free(v);
 

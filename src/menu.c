@@ -12,6 +12,7 @@
 #include "gsmenu/pages/display.h"
 #include "gsmenu/pages/camera.h"
 #include "gsmenu/pages/link.h"
+#include "gsmenu/pages/dvr.h"
 #include "lvosd.h"
 
 lv_obj_t   *menu;                   /* Legacy; kept for ABI w/ old code paths. */
@@ -75,7 +76,9 @@ void pp_menu_main(void)
     lv_obj_t *dsp = build_display_tab(root);
     lv_obj_set_flex_grow(dsp, 1);
     lv_obj_set_height(dsp, LV_PCT(100));
-    lv_obj_t *dvr = stub_page(root, "DVR");
+    lv_obj_t *dvr = build_dvr_tab(root);
+    lv_obj_set_flex_grow(dvr, 1);
+    lv_obj_set_height(dvr, LV_PCT(100));
     lv_obj_t *sys = stub_page(root, "System");
 
     pp_tabbar_item_t items[5] = {

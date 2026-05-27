@@ -6,8 +6,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void dropdown_done_cb(int rc, const char *err) {
-    if (rc != 0) pp_toast_error(err ? err : "Failed to apply dropdown");
+struct dropdown_ctx {
+    lv_obj_t  *dd;
+    lv_obj_t  *value_label;
+    uint16_t   prev_sel;
+};
+
+static void dropdown_done_cb(int rc, const char *err, void *user_data) {
+    struct dropdown_ctx *ctx = (struct dropdown_ctx *)user_data;
+    if (rc != 0) {
+        pp_toast_error(err ? err : "Failed to apply dropdown");
+        /* Revert the selection to what it was before the commit. */
+        lv_dropdown_set_selected(ctx->dd, ctx->prev_sel);
+        char buf[64];
+        lv_dropdown_get_selected_str(ctx->dd, buf, sizeof buf);
+        lv_label_set_text(ctx->value_label, buf);
+    }
+    lv_free(ctx);
 }
 
 typedef struct {
@@ -161,7 +176,12 @@ static void on_key(lv_event_t *e) {
             control_mode = GSMENU_CONTROL_MODE_NAV;
             char buf[64];
             lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
-            pp_settings_set_async(d->domain, d->page, d->key, buf, dropdown_done_cb);
+            struct dropdown_ctx *ctx = lv_malloc(sizeof(*ctx));
+            ctx->dd          = d->dd;
+            ctx->value_label = d->value_label;
+            ctx->prev_sel    = d->saved_sel;
+            pp_settings_set_async(d->domain, d->page, d->key, buf,
+                                  dropdown_done_cb, ctx);
             popup_close(d);
         }
         consumed = true;

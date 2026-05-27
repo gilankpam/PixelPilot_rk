@@ -5,8 +5,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void toggle_done_cb(int rc, const char *err) {
-    if (rc != 0) pp_toast_error(err ? err : "Failed to apply toggle");
+struct toggle_ctx {
+    lv_obj_t *sw;
+    bool prev_on;
+};
+
+static void toggle_done_cb(int rc, const char *err, void *user_data) {
+    struct toggle_ctx *ctx = (struct toggle_ctx *)user_data;
+    if (rc != 0) {
+        pp_toast_error(err ? err : "Failed to apply toggle");
+        /* Revert the switch to its prior visual state. */
+        if (ctx->prev_on) lv_obj_add_state(ctx->sw, LV_STATE_CHECKED);
+        else              lv_obj_remove_state(ctx->sw, LV_STATE_CHECKED);
+    }
+    lv_free(ctx);
 }
 
 typedef struct {
@@ -22,10 +34,15 @@ static void on_delete(lv_event_t *e) {
 static void on_key(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     pp_toggle_data_t *d = lv_event_get_user_data(e);
-    bool now = !lv_obj_has_state(d->sw, LV_STATE_CHECKED);
+    bool prev_on = lv_obj_has_state(d->sw, LV_STATE_CHECKED);
+    bool now = !prev_on;
     if (now) lv_obj_add_state(d->sw, LV_STATE_CHECKED);
     else     lv_obj_remove_state(d->sw, LV_STATE_CHECKED);
-    pp_settings_set_async(d->domain, d->page, d->key, now ? "on" : "off", toggle_done_cb);
+    struct toggle_ctx *ctx = lv_malloc(sizeof(*ctx));
+    ctx->sw = d->sw;
+    ctx->prev_on = prev_on;
+    pp_settings_set_async(d->domain, d->page, d->key, now ? "on" : "off",
+                          toggle_done_cb, ctx);
     lv_event_stop_bubbling(e);
 }
 

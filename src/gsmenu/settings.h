@@ -8,8 +8,9 @@ extern "C" {
 #endif
 
 /* Called by a real backend impl when an async set completes.
- * rc == 0 means success; err is NULL on success or a short message on failure. */
-typedef void (*pp_settings_done_cb)(int rc, const char *err);
+ * rc == 0 means success; err is NULL on success or a short message on failure.
+ * user_data is the opaque pointer passed to pp_settings_set_async. */
+typedef void (*pp_settings_done_cb)(int rc, const char *err, void *user_data);
 
 typedef struct {
     /* Synchronous set. Backend may persist immediately or queue. */
@@ -23,10 +24,11 @@ typedef struct {
 
     /* Asynchronous set for slow backends. on_done may be NULL.
      * The implementation is responsible for thread safety; it may call
-     * on_done synchronously if the operation is cheap. */
+     * on_done synchronously if the operation is cheap. user_data is passed
+     * through to on_done unchanged. */
     void  (*set_async)(const char *domain, const char *page,
                        const char *key, const char *value,
-                       pp_settings_done_cb on_done);
+                       pp_settings_done_cb on_done, void *user_data);
 } pp_settings_provider_t;
 
 /* Install (or replace) the active provider. Pointer must outlive the program.
@@ -45,7 +47,7 @@ char *pp_settings_get(const char *domain, const char *page,
                       const char *key);
 void  pp_settings_set_async(const char *domain, const char *page,
                             const char *key, const char *value,
-                            pp_settings_done_cb on_done);
+                            pp_settings_done_cb on_done, void *user_data);
 
 /* Registers the built-in no-op stub provider. */
 void pp_settings_register_stub(void);

@@ -185,10 +185,12 @@ if(USE_SIMULATOR)
   if(Catch2_FOUND)
     add_executable(settings_tests
       src/gsmenu/settings.c
-      tests/test_settings.cpp)
+      src/gsmenu/settings_dummy.c
+      tests/test_settings.cpp
+      tests/test_settings_failure.cpp)
     target_include_directories(settings_tests PRIVATE
       ${PROJECT_SOURCE_DIR}/src)
-    target_link_libraries(settings_tests Catch2::Catch2WithMain)
+    target_link_libraries(settings_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
     add_executable(lvgl_state_tests
       tests/test_lvgl_alt_state.cpp)

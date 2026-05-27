@@ -14,9 +14,10 @@ static char *stub_get(const char *d, const char *p, const char *k) {
 }
 
 static void stub_set_async(const char *d, const char *p, const char *k,
-                           const char *v, pp_settings_done_cb on_done) {
+                           const char *v, pp_settings_done_cb on_done,
+                           void *user_data) {
     LV_LOG_USER("settings.set_async %s/%s/%s = %s", d, p, k, v ? v : "(null)");
-    if (on_done) on_done(0, NULL);
+    if (on_done) on_done(0, NULL, user_data);
 }
 
 static const pp_settings_provider_t g_stub = {

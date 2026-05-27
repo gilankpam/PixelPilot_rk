@@ -164,15 +164,16 @@ static char *dummy_get(const char *d, const char *p, const char *k) {
 }
 
 static void dummy_set_async(const char *d, const char *p, const char *k,
-                            const char *v, pp_settings_done_cb on_done) {
+                            const char *v, pp_settings_done_cb on_done,
+                            void *user_data) {
     const char *fail = getenv("PP_SIM_FAIL");
     if (fail && *fail) {
         /* Don't apply the value — simulate a backend failure. */
-        if (on_done) on_done(1, "simulated failure (PP_SIM_FAIL set)");
+        if (on_done) on_done(1, "simulated failure (PP_SIM_FAIL set)", user_data);
         return;
     }
     dummy_set(d, p, k, v);
-    if (on_done) on_done(0, NULL);
+    if (on_done) on_done(0, NULL, user_data);
 }
 
 static const pp_settings_provider_t g_dummy = {

@@ -7,8 +7,23 @@
 #include <string.h>
 #include <stdio.h>
 
-static void slider_done_cb(int rc, const char *err) {
-    if (rc != 0) pp_toast_error(err ? err : "Failed to apply slider");
+struct slider_ctx {
+    lv_obj_t  *num;
+    int32_t   *value_ptr;   /* points into the live pp_slider_data_t */
+    int32_t    prev_val;
+};
+
+static void slider_done_cb(int rc, const char *err, void *user_data) {
+    struct slider_ctx *ctx = (struct slider_ctx *)user_data;
+    if (rc != 0) {
+        pp_toast_error(err ? err : "Failed to apply slider");
+        /* Revert the displayed value to what it was before the commit. */
+        *ctx->value_ptr = ctx->prev_val;
+        char buf[16];
+        snprintf(buf, sizeof buf, "%d", (int)ctx->prev_val);
+        lv_label_set_text(ctx->num, buf);
+    }
+    lv_free(ctx);
 }
 
 /* Spinbox layout in the value column:
@@ -78,7 +93,12 @@ static void on_key(lv_event_t *e) {
             set_edit_state(d, false);
             char buf[32];
             snprintf(buf, sizeof buf, "%d", (int)d->value);
-            pp_settings_set_async(d->domain, d->page, d->key, buf, slider_done_cb);
+            struct slider_ctx *ctx = lv_malloc(sizeof(*ctx));
+            ctx->num       = d->num;
+            ctx->value_ptr = &d->value;
+            ctx->prev_val  = d->saved_val;
+            pp_settings_set_async(d->domain, d->page, d->key, buf,
+                                  slider_done_cb, ctx);
         }
         consumed = true;
     } else if (k == LV_KEY_UP) {

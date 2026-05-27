@@ -72,20 +72,20 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
     pp_slider(page, LV_SYMBOL_SETTINGS, "Step",
               "air", "dlink", "roiqp_step", 1, 10);
 
-    pp_section_header(page, "Safe Ceilings");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Max MCS",
+    pp_section_header(page, "Failsafe");
+    pp_slider(page, LV_SYMBOL_SETTINGS, "MCS",
               "air", "dlink", "safe_mcs", 0, 7);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Max FEC K",
+    pp_slider(page, LV_SYMBOL_SETTINGS, "FEC K",
               "air", "dlink", "safe_k", 1, 31);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Max FEC N",
+    pp_slider(page, LV_SYMBOL_SETTINGS, "FEC N",
               "air", "dlink", "safe_n", 2, 32);
     pp_slider(page, LV_SYMBOL_SETTINGS, "Block Depth",
               "air", "dlink", "safe_depth", 1, 8);
-    pp_dropdown(page, LV_SYMBOL_WIFI, "Max Bandwidth",
+    pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",
                 "air", "dlink", "safe_bandwidth", "20\n40");
-    pp_slider(page, LV_SYMBOL_UP, "Max TX Power (dBm)",
+    pp_slider(page, LV_SYMBOL_UP, "TX Power (dBm)",
               "air", "dlink", "safe_txpower_dbm", -10, 30);
-    pp_slider(page, LV_SYMBOL_AUDIO, "Max Bitrate (kbps)",
+    pp_slider(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",
               "air", "dlink", "safe_bitrate_kbps", 500, 30000);
 
     lv_group_t *grp = pp_page_group(page);

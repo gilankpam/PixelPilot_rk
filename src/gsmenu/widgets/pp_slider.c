@@ -1,30 +1,12 @@
 #include "pp_slider.h"
 #include "pp_toast.h"
+#include "pp_row.h"
 #include "../styles.h"
 #include "../settings.h"
 #include "../../input.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
-struct slider_ctx {
-    lv_obj_t  *num;
-    int32_t   *value_ptr;   /* points into the live pp_slider_data_t */
-    int32_t    prev_val;
-};
-
-static void slider_done_cb(int rc, const char *err, void *user_data) {
-    struct slider_ctx *ctx = (struct slider_ctx *)user_data;
-    if (rc != 0) {
-        pp_toast_error(err ? err : "Failed to apply slider");
-        /* Revert the displayed value to what it was before the commit. */
-        *ctx->value_ptr = ctx->prev_val;
-        char buf[16];
-        snprintf(buf, sizeof buf, "%d", (int)ctx->prev_val);
-        lv_label_set_text(ctx->num, buf);
-    }
-    lv_free(ctx);
-}
 
 /* Spinbox layout in the value column:
  *     ▲      <- up chevron
@@ -34,13 +16,39 @@ static void slider_done_cb(int rc, const char *err, void *user_data) {
  * Chevrons start dim and brighten when the row enters EDIT mode so the
  * user has a clear cue that W/S now adjusts the number. */
 
-typedef struct {
+struct pp_slider_data {
     char *domain, *page, *key;
     int32_t min, max;
     int32_t value;
     int32_t saved_val;
     lv_obj_t *num, *up_chev, *down_chev;
-} pp_slider_data_t;
+    lv_obj_t *row;
+    bool      in_flight;
+};
+typedef struct pp_slider_data pp_slider_data_t;
+
+/* Forward declaration — defined after struct pp_slider_data below. */
+static void refresh_num(pp_slider_data_t *d);
+
+struct slider_ctx {
+    struct pp_slider_data *d;
+    int32_t target_val;
+};
+
+static void slider_done_cb(int rc, const char *err, void *user_data) {
+    struct slider_ctx *ctx = (struct slider_ctx *)user_data;
+    struct pp_slider_data *d = ctx->d;
+    pp_row_set_busy(d->row, false);
+    d->in_flight = false;
+    if (rc == 0) {
+        d->value = ctx->target_val;
+        refresh_num(d);
+    } else {
+        pp_toast_error(err ? err : "Failed to apply slider");
+        /* d->value is already at saved_val; nothing to revert. */
+    }
+    lv_free(ctx);
+}
 
 static void on_delete(lv_event_t *e) {
     pp_slider_data_t *d = lv_event_get_user_data(e);
@@ -85,22 +93,38 @@ static void on_key(lv_event_t *e) {
 
     if (k == LV_KEY_ENTER) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
-            d->saved_val = d->value;
-            control_mode = GSMENU_CONTROL_MODE_EDIT;
-            set_edit_state(d, true);
+            if (pp_row_get_locked(d->row) != PP_ROW_UNLOCKED) {
+                pp_toast_error("Locked by Dynamic Link");
+                consumed = true;
+            } else {
+                d->saved_val = d->value;
+                control_mode = GSMENU_CONTROL_MODE_EDIT;
+                set_edit_state(d, true);
+                consumed = true;
+            }
         } else {
             control_mode = GSMENU_CONTROL_MODE_NAV;
             set_edit_state(d, false);
-            char buf[32];
-            snprintf(buf, sizeof buf, "%d", (int)d->value);
-            struct slider_ctx *ctx = lv_malloc(sizeof(*ctx));
-            ctx->num       = d->num;
-            ctx->value_ptr = &d->value;
-            ctx->prev_val  = d->saved_val;
-            pp_settings_set_async(d->domain, d->page, d->key, buf,
-                                  slider_done_cb, ctx);
+            if (d->value == d->saved_val) {
+                consumed = true;          /* no change — skip the round-trip */
+            } else {
+                char buf[32];
+                snprintf(buf, sizeof buf, "%d", (int)d->value);
+                /* Revert the visible value to saved_val until apply confirms;
+                 * we keep the *attempted* value in ctx->target_val. */
+                int32_t attempted = d->value;
+                d->value = d->saved_val;
+                refresh_num(d);
+                d->in_flight = true;
+                pp_row_set_busy(d->row, true);
+                struct slider_ctx *ctx = lv_malloc(sizeof(*ctx));
+                ctx->d = d;
+                ctx->target_val = attempted;
+                pp_settings_set_async(d->domain, d->page, d->key, buf,
+                                      slider_done_cb, ctx);
+                consumed = true;
+            }
         }
-        consumed = true;
     } else if (k == LV_KEY_UP) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
             d->value += step;
@@ -186,6 +210,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     d->down_chev = dn;
 
     lv_obj_set_user_data(row, d);
+    d->row = row;
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
 
@@ -200,6 +225,10 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
         refresh_num(d);
     }
     free(v);
+
+    if (pp_settings_is_locked(domain, page, key)) {
+        pp_row_set_locked(row, PP_ROW_LOCKED_DYNAMIC);
+    }
 
     return row;
 }

@@ -22,10 +22,13 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
               "air", "wfbng", "mcs_index", 0, 7);
     pp_toggle(page, LV_SYMBOL_SETTINGS, "STBC", "air", "wfbng", "stbc");
     pp_toggle(page, LV_SYMBOL_SETTINGS, "LDPC", "air", "wfbng", "ldpc");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_K",
-              "air", "wfbng", "fec_k", 1, 31);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_N",
-              "air", "wfbng", "fec_n", 2, 32);
+    lv_obj_t *fec_k = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_K",
+                                "air", "wfbng", "fec_k", 1, 31);
+    lv_obj_t *fec_n = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_N",
+                                "air", "wfbng", "fec_n", 2, 32);
+    /* Enforce k <= n - 2 from both sides. */
+    pp_slider_set_relation(fec_k, "air", "wfbng", "fec_n", -2, /*is_max*/ true);
+    pp_slider_set_relation(fec_n, "air", "wfbng", "fec_k",  2, /*is_max*/ false);
 
     lv_group_t *grp = pp_page_group(page);
     uint32_t n = lv_obj_get_child_cnt(page);

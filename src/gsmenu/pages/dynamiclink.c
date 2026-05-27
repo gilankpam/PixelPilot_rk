@@ -75,10 +75,12 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
     pp_section_header(page, "Failsafe");
     pp_slider(page, LV_SYMBOL_SETTINGS, "MCS",
               "air", "dlink", "safe_mcs", 0, 7);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "FEC K",
-              "air", "dlink", "safe_k", 1, 31);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "FEC N",
-              "air", "dlink", "safe_n", 2, 32);
+    lv_obj_t *safe_k = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC K",
+                                 "air", "dlink", "safe_k", 1, 31);
+    lv_obj_t *safe_n = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC N",
+                                 "air", "dlink", "safe_n", 2, 32);
+    pp_slider_set_relation(safe_k, "air", "dlink", "safe_n", -2, /*is_max*/ true);
+    pp_slider_set_relation(safe_n, "air", "dlink", "safe_k",  2, /*is_max*/ false);
     pp_slider(page, LV_SYMBOL_SETTINGS, "Block Depth",
               "air", "dlink", "safe_depth", 1, 8);
     pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",

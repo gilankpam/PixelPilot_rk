@@ -24,8 +24,41 @@ struct pp_slider_data {
     lv_obj_t *num, *up_chev, *down_chev;
     lv_obj_t *row;
     bool      in_flight;
+
+    /* Optional relation: effective bound is rel_val + rel_offset, where
+     * rel_val is read live from pp_settings_get(rel_domain, rel_page,
+     * rel_key). NULL rel_key means no relation. */
+    char *rel_domain, *rel_page, *rel_key;
+    int32_t rel_offset;
+    bool    rel_is_max;
 };
 typedef struct pp_slider_data pp_slider_data_t;
+
+static int32_t effective_max(pp_slider_data_t *d) {
+    int32_t m = d->max;
+    if (d->rel_key && d->rel_is_max) {
+        char *v = pp_settings_get(d->rel_domain, d->rel_page, d->rel_key);
+        if (v && *v) {
+            int32_t bound = atoi(v) + d->rel_offset;
+            if (bound < m) m = bound;
+        }
+        free(v);
+    }
+    return m;
+}
+
+static int32_t effective_min(pp_slider_data_t *d) {
+    int32_t m = d->min;
+    if (d->rel_key && !d->rel_is_max) {
+        char *v = pp_settings_get(d->rel_domain, d->rel_page, d->rel_key);
+        if (v && *v) {
+            int32_t bound = atoi(v) + d->rel_offset;
+            if (bound > m) m = bound;
+        }
+        free(v);
+    }
+    return m;
+}
 
 /* Forward declaration — defined after struct pp_slider_data below. */
 static void refresh_num(pp_slider_data_t *d);
@@ -52,7 +85,11 @@ static void slider_done_cb(int rc, const char *err, void *user_data) {
 
 static void on_delete(lv_event_t *e) {
     pp_slider_data_t *d = lv_event_get_user_data(e);
-    if (d) { free(d->domain); free(d->page); free(d->key); free(d); }
+    if (d) {
+        free(d->domain); free(d->page); free(d->key);
+        free(d->rel_domain); free(d->rel_page); free(d->rel_key);
+        free(d);
+    }
 }
 
 static void refresh_num(pp_slider_data_t *d) {
@@ -127,15 +164,17 @@ static void on_key(lv_event_t *e) {
         }
     } else if (k == LV_KEY_UP) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            int32_t emax = effective_max(d);
             d->value += step;
-            if (d->value > d->max) d->value = d->max;
+            if (d->value > emax) d->value = emax;
             refresh_num(d);
             consumed = true;
         }
     } else if (k == LV_KEY_DOWN) {
         if (control_mode == GSMENU_CONTROL_MODE_EDIT) {
+            int32_t emin = effective_min(d);
             d->value -= step;
-            if (d->value < d->min) d->value = d->min;
+            if (d->value < emin) d->value = emin;
             refresh_num(d);
             consumed = true;
         }
@@ -233,4 +272,20 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     }
 
     return row;
+}
+
+void pp_slider_set_relation(lv_obj_t *row,
+                            const char *rel_domain,
+                            const char *rel_page,
+                            const char *rel_key,
+                            int32_t offset,
+                            bool is_max) {
+    pp_slider_data_t *d = (pp_slider_data_t *)lv_obj_get_user_data(row);
+    if (!d) return;
+    free(d->rel_domain); free(d->rel_page); free(d->rel_key);
+    d->rel_domain = rel_domain ? strdup(rel_domain) : NULL;
+    d->rel_page   = rel_page   ? strdup(rel_page)   : NULL;
+    d->rel_key    = rel_key    ? strdup(rel_key)    : NULL;
+    d->rel_offset = offset;
+    d->rel_is_max = is_max;
 }

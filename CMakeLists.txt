@@ -66,6 +66,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/widgets/pp_tabbar.c
         src/gsmenu/widgets/pp_drilldown.h
         src/gsmenu/widgets/pp_drilldown.c
+        src/gsmenu/widgets/pp_toast.h
+        src/gsmenu/widgets/pp_toast.c
         src/gsmenu/pages/display.h
         src/gsmenu/pages/display.c
         src/gsmenu/pages/camera.h
@@ -114,6 +116,8 @@ set(LIB_SOURCE_FILES
         src/gsmenu/widgets/pp_tabbar.c
         src/gsmenu/widgets/pp_drilldown.h
         src/gsmenu/widgets/pp_drilldown.c
+        src/gsmenu/widgets/pp_toast.h
+        src/gsmenu/widgets/pp_toast.c
         src/gsmenu/pages/display.h
         src/gsmenu/pages/display.c
         src/gsmenu/pages/camera.h

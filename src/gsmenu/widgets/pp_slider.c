@@ -1,10 +1,15 @@
 #include "pp_slider.h"
+#include "pp_toast.h"
 #include "../styles.h"
 #include "../settings.h"
 #include "../../input.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+
+static void slider_done_cb(int rc, const char *err) {
+    if (rc != 0) pp_toast_error(err ? err : "Failed to apply slider");
+}
 
 /* Spinbox layout in the value column:
  *     ▲      <- up chevron
@@ -73,7 +78,7 @@ static void on_key(lv_event_t *e) {
             set_edit_state(d, false);
             char buf[32];
             snprintf(buf, sizeof buf, "%d", (int)d->value);
-            pp_settings_set_async(d->domain, d->page, d->key, buf, NULL);
+            pp_settings_set_async(d->domain, d->page, d->key, buf, slider_done_cb);
         }
         consumed = true;
     } else if (k == LV_KEY_UP) {

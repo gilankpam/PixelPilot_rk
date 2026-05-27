@@ -6,7 +6,12 @@
 #include "../widgets/pp_slider.h"
 #include "../widgets/pp_dropdown.h"
 #include "../widgets/pp_drilldown.h"
+#include "../widgets/pp_toast.h"
 #include "../settings.h"
+
+static void action_done_cb(int rc, const char *err) {
+    if (rc != 0) pp_toast_error(err ? err : "Failed to run action");
+}
 
 /* Keys mirror originals in gs_main.c, gs_wifi.c, gs_system.c (Receiver
  * section), air_telemetry.c, air_actions.c, gs_actions.c. */
@@ -28,7 +33,7 @@ static void on_open_wifi(lv_event_t *e) {
 static void on_action(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     const char *cmd = lv_event_get_user_data(e);
-    pp_settings_set_async("system", "actions", cmd, "trigger", NULL);
+    pp_settings_set_async("system", "actions", cmd, "trigger", action_done_cb);
 }
 
 lv_obj_t *build_system_tab(lv_obj_t *parent) {

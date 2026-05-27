@@ -1,8 +1,13 @@
 #include "pp_toggle.h"
+#include "pp_toast.h"
 #include "../styles.h"
 #include "../settings.h"
 #include <stdlib.h>
 #include <string.h>
+
+static void toggle_done_cb(int rc, const char *err) {
+    if (rc != 0) pp_toast_error(err ? err : "Failed to apply toggle");
+}
 
 typedef struct {
     char *domain, *page, *key;
@@ -20,7 +25,7 @@ static void on_key(lv_event_t *e) {
     bool now = !lv_obj_has_state(d->sw, LV_STATE_CHECKED);
     if (now) lv_obj_add_state(d->sw, LV_STATE_CHECKED);
     else     lv_obj_remove_state(d->sw, LV_STATE_CHECKED);
-    pp_settings_set_async(d->domain, d->page, d->key, now ? "on" : "off", NULL);
+    pp_settings_set_async(d->domain, d->page, d->key, now ? "on" : "off", toggle_done_cb);
     lv_event_stop_bubbling(e);
 }
 

@@ -1,9 +1,14 @@
 #include "pp_dropdown.h"
+#include "pp_toast.h"
 #include "../styles.h"
 #include "../settings.h"
 #include "../../input.h"
 #include <stdlib.h>
 #include <string.h>
+
+static void dropdown_done_cb(int rc, const char *err) {
+    if (rc != 0) pp_toast_error(err ? err : "Failed to apply dropdown");
+}
 
 typedef struct {
     char *domain, *page, *key;
@@ -156,7 +161,7 @@ static void on_key(lv_event_t *e) {
             control_mode = GSMENU_CONTROL_MODE_NAV;
             char buf[64];
             lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
-            pp_settings_set_async(d->domain, d->page, d->key, buf, NULL);
+            pp_settings_set_async(d->domain, d->page, d->key, buf, dropdown_done_cb);
             popup_close(d);
         }
         consumed = true;

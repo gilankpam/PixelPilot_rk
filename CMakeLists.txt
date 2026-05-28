@@ -88,6 +88,8 @@ set(SIMULATOR_SOURCES
         src/gsmenu/settings.c
         src/gsmenu/settings_stub.c
         src/gsmenu/settings_dummy.c
+        src/gsmenu/settings_gs_enum.c
+        third_party/cjson/cJSON.c
         src/lvosd.h
         src/lvosd.c
         src/menu.h
@@ -189,7 +191,9 @@ if(USE_SIMULATOR)
   pkg_check_modules(LIBSDL REQUIRED sdl2)
   add_executable(${PROJECT_NAME} ${SIMULATOR_SOURCES})
   target_link_libraries(${PROJECT_NAME} lvgl ${LIBSDL_LIBRARIES} ${PNG_LIBRARIES})
-  target_include_directories(${PROJECT_NAME} PRIVATE ${LIBSDL_INCLUDE_DIRS})
+  target_include_directories(${PROJECT_NAME} PRIVATE
+      ${LIBSDL_INCLUDE_DIRS}
+      ${PROJECT_SOURCE_DIR}/third_party/cjson)
 
   # Standalone tests for the settings dispatcher — links only what it needs,
   # avoiding the heavy rockchip/drm/gst deps that pixelpilot_tests pulls in.

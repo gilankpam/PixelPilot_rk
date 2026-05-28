@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#if defined(__APPLE__)
+typedef unsigned int uint;
+typedef unsigned long ulong;
+#endif
 #ifndef USE_SIMULATOR
 #include "drm.h"
 #endif

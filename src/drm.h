@@ -24,7 +24,7 @@
 #include <rockchip/rk_mpi.h>
 #include <assert.h>
 
-#define OSD_BUF_COUNT	2
+#define OSD_BUF_COUNT	3
 
 struct modeset_output;
 

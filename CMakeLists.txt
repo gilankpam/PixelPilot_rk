@@ -12,9 +12,12 @@ option(USE_SIMULATOR "Build the simulator version of the application" OFF)
 option(BUILD_TESTS "Build unit tests" OFF)
 
 # LVGL setup
-set(LV_USE_LINUX_DRM ON)
+if(NOT USE_SIMULATOR)
+  set(LV_USE_LINUX_DRM ON)
+endif()
 set(LV_CONF_BUILD_DISABLE_DEMOS 1)
 set(LV_CONF_BUILD_DISABLE_EXAMPLES 1)
+
 add_subdirectory(lvgl)
 
 # Set include directories for LVGL BEFORE any other targets
@@ -26,8 +29,10 @@ set(CMAKE_C_STANDARD 99) # LVGL officially supports C99 and above
 set(CMAKE_CXX_STANDARD 17) #C17
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-pkg_check_modules(LIBDRM REQUIRED libdrm)
-pkg_check_modules(CAIRO IMPORTED_TARGET REQUIRED cairo)
+if(NOT USE_SIMULATOR)
+  pkg_check_modules(LIBDRM REQUIRED libdrm)
+  pkg_check_modules(CAIRO IMPORTED_TARGET REQUIRED cairo)
+endif()
 pkg_check_modules(SPDLOG REQUIRED spdlog)
 
 find_package(PNG REQUIRED)
@@ -39,46 +44,52 @@ include_directories(${PNG_INCLUDE_DIR})
 # Simulator
 set(SIMULATOR_SOURCES
         src/simulator.c
-        src/gsmenu/executor.h
-        src/gsmenu/executor.c
-        src/gsmenu/air_telemetry.h
-        src/gsmenu/air_telemetry.c
-        src/gsmenu/air_txprofiles.h
-        src/gsmenu/air_txprofiles.c
-        src/gsmenu/air_camera.h
-        src/gsmenu/air_camera.c
-        src/gsmenu/air_actions.h
-        src/gsmenu/air_actions.c
-        src/gsmenu/gs_wifi.h
-        src/gsmenu/gs_wifi.c
         src/gsmenu/ui.h
         src/gsmenu/helper.h
         src/gsmenu/helper.c
-        src/gsmenu/gs_main.c
-        src/gsmenu/gs_main.h
-        src/gsmenu/gs_dvr.h
-        src/gsmenu/gs_dvr.c
-        src/gsmenu/gs_dvrplayer.h
-        src/gsmenu/gs_dvrplayer.c
-        src/gsmenu/gs_wfbng.h
-        src/gsmenu/gs_wfbng.c
-        src/gsmenu/gs_apfpv.h
-        src/gsmenu/gs_apfpv.c
-        src/gsmenu/gs_system.h
-        src/gsmenu/gs_system.c
-        src/gsmenu/gs_actions.h
-        src/gsmenu/gs_actions.c
-        src/gsmenu/gs_connection_checker.h
-        src/gsmenu/gs_connection_checker.c
-        src/gsmenu/air_wfbng.h
-        src/gsmenu/air_wfbng.c
-        src/gsmenu/air_alink.h
-        src/gsmenu/air_alink.c
-        src/gsmenu/air_aalink.h
-        src/gsmenu/air_aalink.c
-        src/gsmenu/ui.c
         src/gsmenu/styles.h
         src/gsmenu/styles.c
+        src/gsmenu/widget_demo.c
+        src/gsmenu/widgets/pp_section_header.h
+        src/gsmenu/widgets/pp_section_header.c
+        src/gsmenu/widgets/pp_row.h
+        src/gsmenu/widgets/pp_row.c
+        src/gsmenu/widgets/pp_toggle.h
+        src/gsmenu/widgets/pp_toggle.c
+        src/gsmenu/widgets/pp_slider.h
+        src/gsmenu/widgets/pp_slider.c
+        src/gsmenu/widgets/pp_slider_bounds.h
+        src/gsmenu/widgets/pp_slider_bounds.c
+        src/gsmenu/widgets/pp_slider_accel.h
+        src/gsmenu/widgets/pp_slider_accel.c
+        src/gsmenu/widgets/pp_dropdown.h
+        src/gsmenu/widgets/pp_dropdown.c
+        src/gsmenu/widgets/pp_page.h
+        src/gsmenu/widgets/pp_page.c
+        src/gsmenu/widgets/pp_tabbar.h
+        src/gsmenu/widgets/pp_tabbar.c
+        src/gsmenu/widgets/pp_drilldown.h
+        src/gsmenu/widgets/pp_drilldown.c
+        src/gsmenu/widgets/pp_toast.h
+        src/gsmenu/widgets/pp_toast.c
+        src/gsmenu/pages/display.h
+        src/gsmenu/pages/display.c
+        src/gsmenu/pages/camera.h
+        src/gsmenu/pages/camera.c
+        src/gsmenu/pages/link.h
+        src/gsmenu/pages/link.c
+        src/gsmenu/pages/dynamiclink.h
+        src/gsmenu/pages/dynamiclink.c
+        src/gsmenu/pages/dvr.h
+        src/gsmenu/pages/dvr.c
+        src/gsmenu/pages/system.h
+        src/gsmenu/pages/system.c
+        src/gsmenu/settings.h
+        src/gsmenu/settings.c
+        src/gsmenu/settings_stub.c
+        src/gsmenu/settings_dummy.c
+        src/gsmenu/settings_gs_enum.c
+        third_party/cjson/cJSON.c
         src/lvosd.h
         src/lvosd.c
         src/menu.h
@@ -92,45 +103,48 @@ add_compile_options("-Wno-address-of-packed-member")
 set(LIB_SOURCE_FILES 
         src/drm.h
         src/drm.c
-        src/gsmenu/executor.h
-        src/gsmenu/executor.c
-        src/gsmenu/air_telemetry.c
-        src/gsmenu/air_txprofiles.h
-        src/gsmenu/air_txprofiles.c
-        src/gsmenu/air_camera.h
-        src/gsmenu/air_camera.c
-        src/gsmenu/air_actions.h
-        src/gsmenu/air_actions.c
-        src/gsmenu/gs_wifi.h
-        src/gsmenu/gs_wifi.c
         src/gsmenu/ui.h
         src/gsmenu/helper.h
         src/gsmenu/helper.c
-        src/gsmenu/gs_main.c
-        src/gsmenu/gs_main.h
-        src/gsmenu/gs_dvr.h
-        src/gsmenu/gs_dvr.c
-        src/gsmenu/gs_dvrplayer.h
-        src/gsmenu/gs_dvrplayer.c
-        src/gsmenu/gs_wfbng.h
-        src/gsmenu/gs_wfbng.c
-        src/gsmenu/gs_apfpv.h
-        src/gsmenu/gs_apfpv.c
-        src/gsmenu/gs_system.h
-        src/gsmenu/gs_system.c
-        src/gsmenu/air_wfbng.h
-        src/gsmenu/air_wfbng.c
-        src/gsmenu/air_alink.h
-        src/gsmenu/air_alink.c
-        src/gsmenu/air_aalink.h
-        src/gsmenu/air_aalink.c
-        src/gsmenu/gs_actions.h
-        src/gsmenu/gs_actions.c
-        src/gsmenu/gs_connection_checker.h
-        src/gsmenu/gs_connection_checker.c
         src/gsmenu/styles.h
         src/gsmenu/styles.c
-        src/gsmenu/ui.c 
+        src/gsmenu/widgets/pp_section_header.h
+        src/gsmenu/widgets/pp_section_header.c
+        src/gsmenu/widgets/pp_row.h
+        src/gsmenu/widgets/pp_row.c
+        src/gsmenu/widgets/pp_toggle.h
+        src/gsmenu/widgets/pp_toggle.c
+        src/gsmenu/widgets/pp_slider.h
+        src/gsmenu/widgets/pp_slider.c
+        src/gsmenu/widgets/pp_slider_bounds.h
+        src/gsmenu/widgets/pp_slider_bounds.c
+        src/gsmenu/widgets/pp_slider_accel.h
+        src/gsmenu/widgets/pp_slider_accel.c
+        src/gsmenu/widgets/pp_dropdown.h
+        src/gsmenu/widgets/pp_dropdown.c
+        src/gsmenu/widgets/pp_page.h
+        src/gsmenu/widgets/pp_page.c
+        src/gsmenu/widgets/pp_tabbar.h
+        src/gsmenu/widgets/pp_tabbar.c
+        src/gsmenu/widgets/pp_drilldown.h
+        src/gsmenu/widgets/pp_drilldown.c
+        src/gsmenu/widgets/pp_toast.h
+        src/gsmenu/widgets/pp_toast.c
+        src/gsmenu/pages/display.h
+        src/gsmenu/pages/display.c
+        src/gsmenu/pages/camera.h
+        src/gsmenu/pages/camera.c
+        src/gsmenu/pages/link.h
+        src/gsmenu/pages/link.c
+        src/gsmenu/pages/dynamiclink.h
+        src/gsmenu/pages/dynamiclink.c
+        src/gsmenu/pages/dvr.h
+        src/gsmenu/pages/dvr.c
+        src/gsmenu/pages/system.h
+        src/gsmenu/pages/system.c
+        src/gsmenu/settings.h
+        src/gsmenu/settings.c
+        src/gsmenu/settings_stub.c
         src/lvosd.h
         src/lvosd.c
         src/menu.h
@@ -176,16 +190,109 @@ if(USE_SIMULATOR)
   target_compile_definitions(lvgl PRIVATE USE_SIMULATOR)
   pkg_check_modules(LIBSDL REQUIRED sdl2)
   add_executable(${PROJECT_NAME} ${SIMULATOR_SOURCES})
-  target_link_libraries(${PROJECT_NAME} lvgl ${LIBSDL_LIBRARIES} ${PNG_LIBRARIES} ${LIBDRM_LIBRARIES})
+  target_link_libraries(${PROJECT_NAME} lvgl ${LIBSDL_LIBRARIES} ${PNG_LIBRARIES})
+  target_include_directories(${PROJECT_NAME} PRIVATE
+      ${LIBSDL_INCLUDE_DIRS}
+      ${PROJECT_SOURCE_DIR}/third_party/cjson)
+
+  # Standalone tests for the settings dispatcher — links only what it needs,
+  # avoiding the heavy rockchip/drm/gst deps that pixelpilot_tests pulls in.
+  find_package(Catch2 QUIET)
+  if(Catch2_FOUND)
+    get_target_property(PP_CATCH2_INC Catch2::Catch2 INTERFACE_INCLUDE_DIRECTORIES)
+    # Nix clang-wrapper: Catch2 include ends up in CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES,
+    # so CMake deduplicates it out of per-target flags. Force it via CXX_FLAGS.
+    string(APPEND CMAKE_CXX_FLAGS " -I${PP_CATCH2_INC}")
+    set(PP_CJSON_SOURCES ${PROJECT_SOURCE_DIR}/third_party/cjson/cJSON.c)
+    set(PP_CJSON_INC     ${PROJECT_SOURCE_DIR}/third_party/cjson)
+    find_package(CURL REQUIRED)
+
+    add_executable(settings_tests
+      src/gsmenu/settings.c
+      src/gsmenu/settings_dummy.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      src/gsmenu/widgets/pp_slider_bounds.c
+      src/gsmenu/widgets/pp_slider_accel.c
+      tests/test_settings.cpp
+      tests/test_settings_failure.cpp
+      tests/test_slider_bounds.cpp
+      tests/test_slider_accel.cpp)
+    target_include_directories(settings_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
+    target_link_libraries(settings_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    add_executable(lvgl_state_tests
+      tests/test_lvgl_alt_state.cpp)
+    target_include_directories(lvgl_state_tests PRIVATE
+      ${PROJECT_SOURCE_DIR})
+    target_link_libraries(lvgl_state_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    # fpvd provider unit + integration tests
+    add_executable(fpvd_tests
+      src/gsmenu/settings.c
+      src/gsmenu/settings_fpvd.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_fpvd.cpp
+      tests/test_settings_fpvd_integration.cpp)
+    target_include_directories(fpvd_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC}
+      ${PROJECT_SOURCE_DIR}/third_party/cpp-httplib)
+    target_link_libraries(fpvd_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} CURL::libcurl pthread)
+    target_compile_definitions(fpvd_tests PRIVATE PP_FPVD_TEST=1)
+
+    add_executable(gs_writers_tests
+      src/gsmenu/settings_gs_writers.c
+      tests/test_settings_gs_writers.cpp)
+    target_include_directories(gs_writers_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(gs_writers_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} pthread)
+
+    add_executable(gs_rxpower_tests
+      src/gsmenu/settings_gs_rxpower.c
+      tests/test_settings_gs_rxpower.cpp)
+    target_include_directories(gs_rxpower_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(gs_rxpower_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    add_executable(gs_enum_tests
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_gs_enum.cpp)
+    target_include_directories(gs_enum_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
+    target_link_libraries(gs_enum_tests
+      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    add_executable(router_tests
+      src/gsmenu/settings.c
+      src/gsmenu/settings_router.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_router.cpp)
+    target_include_directories(router_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
+    target_link_libraries(router_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+    target_compile_definitions(router_tests PRIVATE PP_ROUTER_TEST=1)
+  endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)
   find_package(yaml-cpp REQUIRED)
+  find_package(CURL REQUIRED)
   pkg_check_modules(LIBGPIOD REQUIRED libgpiod)
   include_directories(${LIBGPIOD_INCLUDE_DIR})
 
   find_path(RGA_INCLUDE_DIRS NAMES rga.h rga/rga.h)
   find_library(RGA_LIBRARIES NAMES rga librga)
-  
+
   # GStreamer setup
   find_package(PkgConfig REQUIRED)
   pkg_search_module(GST REQUIRED
@@ -196,37 +303,53 @@ else()
   pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.4)
   pkg_search_module(gstnet REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.4)
   pkg_search_module(gio REQUIRED IMPORTED_TARGET gio-2.0)
-  
+
+  # fpvd provider sources (device build)
+  list(APPEND SOURCE_FILES
+      src/gsmenu/settings_fpvd.c
+      third_party/cjson/cJSON.c
+  )
+
+  # GS-side settings backend (router + local writers + enumeration)
+  list(APPEND SOURCE_FILES
+      src/gsmenu/settings_router.c
+      src/gsmenu/settings_gs_local.c
+      src/gsmenu/settings_gs_writers.c
+      src/gsmenu/settings_gs_rxpower.c
+      src/gsmenu/settings_gs_enum.c)
+
   add_executable(${PROJECT_NAME} ${SOURCE_FILES})
-  
+
   # Add include directories for the main target
   target_include_directories(${PROJECT_NAME} PRIVATE
       ${PROJECT_SOURCE_DIR}
       ${PROJECT_SOURCE_DIR}/lvgl
+      ${PROJECT_SOURCE_DIR}/third_party/cjson
       ${LIBDRM_INCLUDE_DIRS}
       ${RGA_INCLUDE_DIRS}
   )
-  
-  target_link_libraries(${PROJECT_NAME} 
-      rockchip_mpp 
-      pthread 
-      drm 
-      m 
+
+  target_link_libraries(${PROJECT_NAME}
+      rockchip_mpp
+      pthread
+      drm
+      m
       PkgConfig::CAIRO
-      spdlog::spdlog 
+      spdlog::spdlog
       fmt::fmt
-      nlohmann_json::nlohmann_json 
-      yaml-cpp 
-      rt 
-      lvgl 
-      ${LIBGPIOD_LIBRARIES} 
+      nlohmann_json::nlohmann_json
+      yaml-cpp
+      rt
+      lvgl
+      ${LIBGPIOD_LIBRARIES}
       ${PNG_LIBRARIES}
-      PkgConfig::gstreamer 
+      PkgConfig::gstreamer
       PkgConfig::gstreamer-app
       PkgConfig::gstnet
       PkgConfig::gio
       ${RGA_LIBRARIES}
       EGL GLESv2 gbm
+      CURL::libcurl
   )
 endif()
 
@@ -298,6 +421,9 @@ install(TARGETS ${PROJECT_NAME}
 install(FILES ${ICONS}
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}
 )
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/gsmenu/fonts/Geist-Regular.ttf
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/fonts
+)
 
 # Install configuration files to /etc
 install(FILES ${OSD_CONFIGS}
@@ -305,11 +431,4 @@ install(FILES ${OSD_CONFIGS}
 )
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pixelpilot.yaml
     DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/${PROJECT_NAME}
-)
-
-# Install gsmenu.sh to bin directory
-install(FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/gsmenu.sh
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
-    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )

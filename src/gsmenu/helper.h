@@ -1,59 +1,31 @@
-#pragma once
+#ifndef PP_GSMENU_HELPER_H
+#define PP_GSMENU_HELPER_H
+
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
-
 #include "ui.h"
-
 #include "../../lvgl/lvgl.h"
 
-typedef enum {
-    LV_MENU_ITEM_BUILDER_VARIANT_1,
-    LV_MENU_ITEM_BUILDER_VARIANT_2
-} lv_menu_builder_variant_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void on_focus(lv_event_t* e);
+/* The new GSMenu UI does not use the old create / reload / generic
+ * helpers. Only find_resource_file is still needed (simulator.c uses
+ * it to load the fake video background image). */
 
-void generic_page_load_callback(lv_obj_t * page);
+const char *find_resource_file(const char *relative_path);
 
-lv_obj_t * create_text(lv_obj_t * parent, const char * icon, const char * txt, const char * parameter, menu_page_data_t* menu_page_data,bool blocking,lv_menu_builder_variant_t builder_variant);
+/* Walk a page's rows and re-apply lock/offline state via pp_row_set_locked.
+ * Domain/page/key on each row are read from the row's user_data which
+ * pp_toggle/pp_slider/pp_dropdown all populate with a struct whose first
+ * three fields are `char *domain, *page, *key`. Rows without that shape
+ * (section headers, the row's own holder child, etc.) are skipped. */
+void pp_page_reapply_lock_state(lv_obj_t *page);
 
-lv_obj_t * create_slider(lv_obj_t * parent, const char * icon, const char * txt, const char * parameter, menu_page_data_t* menu_page_data, bool blocking, int precision);
-lv_obj_t * create_switch(lv_obj_t * parent, const char * icon, const char * txt,const char * parameter, menu_page_data_t* menu_page_data,bool blocking);
+#ifdef __cplusplus
+}
+#endif
 
-void dropdown_event_handler(lv_event_t * e);
-
-lv_obj_t * create_dropdown(lv_obj_t * parent, const char * icon, const char * label_txt, const char * txt,const char * parameter, menu_page_data_t* menu_page_data,bool blocking);
-
-lv_obj_t * create_checkbox(lv_obj_t * parent, const char * icon, const char * label_txt, const char * parameter, menu_page_data_t* menu_page_data,bool blocking);
-
-void generic_button_callback(lv_event_t * e);
-lv_obj_t * create_button(lv_obj_t * parent, const char * txt);
-
-lv_obj_t * create_backbutton(lv_obj_t * parent, const char * icon, const char * label_txt);
-
-lv_obj_t * create_textarea(lv_obj_t * parent, char * text, const char * label_txt, const char * parameter, menu_page_data_t* menu_page_data, bool password);
-
-lv_obj_t * create_spinbox(lv_obj_t * parent, const char * icon, const char * txt, int32_t min, int32_t max,
-                                int32_t val);
-
-lv_obj_t * find_first_focusable_obj(lv_obj_t * parent);
-void handle_sub_page_load(lv_event_t *e);
-char* get_paramater(lv_obj_t * page, char * param);
-char* split_value_and_options(char* raw, char** values_out);
-void reload_label_value(lv_obj_t * page,lv_obj_t * parameter);
-void reload_switch_value(lv_obj_t * page,lv_obj_t * parameter);
-void reload_dropdown_value(lv_obj_t * page,lv_obj_t * parameter);
-void reload_checkbox_value(lv_obj_t * page,lv_obj_t * parameter);
-void reload_textarea_value(lv_obj_t * page,lv_obj_t * parameter);
-void reload_slider_value(lv_obj_t * page,lv_obj_t * parameter);
-void generic_back_event_handler(lv_event_t * e);
-
-const char* find_resource_file(const char* relative_path);
-
-void gsmenu_toggle_rxmode();
-void show_restart_notice(void);
-
-void add_entry_to_menu_page(menu_page_data_t *menu_page_data, const char* text, lv_obj_t* obj, ReloadFunc reload_func);
-void delete_menu_page_entry_by_obj(menu_page_data_t *menu_page_data, lv_obj_t* obj);
-void custom_actions_cb(lv_event_t * event);
+#endif

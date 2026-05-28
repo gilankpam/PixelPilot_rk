@@ -378,18 +378,6 @@ The gsmenu provides a ui to modify air and ground settings.
 Navigation is controlled via a GPIO buttons.
 GPIO mapping can be configured in pixelpilot.yaml, see example.
 PixelPilot_rk will take ownership of the needed gpios.
-Settings on air and ground are get/set useing the gsmenu.sh script.
-
-Install gsmenu.sh dependencies:
-```
-git clone https://github.com/OpenIPC/yaml-cli.git
-cd yaml-cli
-cmake -B build
-sudo cmake --build build --target install
-curl -L -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_arm64
-chmod +x /usr/local/bin/yq
-sudo apt install drm-info jq netcat
-```
 
 ### Navigation
 Navigation mode:

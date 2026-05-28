@@ -3,13 +3,6 @@
 **Status:** Design
 **Date:** 2026-05-28
 
-> **Erratum (2026-05-28, post-implementation):** This doc refers throughout to
-> `systemctl restart wifibroadcast.service` / `pixelpilot.service`. The actual
-> GS image (sbc-groundstations, Buildroot/BusyBox init) uses `/etc/init.d/S98wifibroadcast`
-> and `/etc/init.d/S99pixelpilot` — no systemd. The shipped code uses those
-> scripts; mentally substitute `/etc/init.d/<Sxx-script> restart` wherever
-> `systemctl restart <name>.service` appears below.
-
 ## Summary
 
 Add a real settings backend that writes ground-station–side configuration on the SBC where PixelPilot runs. Plugs into the existing `pp_settings_provider_t` seam (used today by `settings_fpvd` for the drone-side HTTP API) via a new top-level **router** provider that owns both children and dispatches by domain.
@@ -17,9 +10,9 @@ Add a real settings backend that writes ground-station–side configuration on t
 Scope is bounded to five rows:
 
 - **Camera > Codec** — already writes drone-side via fpvd; now also writes GS-side `/etc/default/pixelpilot` (`CODEC=...`).
-- **Link > Channel** — already writes drone-side via fpvd; now also writes GS-side `/etc/wifibroadcast.cfg` (`wifi_channel`) and restarts `wifibroadcast.service`.
-- **Link > Bandwidth** — already writes drone-side via fpvd; now also writes GS-side `/etc/wifibroadcast.cfg` (`bandwidth`) and restarts `wifibroadcast.service`.
-- **Link > RX Power** — new GS-only row; writes per-NIC `wifi_txpower` map in `/etc/wifibroadcast.cfg` and restarts `wifibroadcast.service`.
+- **Link > Channel** — already writes drone-side via fpvd; now also writes GS-side `/etc/wifibroadcast.cfg` (`wifi_channel`) and restarts `/etc/init.d/S98wifibroadcast`.
+- **Link > Bandwidth** — already writes drone-side via fpvd; now also writes GS-side `/etc/wifibroadcast.cfg` (`bandwidth`) and restarts `/etc/init.d/S98wifibroadcast`.
+- **Link > RX Power** — new GS-only row; writes per-NIC `wifi_txpower` map in `/etc/wifibroadcast.cfg` and restarts `/etc/init.d/S98wifibroadcast`.
 - **Display > HDMI Mode** — GS-only; writes `/etc/default/pixelpilot` (`SCREEN_MODE=...`); takes effect on next PixelPilot restart.
 
 Everything else (APFPV, GS Wi-Fi hotspot, DVR, network helpers) is out of scope — those will follow a separate spec.
@@ -73,7 +66,7 @@ Three new units plus the registration seam:
 ┌──────────────────┐    ┌──────────────────────┐
 │ settings_fpvd    │    │ settings_gs_local    │
 │ (existing)       │    │ (new)                │
-│ HTTP → 10.5.0.10 │    │ file edits + systemd │
+│ HTTP → 10.5.0.10 │    │ file edits + init.d │
 └──────────────────┘    └──────────────────────┘
 ```
 
@@ -137,7 +130,7 @@ Re-read from disk after every successful write and at startup. Cheap.
 **Per-job sequence** (worker thread):
 1. Pick the writer for the key (`wifibroadcast_cfg_writer` or `pixelpilot_env_writer`).
 2. Call writer; on failure return `on_done(-1, msg, ud)`.
-3. If the writer requested a service restart (wifibroadcast), spawn `systemctl restart wifibroadcast.service` with 5 s timeout. Non-zero exit → `on_done(-1, "wifibroadcast restart failed", ud)` but **file is already written** — snapshot reflects the new value, row commits, toast surfaces the restart error so the user knows.
+3. If the writer requested a service restart (wifibroadcast), spawn `/etc/init.d/S98wifibroadcast restart` with 5 s timeout. Non-zero exit → `on_done(-1, "wifibroadcast restart failed", ud)` but **file is already written** — snapshot reflects the new value, row commits, toast surfaces the restart error so the user knows.
 4. If the writer requested a "needs restart" notice (pixelpilot env) → `on_done(0, "Applies on next restart", ud)`. Widgets treat non-NULL message on success as a toast.
 5. Refresh snapshot via re-read; call listener via `lv_async_call`.
 
@@ -151,7 +144,7 @@ Two writers in one file.
 - If the line is missing, insert after the `[common]` header.
 - For `rx_power`: enumerate `wlx*` interfaces via `/sys/class/net`, look up each driver via `udevadm info`, map percentage → driver-specific signed integer, format as JSON-ish `wifi_txpower = {"wlx...": <int>, ...}`. Driver ranges hard-coded from the old script (`rtl88xxau_wfb` -1000…-3000, `rtl88x2eu` 1000…2900). Unknown driver: skip that NIC.
 - Atomic write via `mkstemp` in `/etc` + `fsync` + `rename`. Failed rename leaves original intact.
-- Requests `systemctl restart wifibroadcast.service`.
+- Requests `/etc/init.d/S98wifibroadcast restart`.
 
 **`pixelpilot_env_writer`** — handles `pp/codec`, `display/hdmi_mode`.
 - Read `/etc/default/pixelpilot` into memory (or start with empty if missing).
@@ -224,7 +217,7 @@ router.set_async:
          - read /etc/wifibroadcast.cfg
          - replace "^wifi_channel = .*"
          - tempfile + rename
-       systemctl restart wifibroadcast.service  (5 s timeout)
+       /etc/init.d/S98wifibroadcast restart  (5 s timeout)
        on success: refresh snapshot, fire listener
         │
         ▼
@@ -250,7 +243,7 @@ HDMI mode is GS-only — same writer, same toast.
 |---|---|
 | `/etc/wifibroadcast.cfg` read missing | Snapshot keys remain unset; widgets render placeholders. Don't crash. |
 | `mkstemp` / `rename` failure | `on_done(-1, "Failed to write GS config: <strerror>", ud)`; snapshot untouched; widget rolls back. |
-| `systemctl restart wifibroadcast` non-zero | File already written; snapshot reflects new value; row commits; toast surfaces the restart error. |
+| `/etc/init.d/S98wifibroadcast restart` non-zero | File already written; snapshot reflects new value; row commits; toast surfaces the restart error. |
 | fpvd fails on fanned-out write | GS write skipped; standard fpvd error toast. No GS state touched. |
 | fpvd succeeds, gs_local fails | Drone change stands; toast says `"Drone applied; GS write failed: ..."`. GS snapshot stays at old value so next read sees the drift; user can retry. |
 | `iw list` / `drm_info` missing or malformed | `pp_settings_get_options` returns NULL; pages fall back to compile-time options. Logged once at startup. |
@@ -279,7 +272,7 @@ HDMI mode is GS-only — same writer, same toast.
   - `wifi_txpower` JSON built correctly for one NIC, two NICs, mixed driver types; values clamp to driver ranges; unknown driver skipped.
   - Atomic write: forced rename failure leaves original intact.
 - `pixelpilot` env writer: KEY=VALUE upsert; preserves unrelated lines and comments; quoted values handled.
-- `systemctl` invocation mocked via `PP_GS_SYSTEMCTL` env var pointing to a fake binary that records its argv and exits 0 / non-zero per fixture.
+- init.d invocation mocked via `PP_GS_INITD_DIR` env var pointing to a fake binary that records its argv and exits 0 / non-zero per fixture.
 - RX power percentage → driver mapping: boundary values (1, 50, 100) per driver type.
 - Coalescing: rapid `set_async` for the same key produces one writer invocation.
 
@@ -291,7 +284,7 @@ HDMI mode is GS-only — same writer, same toast.
 
 ### Integration — `tests/settings_gs_local_integration_test.cpp` (tag `[gs-local]`)
 
-End-to-end on a real filesystem layout (tempdir) with a fake `systemctl` exiting 0. Covers the full job: enqueue → write → restart → snapshot refresh → listener fired on UI thread.
+End-to-end on a real filesystem layout (tempdir) with a fake init.d scripts exiting 0. Covers the full job: enqueue → write → restart → snapshot refresh → listener fired on UI thread.
 
 ### Manual verification (documented, not automated)
 

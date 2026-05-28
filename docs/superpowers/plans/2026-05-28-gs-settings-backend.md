@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a real GS-side settings backend that writes `/etc/wifibroadcast.cfg` and `/etc/default/pixelpilot`, restarts wifibroadcast.service where required, and plugs into the existing `pp_settings_provider_t` seam via a new composite router that fans out shared rows (channel / bandwidth / codec) to drone (fpvd) AND GS (gs_local), drone-first.
+**Goal:** Add a real GS-side settings backend that writes `/etc/wifibroadcast.cfg` and `/etc/default/pixelpilot`, restarts /etc/init.d/S98wifibroadcast where required, and plugs into the existing `pp_settings_provider_t` seam via a new composite router that fans out shared rows (channel / bandwidth / codec) to drone (fpvd) AND GS (gs_local), drone-first.
 
-**Architecture:** Composite router provider over fpvd + gs_local. gs_local mirrors fpvd's worker-thread + job-queue pattern but uses atomic file writes + systemctl instead of HTTP. RX power slider (new) and HDMI mode (existing key) are GS-only. Codec / channel / bandwidth share their widget binding via a fan-out table inside the router.
+**Architecture:** Composite router provider over fpvd + gs_local. gs_local mirrors fpvd's worker-thread + job-queue pattern but uses atomic file writes + init.d invocation instead of HTTP. RX power slider (new) and HDMI mode (existing key) are GS-only. Codec / channel / bandwidth share their widget binding via a fan-out table inside the router.
 
 **Tech Stack:** C11 + LVGL, pthread, Catch2 (C++ test harness), cJSON (already vendored). No new third-party deps.
 
@@ -38,7 +38,7 @@ Page bindings stay where they are. The router intercepts writes to the fan-out t
 | `src/gsmenu/settings_gs_rxpower.c` | Pure mapping functions + NIC enumeration. |
 | `src/gsmenu/settings_gs_enum.h` | `pp_gs_enum_init(void)`, `pp_gs_enum_channels(void)`, `pp_gs_enum_hdmi_modes(void)`. |
 | `src/gsmenu/settings_gs_enum.c` | popen `iw list` and `drm_info`; parsers + caches. |
-| `src/gsmenu/settings_gs_local_internal.h` | Internal config: file paths, systemctl binary, exposed for tests via env vars. |
+| `src/gsmenu/settings_gs_local_internal.h` | Internal config: file paths, /etc/init.d directory, exposed for tests via env vars. |
 | `src/gsmenu/settings_gs_local.c` | Provider impl: worker, queue, dispatch by key. |
 | `src/gsmenu/settings_router_internal.h` | Fan-out entry type + lookup. |
 | `src/gsmenu/settings_router.c` | Provider impl that delegates to fpvd + gs_local. |
@@ -1085,8 +1085,8 @@ extern "C" {
  * (provider table inside the .c file). NULL on init failure. Idempotent. */
 const pp_settings_provider_t *pp_gs_local_provider(void);
 
-/* For tests: replace the systemctl binary path. */
-void pp_gs_local_set_systemctl_bin(const char *bin);
+/* For tests: replace the /etc/init.d directory. */
+void pp_gs_local_set_initd_dir(const char *bin);
 
 /* For tests: replace the config file paths. */
 void pp_gs_local_set_paths(const char *wfb_cfg, const char *pixelpilot_env);
@@ -1149,7 +1149,7 @@ static struct {
     /* Configurable paths / bins. */
     char wfb_cfg[256];
     char pp_env[256];
-    char systemctl_bin[128];
+    char initd_dir[128];
 
     /* Snapshot. */
     char *channel;
@@ -1174,7 +1174,7 @@ static void set_path(char *dst, size_t sz, const char *src) {
 static void init_paths_once(void) {
     if (G.wfb_cfg[0] == '\0') set_path(G.wfb_cfg, sizeof G.wfb_cfg, "/etc/wifibroadcast.cfg");
     if (G.pp_env[0]  == '\0') set_path(G.pp_env,  sizeof G.pp_env,  "/etc/default/pixelpilot");
-    if (G.systemctl_bin[0] == '\0') set_path(G.systemctl_bin, sizeof G.systemctl_bin, "systemctl");
+    if (G.initd_dir[0] == '\0') set_path(G.initd_dir, sizeof G.initd_dir, "/etc/init.d");
 }
 
 void pp_gs_local_set_paths(const char *wfb, const char *env) {
@@ -1184,9 +1184,9 @@ void pp_gs_local_set_paths(const char *wfb, const char *env) {
     pthread_mutex_unlock(&G.mu);
 }
 
-void pp_gs_local_set_systemctl_bin(const char *bin) {
+void pp_gs_local_set_initd_dir(const char *bin) {
     pthread_mutex_lock(&G.mu);
-    if (bin) set_path(G.systemctl_bin, sizeof G.systemctl_bin, bin);
+    if (bin) set_path(G.initd_dir, sizeof G.initd_dir, bin);
     pthread_mutex_unlock(&G.mu);
 }
 
@@ -1221,12 +1221,12 @@ static void schedule_done(pp_settings_done_cb cb, void *ud, int rc, const char *
     lv_unlock();
 }
 
-static int run_systemctl_restart(const char *service) {
+static int run_initd_restart(const char *service) {
     /* Returns 0 on exit code 0, non-zero otherwise. */
     pid_t pid = fork();
     if (pid < 0) return -1;
     if (pid == 0) {
-        execlp(G.systemctl_bin, G.systemctl_bin, "restart", service, (char *)NULL);
+        execlp(G.initd_dir, G.initd_dir, "restart", service, (char *)NULL);
         _exit(127);
     }
     int st = 0;
@@ -1304,7 +1304,7 @@ static void run_job(gs_job_t job) {
 
     /* Restart, if any. */
     if (needs_restart) {
-        int xst = run_systemctl_restart("wifibroadcast.service");
+        int xst = run_initd_restart("/etc/init.d/S98wifibroadcast");
         if (xst != 0) {
             schedule_done(job.cb, job.user_data, -1, "wifibroadcast restart failed");
             return;
@@ -2167,7 +2167,7 @@ If the user requests a PR, follow the standard `gh pr create` template — body 
 ## Self-review notes
 
 - **Spec coverage** — each row in the spec's scope table maps to a task: codec (Task 4+5 fan-out + writer), channel (Task 1+5), bandwidth (Task 1+5), rx_power (Task 1+2+4 + slider in 7), hdmi_mode (Task 1 env + Task 3 enumeration + Task 6 page).
-- **Tests** — Task 1/2/3/5 cover the pure-function and router behavior. The gs_local provider's worker is exercised end-to-end implicitly on device (manual verification). Adding an integration test with a fake systemctl is plausible follow-up but not required for this scope.
+- **Tests** — Task 1/2/3/5 cover the pure-function and router behavior. The gs_local provider's worker is exercised end-to-end implicitly on device (manual verification). Adding an integration test with a fake init.d script is plausible follow-up but not required for this scope.
 - **Restart UX** — codec/HDMI mode writes return `rc=0, err=NULL` in this plan (Task 4 step 2). The spec called for a success-toast on `"Applies on next restart"`; that's deferred to a follow-up since the current widget code treats non-NULL err as failure. Documented inside `run_job`.
 - **Sim build** — keeps dummy; new GS keys are seeded in Task 7 step 2.
 - **No placeholders** — every step has concrete code or commands.

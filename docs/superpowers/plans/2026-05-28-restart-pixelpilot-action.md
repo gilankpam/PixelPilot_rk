@@ -4,12 +4,6 @@
 
 **Goal:** Add a "Restart PixelPilot" action row to the System tab. ENTER opens a confirm drilldown; Confirm runs `/etc/init.d/S99pixelpilot restart` via the gs_local provider; Cancel closes.
 
-> **Erratum (2026-05-28, post-implementation):** This plan calls the gs_local
-> helper `run_systemctl_restart` and references `pixelpilot.service`. The actual
-> GS image is Buildroot/BusyBox — no systemd. The shipped code renamed the
-> helper to `run_initd_restart` and invokes `/etc/init.d/S99pixelpilot restart`
-> and `/etc/init.d/S98wifibroadcast restart`. Substitute mentally below.
-
 **Architecture:** New provider key `("gs","actions","restart_pixelpilot")` handled by `settings_gs_local`, routed via the router's GS-only rule. UI uses a `pp_drilldown` overlay with two rows (Confirm / Cancel) — no new widget.
 
 **Tech Stack:** C11, LVGL, pthread (existing gs_local worker). No new third-party deps.
@@ -138,7 +132,7 @@ Still in `src/gsmenu/settings_gs_local.c`. Inside `run_job`'s switch (around lin
 
 ```c
     case GS_KEY_RESTART_PIXELPILOT: {
-        int xst = run_systemctl_restart("pixelpilot.service");
+        int xst = run_initd_restart("/etc/init.d/S99pixelpilot");
         if (xst != 0) {
             r.rc = -1; r.err = strdup("pixelpilot restart failed");
         } else {
@@ -150,7 +144,7 @@ Still in `src/gsmenu/settings_gs_local.c`. Inside `run_job`'s switch (around lin
     }
 ```
 
-This branch uses the existing `run_systemctl_restart()` helper. It does NOT call any file writer and does NOT set `needs_restart` (which would re-run systemctl for `wifibroadcast.service`).
+This branch uses the existing `run_initd_restart()` helper. It does NOT call any file writer and does NOT set `needs_restart` (which would re-run `/etc/init.d/S98wifibroadcast restart`).
 
 The trailing snapshot update at the bottom of `run_job` (the switch around line 211) does NOT need a `GS_KEY_RESTART_PIXELPILOT` case — there's no snapshot value to update. The existing `default: break;` in that switch covers it.
 
@@ -169,8 +163,8 @@ git add src/gsmenu/settings_gs_local.c src/gsmenu/settings_router.c tests/test_s
 git commit -m "$(cat <<'EOF'
 feat(gsmenu): GS action — restart_pixelpilot via gs_local + router
 
-New provider key (gs,actions,restart_pixelpilot) — execs systemctl restart
-pixelpilot.service in the gs_local worker. Router gs-only rule generalized
+New provider key (gs,actions,restart_pixelpilot) — execs init.d restart
+/etc/init.d/S99pixelpilot in the gs_local worker. Router gs-only rule generalized
 to all gs/actions/* keys so future actions don't need a router edit.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
@@ -269,7 +263,7 @@ feat(gsmenu/system): Restart PixelPilot row with confirm drilldown
 
 ENTER opens a drilldown with Confirm/Cancel rows. Confirm fires the
 (gs,actions,restart_pixelpilot) provider call; on device, gs_local
-execs systemctl restart pixelpilot.service.
+execs /etc/init.d/S99pixelpilot restart.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -282,5 +276,5 @@ EOF
 
 - **Spec coverage** — Design's four UI bullets map directly: gs_local key (Task 1 step 5-6), router rule (Task 1 step 3), system page row + drilldown (Task 2 step 2), dummy seed (Task 2 step 1). Router test covers routing; UI tested via sim smoke run.
 - **No placeholders.**
-- **Type consistency** — `GS_KEY_RESTART_PIXELPILOT` used in enum + resolver + run_job. Action key string `"restart_pixelpilot"` matches across system.c, gs_local, router test, dummy seed. Service name `"pixelpilot.service"` matches the systemd unit.
+- **Type consistency** — `GS_KEY_RESTART_PIXELPILOT` used in enum + resolver + run_job. Action key string `"restart_pixelpilot"` matches across system.c, gs_local, router test, dummy seed. Service name `"/etc/init.d/S99pixelpilot"` matches the init.d script name.
 - **Why not test the drilldown?** It's pure LVGL composition (open/close + two key handlers). The router test covers routing; the dummy run covers integration. A modal-specific Catch2 test would need LVGL display setup that's heavier than the value it adds.

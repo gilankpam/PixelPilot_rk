@@ -3,6 +3,13 @@
 **Status:** Design
 **Date:** 2026-05-28
 
+> **Erratum (2026-05-28, post-implementation):** This doc refers throughout to
+> `systemctl restart wifibroadcast.service` / `pixelpilot.service`. The actual
+> GS image (sbc-groundstations, Buildroot/BusyBox init) uses `/etc/init.d/S98wifibroadcast`
+> and `/etc/init.d/S99pixelpilot` — no systemd. The shipped code uses those
+> scripts; mentally substitute `/etc/init.d/<Sxx-script> restart` wherever
+> `systemctl restart <name>.service` appears below.
+
 ## Summary
 
 Add a real settings backend that writes ground-station–side configuration on the SBC where PixelPilot runs. Plugs into the existing `pp_settings_provider_t` seam (used today by `settings_fpvd` for the drone-side HTTP API) via a new top-level **router** provider that owns both children and dispatches by domain.

@@ -2,7 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a "Restart PixelPilot" action row to the System tab. ENTER opens a confirm drilldown; Confirm runs `systemctl restart pixelpilot.service` via the gs_local provider; Cancel closes.
+**Goal:** Add a "Restart PixelPilot" action row to the System tab. ENTER opens a confirm drilldown; Confirm runs `/etc/init.d/S99pixelpilot restart` via the gs_local provider; Cancel closes.
+
+> **Erratum (2026-05-28, post-implementation):** This plan calls the gs_local
+> helper `run_systemctl_restart` and references `pixelpilot.service`. The actual
+> GS image is Buildroot/BusyBox — no systemd. The shipped code renamed the
+> helper to `run_initd_restart` and invokes `/etc/init.d/S99pixelpilot restart`
+> and `/etc/init.d/S98wifibroadcast restart`. Substitute mentally below.
 
 **Architecture:** New provider key `("gs","actions","restart_pixelpilot")` handled by `settings_gs_local`, routed via the router's GS-only rule. UI uses a `pp_drilldown` overlay with two rows (Confirm / Cancel) — no new widget.
 

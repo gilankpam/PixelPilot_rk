@@ -45,7 +45,7 @@ static struct {
     /* Configurable paths / bins. */
     char wfb_cfg[256];
     char pp_env[256];
-    char systemctl_bin[128];
+    char initd_dir[128];
 
     /* Snapshot. */
     char *channel;
@@ -70,7 +70,7 @@ static void set_path(char *dst, size_t sz, const char *src) {
 static void init_paths_once(void) {
     if (G.wfb_cfg[0] == '\0') set_path(G.wfb_cfg, sizeof G.wfb_cfg, "/etc/wifibroadcast.cfg");
     if (G.pp_env[0]  == '\0') set_path(G.pp_env,  sizeof G.pp_env,  "/etc/default/pixelpilot");
-    if (G.systemctl_bin[0] == '\0') set_path(G.systemctl_bin, sizeof G.systemctl_bin, "systemctl");
+    if (G.initd_dir[0] == '\0') set_path(G.initd_dir, sizeof G.initd_dir, "/etc/init.d");
 }
 
 void pp_gs_local_set_paths(const char *wfb, const char *env) {
@@ -80,9 +80,9 @@ void pp_gs_local_set_paths(const char *wfb, const char *env) {
     pthread_mutex_unlock(&G.mu);
 }
 
-void pp_gs_local_set_systemctl_bin(const char *bin) {
+void pp_gs_local_set_initd_dir(const char *dir) {
     pthread_mutex_lock(&G.mu);
-    if (bin) set_path(G.systemctl_bin, sizeof G.systemctl_bin, bin);
+    if (dir) set_path(G.initd_dir, sizeof G.initd_dir, dir);
     pthread_mutex_unlock(&G.mu);
 }
 
@@ -118,12 +118,15 @@ static void schedule_done(pp_settings_done_cb cb, void *ud, int rc, const char *
     lv_unlock();
 }
 
-static int run_systemctl_restart(const char *service) {
-    /* Returns 0 on exit code 0, non-zero otherwise. */
+static int run_initd_restart(const char *script) {
+    /* Returns 0 on exit code 0, non-zero otherwise.
+     * Buildroot/BusyBox init: /etc/init.d/<script> restart. */
+    char path[256];
+    snprintf(path, sizeof path, "%s/%s", G.initd_dir, script);
     pid_t pid = fork();
     if (pid < 0) return -1;
     if (pid == 0) {
-        execlp(G.systemctl_bin, G.systemctl_bin, "restart", service, (char *)NULL);
+        execl(path, path, "restart", (char *)NULL);
         _exit(127);
     }
     int st = 0;
@@ -188,7 +191,7 @@ static void run_job(gs_job_t job) {
         toast_msg = "Applies on next restart";
         break;
     case GS_KEY_RESTART_PIXELPILOT: {
-        int xst = run_systemctl_restart("pixelpilot.service");
+        int xst = run_initd_restart("S99pixelpilot");
         if (xst != 0) {
             r.rc = -1; r.err = strdup("pixelpilot restart failed");
         } else {
@@ -212,7 +215,7 @@ static void run_job(gs_job_t job) {
 
     /* Restart, if any. */
     if (needs_restart) {
-        int xst = run_systemctl_restart("wifibroadcast.service");
+        int xst = run_initd_restart("S98wifibroadcast");
         if (xst != 0) {
             schedule_done(job.cb, job.user_data, -1, "wifibroadcast restart failed");
             return;

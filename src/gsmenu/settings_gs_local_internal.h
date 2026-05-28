@@ -12,8 +12,8 @@ extern "C" {
  * (provider table inside the .c file). NULL on init failure. Idempotent. */
 const pp_settings_provider_t *pp_gs_local_provider(void);
 
-/* For tests: replace the systemctl binary path. */
-void pp_gs_local_set_systemctl_bin(const char *bin);
+/* For tests: replace the /etc/init.d directory. */
+void pp_gs_local_set_initd_dir(const char *dir);
 
 /* For tests: replace the config file paths. */
 void pp_gs_local_set_paths(const char *wfb_cfg, const char *pixelpilot_env);

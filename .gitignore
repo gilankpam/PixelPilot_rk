@@ -69,3 +69,4 @@ pixelpilot
 
 # Scratch directory written by superpowers skills (brainstorming, etc.)
 .superpowers/
+radxa_zero3_rootfs.squashfs

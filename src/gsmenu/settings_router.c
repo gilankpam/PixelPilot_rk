@@ -131,7 +131,8 @@ static void prov_set_async(const char *d, const char *p, const char *k,
         (strcmp(d, "gs") == 0 &&
          ((strcmp(p, "link")    == 0 && strcmp(k, "rx_power")  == 0) ||
           (strcmp(p, "display") == 0 && strcmp(k, "hdmi_mode") == 0) ||
-          (strcmp(p, "pp")      == 0 && strcmp(k, "codec")     == 0)));
+          (strcmp(p, "pp")      == 0 && strcmp(k, "codec")     == 0) ||
+          (strcmp(p, "actions") == 0)));
     const pp_settings_provider_t *child = gs_only ? g_gs : g_drone;
     if (child && child->set_async) child->set_async(d, p, k, v, cb, ud);
     else if (cb) cb(-1, "No provider", ud);

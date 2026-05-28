@@ -23,6 +23,7 @@ typedef enum {
     GS_KEY_RXPOWER,
     GS_KEY_CODEC,
     GS_KEY_HDMI_MODE,
+    GS_KEY_RESTART_PIXELPILOT,
     GS_KEY_NONE,
 } gs_key_t;
 
@@ -93,6 +94,7 @@ static gs_key_t resolve_key(const char *d, const char *p, const char *k) {
         if (strcmp(p, "link")  == 0 && strcmp(k, "rx_power")   == 0) return GS_KEY_RXPOWER;
         if (strcmp(p, "pp")    == 0 && strcmp(k, "codec")      == 0) return GS_KEY_CODEC;
         if (strcmp(p, "display") == 0 && strcmp(k, "hdmi_mode") == 0) return GS_KEY_HDMI_MODE;
+        if (strcmp(p, "actions") == 0 && strcmp(k, "restart_pixelpilot") == 0) return GS_KEY_RESTART_PIXELPILOT;
     }
     return GS_KEY_NONE;
 }
@@ -185,6 +187,17 @@ static void run_job(gs_job_t job) {
         r = pp_gs_env_set(G.pp_env, "SCREEN_MODE", job.value);
         toast_msg = "Applies on next restart";
         break;
+    case GS_KEY_RESTART_PIXELPILOT: {
+        int xst = run_systemctl_restart("pixelpilot.service");
+        if (xst != 0) {
+            r.rc = -1; r.err = strdup("pixelpilot restart failed");
+        } else {
+            r.rc = 0; r.err = NULL;
+            /* In practice this process is dying right now; the listener and
+             * on_done dispatches below may never reach the UI. That's fine. */
+        }
+        break;
+    }
     case GS_KEY_NONE:
         r.rc = -1; r.err = strdup("Unknown GS setting");
         break;

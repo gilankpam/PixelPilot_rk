@@ -132,6 +132,18 @@ TEST_CASE("router: get delegates by domain", "[router]") {
     pp_router_reset();
 }
 
+TEST_CASE("router: gs-actions key routes to gs child only", "[router]") {
+    g_drone = FakeChild{}; g_gs = FakeChild{};
+    pp_router_install_children(&DRONE, &GS);
+    DoneCapture cap;
+    pp_settings_set_async("gs", "actions", "restart_pixelpilot", "trigger", capture_done, &cap);
+    REQUIRE(g_drone.sets.empty());
+    REQUIRE(g_gs.sets.size() == 1);
+    REQUIRE(std::get<2>(g_gs.sets[0]) == "restart_pixelpilot");
+    REQUIRE(cap.rc == 0);
+    pp_router_reset();
+}
+
 TEST_CASE("router: is_connected = drone AND gs", "[router]") {
     g_drone = FakeChild{}; g_gs = FakeChild{};
     pp_router_install_children(&DRONE, &GS);

@@ -115,6 +115,9 @@ static const dummy_entry_t g_seed[] = {
     { "router",       "mavfwd" },
     { "osd_fps",      "30" },
     { "gs_rendering", "on" },
+
+    /* System — GS Actions */
+    { "restart_pixelpilot", "" },   /* no-op trigger in sim */
 };
 
 /* Per-session writable overlay so toggle/slider/dropdown changes

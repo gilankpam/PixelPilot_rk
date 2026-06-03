@@ -118,6 +118,9 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);
 
 const fpvd_keymap_entry_t *fpvd_keymap_lookup(const char *d, const char *p, const char *k) {
+    /* NULL-safe: pp_row_text() reads rows with NULL domain/page (not yet wired),
+     * relying on the provider returning "unknown" rather than dereferencing. */
+    if (!d || !p || !k) return NULL;
     for (size_t i = 0; i < KEYMAP_N; i++) {
         if (strcmp(KEYMAP[i].domain, d) == 0 &&
             strcmp(KEYMAP[i].page,   p) == 0 &&

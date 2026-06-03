@@ -36,6 +36,17 @@ TEST_CASE("keymap: lookup returns null for unknown triples", "[fpvd][keymap]") {
     REQUIRE(fpvd_keymap_lookup("nope", "nope", "nope") == nullptr);
 }
 
+TEST_CASE("keymap: NULL args are safe (no deref) — pp_row_text reads with NULL domain/page",
+          "[fpvd][keymap]") {
+    /* pp_row_text() calls pp_settings_get(NULL, NULL, key) for rows whose
+     * domain/page aren't wired yet. The provider must tolerate NULL like the
+     * dummy/stub do, not strcmp(NULL). */
+    REQUIRE(fpvd_keymap_lookup(nullptr, "wfbng", "gs_channel") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", nullptr, "gs_channel") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "wfbng", nullptr) == nullptr);
+    REQUIRE(fpvd_keymap_lookup(nullptr, nullptr, nullptr) == nullptr);
+}
+
 extern "C" {
 #include "cJSON.h"
 }

@@ -263,15 +263,15 @@ git commit -m "gsmenu/fpvd: add endpoint routing metadata + path helpers"
 
 ---
 
-## Task 2: RX-power inverse + primary-driver helpers; drop the per-NIC JSON builder
+## Task 2: RX-power inverse + primary-driver helpers
 
-`pp_rxpower_build_json` is still referenced by `settings_gs_local.c`, which is deleted in Task 4 — so we remove the builder here but Task 4 must land before the **device** build is coherent. The `gs_rxpower_tests` target does not link `settings_gs_local.c`, so this task builds and passes on its own.
+Additive only. `pp_rxpower_build_json` stays for now (its caller `settings_gs_local.c` is alive until Task 4, which removes both together) — this keeps the device build coherent. The `gs_rxpower_tests` target builds and passes on its own.
 
 **Files:**
 - Modify: `src/gsmenu/settings_gs_rxpower.h`, `src/gsmenu/settings_gs_rxpower.c`
 - Test: `tests/test_settings_gs_rxpower.cpp`
 
-- [ ] **Step 1: Write failing tests** — in `tests/test_settings_gs_rxpower.cpp`, delete the three `build_json` cases (`"rxpower: json single NIC"`, `"rxpower: json skips unknown driver NIC"`, `"rxpower: json all-unknown returns NULL"`) and add:
+- [ ] **Step 1: Write failing tests** — in `tests/test_settings_gs_rxpower.cpp`, keep the existing cases and add:
 
 ```cpp
 TEST_CASE("rxpower: value -> pct inverts the forward map", "[gs][rxpower]") {
@@ -286,6 +286,8 @@ TEST_CASE("rxpower: value -> pct inverts the forward map", "[gs][rxpower]") {
     REQUIRE(p == 50);
     REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88XXAU_WFB, -1020, &p) == 1);
     REQUIRE(p == 1);
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88XXAU_WFB, -3000, &p) == 1);
+    REQUIRE(p == 100);
 }
 
 TEST_CASE("rxpower: value -> pct unknown driver returns 0", "[gs][rxpower]") {
@@ -298,9 +300,9 @@ TEST_CASE("rxpower: value -> pct unknown driver returns 0", "[gs][rxpower]") {
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cmake --build build-test --target gs_rxpower_tests -j`
-Expected: FAIL — `pp_rxpower_driver_value_to_pct` undeclared (and `build_json` no longer referenced is fine).
+Expected: FAIL — `pp_rxpower_driver_value_to_pct` undeclared.
 
-- [ ] **Step 3: Update the rxpower header** — in `src/gsmenu/settings_gs_rxpower.h`, **remove** the `pp_rxpower_build_json` declaration (lines ~25-32) and add:
+- [ ] **Step 3: Update the rxpower header** — in `src/gsmenu/settings_gs_rxpower.h`, keep `pp_rxpower_build_json` and add:
 
 ```c
 /* Inverse of pp_rxpower_pct_to_driver_value: map a driver value back to a
@@ -312,25 +314,26 @@ int pp_rxpower_driver_value_to_pct(pp_nic_driver_t driver, int value, int *out_p
 pp_nic_driver_t pp_rxpower_primary_driver(void);
 ```
 
-- [ ] **Step 4: Update the rxpower implementation** — in `src/gsmenu/settings_gs_rxpower.c`, **delete** the whole `pp_rxpower_build_json` function (lines 35-57) and add, after `pp_rxpower_pct_to_driver_value`:
+- [ ] **Step 4: Update the rxpower implementation** — in `src/gsmenu/settings_gs_rxpower.c`, keep `pp_rxpower_build_json` and add, after `pp_rxpower_pct_to_driver_value`:
 
 ```c
-int pp_rxpower_driver_value_to_pct(pp_nic_driver_t drv, int value, int *out) {
-    if (!out) return 0;
+int pp_rxpower_driver_value_to_pct(pp_nic_driver_t drv, int value, int *out_pct) {
+    if (!out_pct) return 0;
     int min_v, max_v;
     switch (drv) {
     case PP_NIC_RTL88XXAU_WFB: min_v = -1000; max_v = -3000; break;
     case PP_NIC_RTL88X2EU:     min_v =  1000; max_v =  2900; break;
-    default: *out = 0; return 0;
+    default: *out_pct = 0; return 0;
     }
-    long num   = (long)(value - min_v) * 100;   /* shares sign with range */
+    long num   = (long)(value - min_v) * 100;
     long range = (long)(max_v - min_v);
-    long a = num   < 0 ? -num   : num;          /* round on magnitudes to */
-    long b = range < 0 ? -range : range;        /* avoid negative-div skew */
-    int pct = (int)((a + b / 2) / b);
+    /* Round-nearest for signed division: range/2 carries range's sign, so an
+     * out-of-range value keeps its sign and is caught by the clamp below. */
+    long half = range / 2;
+    int pct = (int)((num + half) / range);
     if (pct < 1)   pct = 1;
     if (pct > 100) pct = 100;
-    *out = pct;
+    *out_pct = pct;
     return 1;
 }
 
@@ -356,7 +359,7 @@ Expected: PASS (all cases).
 
 ```bash
 git add src/gsmenu/settings_gs_rxpower.h src/gsmenu/settings_gs_rxpower.c tests/test_settings_gs_rxpower.cpp
-git commit -m "gsmenu/rxpower: add value->pct inverse + primary_driver; drop per-NIC json"
+git commit -m "gsmenu/rxpower: add value->pct inverse + primary_driver"
 ```
 
 ---
@@ -919,6 +922,12 @@ git rm src/gsmenu/settings_router.c src/gsmenu/settings_router_internal.h \
        src/gsmenu/settings_gs_writers.c src/gsmenu/settings_gs_writers.h \
        tests/test_settings_router.cpp tests/test_settings_gs_writers.cpp
 ```
+
+- [ ] **Step 3b: Remove `pp_rxpower_build_json`** — its only caller (`settings_gs_local.c`) is now gone, so drop the obsolete per-NIC dict builder here. (This was deferred from Task 2 to keep the device build coherent.)
+  - In `src/gsmenu/settings_gs_rxpower.h`: delete the `pp_rxpower_build_json` declaration (the doc comment "Build the `wifi_txpower = { ... }` JSON-ish dict body ..." + prototype). Keep `pp_rxpower_driver_value_to_pct` and `pp_rxpower_primary_driver`.
+  - In `src/gsmenu/settings_gs_rxpower.c`: delete the `pp_rxpower_build_json` function definition.
+  - In `tests/test_settings_gs_rxpower.cpp`: delete the three build_json cases (`"rxpower: json single NIC"`, `"rxpower: json skips unknown driver NIC"`, `"rxpower: json all-unknown returns NULL"`). Keep all other cases.
+  - Verify: `nix-shell shell-sim.nix --run "cmake --build build-test --target gs_rxpower_tests -j && ./build-test/gs_rxpower_tests"` → PASS (6 cases remain). Confirm `git grep pp_rxpower_build_json` returns nothing.
 
 - [ ] **Step 4: Update CMake — device sources** — in `CMakeLists.txt`, replace the GS-side append block (lines 313-319) with the kept sources only:
 

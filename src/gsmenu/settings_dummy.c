@@ -88,8 +88,7 @@ static const dummy_entry_t g_seed[] = {
     { "safe_txpower_dbm", "20" },
     { "safe_bitrate_kbps","2000" },
 
-    /* Display (kept for the unmodified Display tab) */
-    { "hdmi_mode",        "1920x1080@60" },
+    /* Display */
     { "video_scale",      "100" },
     { "color_correction", "off" },
     { "cc_gain",          "25" },
@@ -115,9 +114,6 @@ static const dummy_entry_t g_seed[] = {
     { "router",       "mavfwd" },
     { "osd_fps",      "30" },
     { "gs_rendering", "on" },
-
-    /* System — GS Actions */
-    { "restart_pixelpilot", "" },   /* no-op trigger in sim */
 };
 
 /* Per-session writable overlay so toggle/slider/dropdown changes

@@ -40,34 +40,6 @@ TEST_CASE("rxpower: unknown driver returns 0", "[gs][rxpower]") {
     REQUIRE(v == 0);
 }
 
-TEST_CASE("rxpower: json single NIC", "[gs][rxpower]") {
-    const char *nics[] = { "wlx00", NULL };
-    pp_nic_driver_t drv[] = { PP_NIC_RTL88XXAU_WFB };
-    char *j = pp_rxpower_build_json(nics, drv, 50);
-    REQUIRE(j != nullptr);
-    REQUIRE(std::strstr(j, "\"wlx00\": -2000") != nullptr);
-    REQUIRE(j[0] == '{');
-    REQUIRE(j[std::strlen(j)-1] == '}');
-    free(j);
-}
-
-TEST_CASE("rxpower: json skips unknown driver NIC", "[gs][rxpower]") {
-    const char *nics[] = { "wlx00", "wlx01", NULL };
-    pp_nic_driver_t drv[] = { PP_NIC_UNKNOWN, PP_NIC_RTL88X2EU };
-    char *j = pp_rxpower_build_json(nics, drv, 50);
-    REQUIRE(j != nullptr);
-    REQUIRE(std::strstr(j, "wlx00") == nullptr);
-    REQUIRE(std::strstr(j, "\"wlx01\": 1950") != nullptr);
-    free(j);
-}
-
-TEST_CASE("rxpower: json all-unknown returns NULL", "[gs][rxpower]") {
-    const char *nics[] = { "wlx00", NULL };
-    pp_nic_driver_t drv[] = { PP_NIC_UNKNOWN };
-    char *j = pp_rxpower_build_json(nics, drv, 50);
-    REQUIRE(j == nullptr);
-}
-
 TEST_CASE("rxpower: value -> pct inverts the forward map", "[gs][rxpower]") {
     int p = 0;
     REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88X2EU, 1950, &p) == 1);

@@ -31,30 +31,6 @@ int pp_rxpower_pct_to_driver_value(pp_nic_driver_t drv, int pct, int *out) {
     return 1;
 }
 
-char *pp_rxpower_build_json(const char *const *nics,
-                            const pp_nic_driver_t *drv,
-                            int pct) {
-    if (!nics) return NULL;
-    char buf[1024];
-    size_t off = 0;
-    buf[off++] = '{';
-    bool first = true;
-    for (size_t i = 0; nics[i]; i++) {
-        int v;
-        if (!pp_rxpower_pct_to_driver_value(drv[i], pct, &v)) continue;
-        int wrote = snprintf(buf + off, sizeof buf - off,
-                             "%s\"%s\": %d", first ? "" : ", ", nics[i], v);
-        if (wrote < 0 || (size_t)wrote >= sizeof buf - off) return NULL;
-        off += (size_t)wrote;
-        first = false;
-    }
-    if (first) return NULL;             /* nothing written */
-    if (off + 2 > sizeof buf) return NULL;
-    buf[off++] = '}';
-    buf[off]   = '\0';
-    return strdup(buf);
-}
-
 int pp_rxpower_driver_value_to_pct(pp_nic_driver_t drv, int value, int *out_pct) {
     if (!out_pct) return 0;
     int min_v, max_v;

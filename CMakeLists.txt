@@ -246,14 +246,6 @@ if(USE_SIMULATOR)
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} CURL::libcurl pthread)
     target_compile_definitions(fpvd_tests PRIVATE PP_FPVD_TEST=1)
 
-    add_executable(gs_writers_tests
-      src/gsmenu/settings_gs_writers.c
-      tests/test_settings_gs_writers.cpp)
-    target_include_directories(gs_writers_tests PRIVATE
-      ${PROJECT_SOURCE_DIR}/src)
-    target_link_libraries(gs_writers_tests
-      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} pthread)
-
     add_executable(gs_rxpower_tests
       src/gsmenu/settings_gs_rxpower.c
       tests/test_settings_gs_rxpower.cpp)
@@ -272,17 +264,6 @@ if(USE_SIMULATOR)
     target_link_libraries(gs_enum_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
-    add_executable(router_tests
-      src/gsmenu/settings.c
-      src/gsmenu/settings_router.c
-      src/gsmenu/settings_gs_enum.c
-      ${PP_CJSON_SOURCES}
-      tests/test_settings_router.cpp)
-    target_include_directories(router_tests PRIVATE
-      ${PROJECT_SOURCE_DIR}/src
-      ${PP_CJSON_INC})
-    target_link_libraries(router_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
-    target_compile_definitions(router_tests PRIVATE PP_ROUTER_TEST=1)
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)
@@ -311,11 +292,8 @@ else()
       third_party/cjson/cJSON.c
   )
 
-  # GS-side settings backend (router + local writers + enumeration)
+  # GS-side settings backend (enumeration + rx-power mapping helpers)
   list(APPEND SOURCE_FILES
-      src/gsmenu/settings_router.c
-      src/gsmenu/settings_gs_local.c
-      src/gsmenu/settings_gs_writers.c
       src/gsmenu/settings_gs_rxpower.c
       src/gsmenu/settings_gs_enum.c)
 

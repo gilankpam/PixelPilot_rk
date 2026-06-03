@@ -33,7 +33,13 @@ struct GsMockServer {
 
     std::atomic<int> link_get{0}, link_patch{0}, link_apply{0};
     std::atomic<int> air_get{0},  air_patch{0},  air_apply{0};
+    std::atomic<int> config_get{0}, config_patch{0}, apply_post{0};
     std::string last_link_patch_body, last_air_patch_body, last_apply_to;
+    std::string last_config_patch_body;
+    std::string config_response =
+        R"({"link":{"channel":161,"width":20},)"
+        R"("pixelpilot":{"videoScale":1.0,"screenMode":"1920x1080@60",)"
+        R"("dvr":{"osd":true,"mode":"reencode","reencBitrate":50000}}})";
 
     /* GET /link returns the link block flat (channel/width/txpower/...). */
     std::string link_response =
@@ -73,6 +79,16 @@ struct GsMockServer {
         });
         svr.Post("/air/apply", [this](const httplib::Request&, httplib::Response& res) {
             air_apply++; res.set_content(R"({"applied":true})", "application/json");
+        });
+        svr.Get("/config", [this](const httplib::Request&, httplib::Response& res) {
+            config_get++; res.set_content(config_response, "application/json");
+        });
+        svr.Patch("/config", [this](const httplib::Request& req, httplib::Response& res) {
+            config_patch++; last_config_patch_body = req.body;
+            res.set_content("{}", "application/json");
+        });
+        svr.Post("/apply", [this](const httplib::Request&, httplib::Response& res) {
+            apply_post++; res.set_content(R"({"applied":true})", "application/json");
         });
         port = svr.bind_to_any_port("127.0.0.1");
         th = std::thread([this] { svr.listen_after_bind(); });
@@ -195,6 +211,30 @@ TEST_CASE("integration: PATCH validation error short-circuits apply", "[fpvd][ne
     REQUIRE(m.air_patch >= 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     REQUIRE(m.air_apply == 0);
+    m.stop();
+}
+
+TEST_CASE("integration: pixelpilot row stages via /config, no apply; Apply posts /apply",
+          "[fpvd][network][config]") {
+    GsMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+
+    /* a DVR row stages: PATCH /config, NO /apply */
+    pp_settings_set_async("gs", "dvr", "dvr_reenc_bitrate", "12000", nullptr, nullptr);
+    for (int i = 0; i < 200 && m.config_patch == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(m.config_patch >= 1);
+    REQUIRE(m.apply_post == 0);                          // staged, not applied
+    REQUIRE(m.last_config_patch_body.find("\"reencBitrate\":12000") != std::string::npos);
+
+    /* explicit Apply: POST /apply, no further PATCH */
+    int patch_before = m.config_patch.load();
+    pp_settings_apply(nullptr, nullptr);
+    for (int i = 0; i < 200 && m.apply_post == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(m.apply_post >= 1);
+    REQUIRE(m.config_patch == patch_before);            // apply does not PATCH
     m.stop();
 }
 

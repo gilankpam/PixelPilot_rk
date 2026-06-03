@@ -23,8 +23,9 @@ typedef struct fpvd_job {
     char     path[128];           /* dotted json path */
     char     value[128];          /* UI value string */
     fpvd_type_t type;
-    fpvd_endpoint_t endpoint;     /* AIR or LINK */
+    fpvd_endpoint_t endpoint;     /* AIR, LINK or CONFIG */
     char     apply_to[8];         /* "both"|"gs" for LINK; "" for AIR */
+    bool     apply_only;          /* true → skip PATCH, just POST /apply */
     pp_settings_done_cb on_done;
     void    *user_data;
 } fpvd_job_t;
@@ -41,6 +42,8 @@ typedef struct {
 
     cJSON   *air_snapshot;        /* GET /air/config (drone), protected by mu */
     cJSON   *gs_snapshot;         /* GET /link wrapped {"link":...}, by mu */
+    cJSON   *config_snapshot;     /* GET /config?pending=true (GS), by mu */
+    bool     config_dirty;        /* staged-but-unapplied /config changes */
 
     fpvd_job_t queue[FPVD_QUEUE_CAP];
     size_t     queue_n;
@@ -479,14 +482,19 @@ static char *url_join(const char *base, const char *path) {
  * drone and may 502 while the GS is up — that leaves air_snapshot stale, not
  * a disconnect. */
 static void refresh_snapshot_unlocked(void) {
-    char *link_url = url_join(G.base_url, "/link");
-    char *air_url  = url_join(G.base_url, "/air/config");
-    if (!link_url || !air_url) { free(link_url); free(air_url); G.connected = false; return; }
+    char *link_url   = url_join(G.base_url, "/link");
+    char *air_url    = url_join(G.base_url, "/air/config");
+    char *config_url = url_join(G.base_url, "/config?pending=true");
+    if (!link_url || !air_url || !config_url) {
+        free(link_url); free(air_url); free(config_url);
+        G.connected = false; return;
+    }
     pthread_mutex_unlock(&G.mu);
     fpvd_http_result_t lr = fpvd_http_get(link_url);
     fpvd_http_result_t ar = fpvd_http_get(air_url);
+    fpvd_http_result_t cr = fpvd_http_get(config_url);
     pthread_mutex_lock(&G.mu);
-    free(link_url); free(air_url);
+    free(link_url); free(air_url); free(config_url);
 
     bool was_connected = G.connected;
     if (lr.status == 200 && lr.body) {
@@ -509,8 +517,13 @@ static void refresh_snapshot_unlocked(void) {
         cJSON *a = cJSON_Parse(ar.body);
         if (a) { if (G.air_snapshot) cJSON_Delete(G.air_snapshot); G.air_snapshot = a; }
     }
+    if (cr.status == 200 && cr.body) {
+        cJSON *c = cJSON_Parse(cr.body);
+        if (c) { if (G.config_snapshot) cJSON_Delete(G.config_snapshot); G.config_snapshot = c; }
+    }
     fpvd_http_result_free(&lr);
     fpvd_http_result_free(&ar);
+    fpvd_http_result_free(&cr);
     if (was_connected != G.connected) notify_listener();
     else if (G.connected) notify_listener();
 }
@@ -553,50 +566,72 @@ static const char *parse_error_message(const char *body) {
 
 /* Mutex must be RELEASED on entry. */
 static void run_job_unlocked(fpvd_job_t job) {
-    /* Build the PATCH body. rx-power converts percent -> driver mBm first. */
-    cJSON *body = NULL;
-    if (job.type == FPVD_T_RXPOWER) {
-        pp_nic_driver_t drv = pp_rxpower_primary_driver();
-        int mbm = 0;
-        if (!pp_rxpower_pct_to_driver_value(drv, atoi(job.value), &mbm)) {
-            schedule_done(job.on_done, job.user_data, -1, "No supported NIC driver");
-            return;
-        }
-        char mbm_s[16]; snprintf(mbm_s, sizeof mbm_s, "%d", mbm);
-        body = fpvd_build_patch_body(job.path, mbm_s, FPVD_T_INT);
-    } else {
-        body = fpvd_build_patch_body(job.path, job.value, job.type);
-    }
-    char *body_s = body ? cJSON_PrintUnformatted(body) : NULL;
-    if (body) cJSON_Delete(body);
-
-    const char *wpath = fpvd_write_path(job.endpoint);
-    const char *apath = fpvd_apply_path(job.endpoint);
-    char *patch_url = url_join(G.base_url, wpath);
-    char *apply_url = url_join(G.base_url, apath);
-    if (!patch_url || !apply_url) {
-        free(patch_url); free(apply_url); if (body_s) free(body_s);
-        schedule_done(job.on_done, job.user_data, -1, "Out of memory");
-        return;
-    }
-
-    fpvd_http_result_t r = fpvd_http_patch_json(patch_url, body_s ? body_s : "{}");
+    char *patch_url = NULL, *apply_url = NULL, *body_s = NULL;
     int rc = 0;
     char err[160] = {0};
-    if (r.status == 0) {
-        rc = -1; snprintf(err, sizeof err, "GS unreachable");
-        pthread_mutex_lock(&G.mu);
-        bool was = G.connected; G.connected = false;
-        pthread_mutex_unlock(&G.mu);
-        if (was) notify_listener();
-    } else if (r.status >= 400) {
-        rc = -1;
-        const char *m = parse_error_message(r.body);
-        snprintf(err, sizeof err, "%s", m ? m : "Request rejected");
-    }
-    fpvd_http_result_free(&r);
 
+    /* PATCH phase — skipped entirely for apply-only jobs (explicit Apply). */
+    if (!job.apply_only) {
+        /* Build the PATCH body. rx-power converts percent -> driver mBm first. */
+        cJSON *body = NULL;
+        if (job.type == FPVD_T_RXPOWER) {
+            pp_nic_driver_t drv = pp_rxpower_primary_driver();
+            int mbm = 0;
+            if (!pp_rxpower_pct_to_driver_value(drv, atoi(job.value), &mbm)) {
+                schedule_done(job.on_done, job.user_data, -1, "No supported NIC driver");
+                return;
+            }
+            char mbm_s[16]; snprintf(mbm_s, sizeof mbm_s, "%d", mbm);
+            body = fpvd_build_patch_body(job.path, mbm_s, FPVD_T_INT);
+        } else {
+            body = fpvd_build_patch_body(job.path, job.value, job.type);
+        }
+        body_s = body ? cJSON_PrintUnformatted(body) : NULL;
+        if (body) cJSON_Delete(body);
+
+        patch_url = url_join(G.base_url, fpvd_write_path(job.endpoint));
+        if (!patch_url) {
+            if (body_s) free(body_s);
+            schedule_done(job.on_done, job.user_data, -1, "Out of memory");
+            return;
+        }
+
+        fpvd_http_result_t r = fpvd_http_patch_json(patch_url, body_s ? body_s : "{}");
+        if (r.status == 0) {
+            rc = -1; snprintf(err, sizeof err, "GS unreachable");
+            pthread_mutex_lock(&G.mu);
+            bool was = G.connected; G.connected = false;
+            pthread_mutex_unlock(&G.mu);
+            if (was) notify_listener();
+        } else if (r.status >= 400) {
+            rc = -1;
+            const char *m = parse_error_message(r.body);
+            snprintf(err, sizeof err, "%s", m ? m : "Request rejected");
+        }
+        fpvd_http_result_free(&r);
+
+        /* EP_CONFIG rows stage only: a successful PATCH marks pending dirty and
+         * stops here (no apply). AIR/LINK fall through to apply immediately. */
+        if (rc == 0 && job.endpoint == FPVD_EP_CONFIG) {
+            pthread_mutex_lock(&G.mu);
+            G.config_dirty = true;
+            refresh_snapshot_unlocked();
+            pthread_mutex_unlock(&G.mu);
+            schedule_done(job.on_done, job.user_data, 0, NULL);
+            free(patch_url); if (body_s) free(body_s);
+            return;
+        }
+    }
+
+    /* Apply phase — AIR/LINK after PATCH, or apply-only CONFIG (explicit Apply). */
     if (rc == 0) {
+        apply_url = url_join(G.base_url, fpvd_apply_path(job.endpoint));
+        if (!apply_url) {
+            free(patch_url); if (body_s) free(body_s);
+            schedule_done(job.on_done, job.user_data, -1, "Out of memory");
+            return;
+        }
+        fpvd_http_result_t r;
         if (job.endpoint == FPVD_EP_LINK) {
             char apply_body[40];
             snprintf(apply_body, sizeof apply_body, "{\"applyTo\":\"%s\"}",
@@ -617,6 +652,11 @@ static void run_job_unlocked(fpvd_job_t job) {
             snprintf(err, sizeof err, "%s", m ? m : "Apply failed");
         }
         fpvd_http_result_free(&r);
+        if (rc == 0 && job.apply_only) {
+            pthread_mutex_lock(&G.mu);
+            G.config_dirty = false;
+            pthread_mutex_unlock(&G.mu);
+        }
     }
 
     if (rc == 0) {
@@ -690,8 +730,9 @@ static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
     fpvd_job_t *j = &G.queue[G.queue_n++];
     strncpy(j->path,  e->path, sizeof j->path  - 1); j->path [sizeof j->path -1] = '\0';
     strncpy(j->value, value,   sizeof j->value - 1); j->value[sizeof j->value-1] = '\0';
-    j->type     = e->type;
-    j->endpoint = e->endpoint;
+    j->type       = e->type;
+    j->endpoint   = e->endpoint;
+    j->apply_only = false;   /* slot may be reused from a prior apply-only job */
     if (e->apply_to) { strncpy(j->apply_to, e->apply_to, sizeof j->apply_to - 1); j->apply_to[sizeof j->apply_to - 1] = '\0'; }
     else j->apply_to[0] = '\0';
     j->on_done   = cb;
@@ -702,7 +743,12 @@ static char *prov_get(const char *d, const char *p, const char *k) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return strdup("");
     pthread_mutex_lock(&G.mu);
-    cJSON *snap = (e->endpoint == FPVD_EP_LINK) ? G.gs_snapshot : G.air_snapshot;
+    cJSON *snap;
+    switch (e->endpoint) {
+    case FPVD_EP_LINK:   snap = G.gs_snapshot;     break;
+    case FPVD_EP_CONFIG: snap = G.config_snapshot; break;
+    default:             snap = G.air_snapshot;    break;
+    }
     char *out;
     if (e->type == FPVD_T_RXPOWER) {
         char *raw = snap ? fpvd_snapshot_read_string(snap, e->path, FPVD_T_INT) : strdup("");
@@ -744,6 +790,35 @@ static void prov_set_async(const char *d, const char *p, const char *k,
 /* Fire-and-forget sync set — fall through to async. */
 static void prov_set(const char *d, const char *p, const char *k, const char *v) {
     prov_set_async(d, p, k, v, NULL, NULL);
+}
+
+/* Commit staged /config changes: enqueue an apply-only job (POST /apply). */
+static void prov_apply(pp_settings_done_cb cb, void *ud) {
+    pthread_mutex_lock(&G.mu);
+    if (G.queue_n >= FPVD_QUEUE_CAP) {
+        pthread_mutex_unlock(&G.mu);
+        schedule_done(cb, ud, -1, "Settings queue full");
+        return;
+    }
+    fpvd_job_t *j = &G.queue[G.queue_n++];
+    memset(j, 0, sizeof *j);
+    j->endpoint   = FPVD_EP_CONFIG;
+    j->apply_only = true;
+    j->on_done    = cb;
+    j->user_data  = ud;
+    pthread_cond_signal(&G.cv);
+    pthread_mutex_unlock(&G.mu);
+}
+
+static bool prov_is_available(const char *d, const char *p, const char *k) {
+    return fpvd_keymap_lookup(d, p, k) != NULL;
+}
+
+static bool prov_has_pending(void) {
+    pthread_mutex_lock(&G.mu);
+    bool dirty = G.config_dirty;
+    pthread_mutex_unlock(&G.mu);
+    return dirty;
 }
 
 static bool prov_is_locked(const char *d, const char *p, const char *k) {
@@ -792,6 +867,9 @@ static const pp_settings_provider_t G_PROVIDER = {
     .is_connected           = prov_is_connected,
     .set_snapshot_listener  = prov_set_snapshot_listener,
     .set_visibility         = prov_set_visibility,
+    .is_available           = prov_is_available,
+    .apply                  = prov_apply,
+    .has_pending            = prov_has_pending,
 };
 
 void pp_settings_register_fpvd(void) {
@@ -815,8 +893,10 @@ void pp_settings_register_fpvd(void) {
     G.stop      = false;
     G.visible   = false;
     G.connected = false;
-    if (G.air_snapshot) { cJSON_Delete(G.air_snapshot); G.air_snapshot = NULL; }
-    if (G.gs_snapshot)  { cJSON_Delete(G.gs_snapshot);  G.gs_snapshot  = NULL; }
+    if (G.air_snapshot)    { cJSON_Delete(G.air_snapshot);    G.air_snapshot    = NULL; }
+    if (G.gs_snapshot)     { cJSON_Delete(G.gs_snapshot);     G.gs_snapshot     = NULL; }
+    if (G.config_snapshot) { cJSON_Delete(G.config_snapshot); G.config_snapshot = NULL; }
+    G.config_dirty = false;
     G.queue_n   = 0;
     G.listener_cb = NULL;
     G.listener_ud = NULL;

@@ -1,6 +1,5 @@
 /* src/gsmenu/settings_gs_enum.c */
 #include "settings_gs_enum.h"
-#include "cJSON.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -74,54 +73,6 @@ char *pp_gs_parse_iw_list_channels(const char *in) {
     return strdup(buf);
 }
 
-char *pp_gs_parse_drm_info_modes(const char *in) {
-    if (!in) return NULL;
-    cJSON *root = cJSON_Parse(in);
-    if (!root) return NULL;
-    cJSON *card = cJSON_GetObjectItemCaseSensitive(root, "/dev/dri/card0");
-    if (!card) { cJSON_Delete(root); return NULL; }
-    cJSON *conns = cJSON_GetObjectItemCaseSensitive(card, "connectors");
-    if (!cJSON_IsArray(conns) || cJSON_GetArraySize(conns) < 2) {
-        cJSON_Delete(root); return NULL;
-    }
-    cJSON *conn = cJSON_GetArrayItem(conns, 1);
-    cJSON *modes = cJSON_GetObjectItemCaseSensitive(conn, "modes");
-    if (!cJSON_IsArray(modes)) { cJSON_Delete(root); return NULL; }
-
-    /* Collect "<name>@<vrefresh>" strings, skipping names containing 'i'. */
-    char *items[256]; size_t n = 0;
-    cJSON *m;
-    cJSON_ArrayForEach(m, modes) {
-        cJSON *name = cJSON_GetObjectItemCaseSensitive(m, "name");
-        cJSON *vref = cJSON_GetObjectItemCaseSensitive(m, "vrefresh");
-        if (!cJSON_IsString(name) || !cJSON_IsNumber(vref)) continue;
-        if (strchr(name->valuestring, 'i')) continue;
-        char buf[64];
-        snprintf(buf, sizeof buf, "%s@%d", name->valuestring, (int)vref->valuedouble);
-        /* Dedup. */
-        int dup = 0;
-        for (size_t i = 0; i < n; i++) if (strcmp(items[i], buf) == 0) { dup = 1; break; }
-        if (!dup && n < 256) items[n++] = strdup(buf);
-    }
-    cJSON_Delete(root);
-    if (n == 0) return NULL;
-
-    /* Sort by string (stable enough for display). */
-    for (size_t i = 1; i < n; i++) for (size_t j = i; j > 0; j--) {
-        if (strcmp(items[j-1], items[j]) > 0) {
-            char *t = items[j-1]; items[j-1] = items[j]; items[j] = t;
-        } else break;
-    }
-    char buf[4096]; buf[0] = '\0';
-    for (size_t i = 0; i < n; i++) {
-        if (i) strcat(buf, "\n");
-        if (strlen(buf) + strlen(items[i]) + 1 >= sizeof buf) break;
-        strcat(buf, items[i]);
-    }
-    for (size_t i = 0; i < n; i++) free(items[i]);
-    return strdup(buf);
-}
-
 /* popen variants — overridable binary paths. */
 static char *popen_slurp(const char *cmd) {
     FILE *p = popen(cmd, "r");
@@ -150,14 +101,3 @@ char *pp_gs_enum_channels(void) {
     return r;
 }
 
-char *pp_gs_enum_hdmi_modes(void) {
-    const char *bin = getenv("PP_GS_DRM_INFO_BIN");
-    if (!bin) bin = "drm_info";
-    char cmd[256];
-    snprintf(cmd, sizeof cmd, "%s -j /dev/dri/card0 2>/dev/null", bin);
-    char *raw = popen_slurp(cmd);
-    if (!raw) return NULL;
-    char *r = pp_gs_parse_drm_info_modes(raw);
-    free(raw);
-    return r;
-}

@@ -113,7 +113,5 @@ char *pp_settings_get_options(const char *domain, const char *page, const char *
     if (!domain || !page || !key) return NULL;
     if (strcmp(domain, "gs") == 0 && strcmp(page, "wfbng") == 0 && strcmp(key, "gs_channel") == 0)
         return pp_gs_enum_channels();
-    if (strcmp(domain, "gs") == 0 && strcmp(page, "display") == 0 && strcmp(key, "hdmi_mode") == 0)
-        return pp_gs_enum_hdmi_modes();
     return NULL;
 }

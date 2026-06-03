@@ -34,29 +34,3 @@ TEST_CASE("iw_list: empty input -> NULL", "[gs][enum]") {
     REQUIRE(pp_gs_parse_iw_list_channels("no channels here") == nullptr);
 }
 
-TEST_CASE("drm_info: extracts non-interlaced modes from connector[1]", "[gs][enum]") {
-    /* Minimal shape mirroring the path the old gsmenu.sh queried. */
-    const char *in =
-      "{\"/dev/dri/card0\":{"
-        "\"crtcs\":[{\"mode\":{\"name\":\"1920x1080\",\"vrefresh\":60}}],"
-        "\"connectors\":["
-          "{},"
-          "{\"modes\":["
-            "{\"name\":\"1920x1080\",\"vrefresh\":60},"
-            "{\"name\":\"1920x1080i\",\"vrefresh\":60},"
-            "{\"name\":\"1280x720\",\"vrefresh\":60}"
-          "]}"
-        "]"
-      "}}";
-    char *out = pp_gs_parse_drm_info_modes(in);
-    REQUIRE(out != nullptr);
-    std::string s(out); free(out);
-    REQUIRE(s.find("1920x1080@60") != std::string::npos);
-    REQUIRE(s.find("1280x720@60")  != std::string::npos);
-    REQUIRE(s.find("1920x1080i")   == std::string::npos);
-}
-
-TEST_CASE("drm_info: malformed input -> NULL", "[gs][enum]") {
-    REQUIRE(pp_gs_parse_drm_info_modes("not json") == nullptr);
-    REQUIRE(pp_gs_parse_drm_info_modes("{}")       == nullptr);
-}

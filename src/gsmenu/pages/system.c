@@ -31,35 +31,6 @@ static void on_open_wifi(lv_event_t *e) {
     pp_drilldown_open(page, "WiFi", build_wifi_drilldown, NULL);
 }
 
-static void on_restart_confirm_yes(lv_event_t *e) {
-    if (lv_event_get_key(e) != LV_KEY_ENTER) return;
-    pp_drilldown_close();
-    pp_settings_set_async("gs", "actions", "restart_pixelpilot", "trigger",
-                          action_done_cb, NULL);
-}
-
-static void on_restart_confirm_no(lv_event_t *e) {
-    if (lv_event_get_key(e) != LV_KEY_ENTER) return;
-    pp_drilldown_close();
-}
-
-static void build_restart_drilldown(lv_obj_t *body, void *user) {
-    (void)user;
-    pp_row_text(body, LV_SYMBOL_WARNING,
-                "The menu will close while PixelPilot restarts.", NULL);
-    lv_obj_t *yes = pp_row_text(body, LV_SYMBOL_OK,    "Confirm", NULL);
-    lv_obj_t *no  = pp_row_text(body, LV_SYMBOL_CLOSE, "Cancel",  NULL);
-    lv_obj_add_event_cb(yes, on_restart_confirm_yes, LV_EVENT_KEY, NULL);
-    lv_obj_add_event_cb(no,  on_restart_confirm_no,  LV_EVENT_KEY, NULL);
-}
-
-static void on_open_restart(lv_event_t *e) {
-    if (lv_event_get_key(e) != LV_KEY_ENTER) return;
-    lv_obj_t *row  = lv_event_get_target(e);
-    lv_obj_t *page = lv_obj_get_parent(row);
-    pp_drilldown_open(page, "Restart PixelPilot?", build_restart_drilldown, NULL);
-}
-
 static void on_action(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     const char *cmd = lv_event_get_user_data(e);
@@ -97,8 +68,6 @@ lv_obj_t *build_system_tab(lv_obj_t *parent) {
 
     pp_section_header(page, "Actions");
     lv_obj_t *r;
-    r = pp_row_text(page, LV_SYMBOL_REFRESH, "Restart PixelPilot", NULL);
-    lv_obj_add_event_cb(r, on_open_restart, LV_EVENT_KEY, NULL);
     r = pp_row_text(page, LV_SYMBOL_REFRESH, "Reboot air", NULL);
     lv_obj_add_event_cb(r, on_action, LV_EVENT_KEY, (void*)"reboot_air");
     r = pp_row_text(page, LV_SYMBOL_REFRESH, "Reboot GS", NULL);

@@ -99,7 +99,6 @@ void pp_settings_register_fpvd(void);
  * or NULL if no enumerator is available. Caller frees with free().
  * The current implementation supports:
  *   ("gs","wfbng","gs_channel")  -> iw list channels
- *   ("gs","display","hdmi_mode") -> drm_info modes
  * All other tuples return NULL. */
 char *pp_settings_get_options(const char *domain, const char *page, const char *key);
 

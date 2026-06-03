@@ -5,17 +5,11 @@
 #include "../widgets/pp_slider.h"
 #include "../widgets/pp_dropdown.h"
 #include "../settings.h"
-#include <stdlib.h>
 
 lv_obj_t *build_display_tab(lv_obj_t *parent) {
     lv_obj_t *page = pp_page_create(parent, "gs", "display");
 
     pp_section_header(page, "Output");
-    char *hdmi_opts = pp_settings_get_options("gs", "display", "hdmi_mode");
-    pp_dropdown(page, LV_SYMBOL_EYE_OPEN, "HDMI Mode",
-                "gs", "display", "hdmi_mode",
-                hdmi_opts ? hdmi_opts : "1920x1080@60\n1280x720@60\n1920x1080@30");
-    free(hdmi_opts);
     pp_slider(page, LV_SYMBOL_IMAGE, "Video Scale",
               "gs", "display", "video_scale", 50, 200);
 

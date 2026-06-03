@@ -1,6 +1,7 @@
 /* fpvd HTTP settings provider — implemented incrementally; see plan. */
 #include "settings.h"
 #include "settings_fpvd_internal.h"
+#include "settings_gs_rxpower.h"
 
 #include <string.h>
 #include "cJSON.h"
@@ -15,13 +16,15 @@
 #include <errno.h>
 #include "lvgl/lvgl.h"   /* for lv_async_call, lv_malloc, lv_free */
 
-#define FPVD_DEFAULT_URL "http://10.5.0.10:8080"
+#define FPVD_DEFAULT_URL "http://127.0.0.1:8080"
 #define FPVD_QUEUE_CAP   32
 
 typedef struct fpvd_job {
     char     path[128];           /* dotted json path */
     char     value[128];          /* UI value string */
     fpvd_type_t type;
+    fpvd_endpoint_t endpoint;     /* AIR or LINK */
+    char     apply_to[8];         /* "both"|"gs" for LINK; "" for AIR */
     pp_settings_done_cb on_done;
     void    *user_data;
 } fpvd_job_t;
@@ -36,7 +39,8 @@ typedef struct {
     bool     connected;
     bool     worker_started;
 
-    cJSON   *snapshot;            /* protected by mu */
+    cJSON   *air_snapshot;        /* GET /air/config (drone), protected by mu */
+    cJSON   *gs_snapshot;         /* GET /link wrapped {"link":...}, by mu */
 
     fpvd_job_t queue[FPVD_QUEUE_CAP];
     size_t     queue_n;
@@ -255,8 +259,8 @@ static cJSON *value_to_cjson(const char *value, fpvd_type_t type) {
         return cJSON_CreateNumber((double)v / 100.0);
     }
     case FPVD_T_RXPOWER: {
-        /* Conversion from percent to mBm implemented in a later task;
-         * for now pass raw int through. */
+        /* Unreachable in normal flow: run_job converts rx-power percent->mBm
+         * and builds the body as FPVD_T_INT. Kept as a defensive int passthrough. */
         char *end;
         long v = strtol(value, &end, 10);
         if (end == value) return NULL;
@@ -375,6 +379,9 @@ fpvd_http_result_t fpvd_http_post(const char *url) { return http_do(url, "POST",
 fpvd_http_result_t fpvd_http_patch_json(const char *url, const char *body) {
     return http_do(url, "PATCH", body);
 }
+fpvd_http_result_t fpvd_http_post_json(const char *url, const char *body) {
+    return http_do(url, "POST", body);
+}
 
 void fpvd_http_result_free(fpvd_http_result_t *r) {
     if (r && r->body) { free(r->body); r->body = NULL; r->body_len = 0; }
@@ -439,26 +446,43 @@ static char *url_join(const char *base, const char *path) {
     return u;
 }
 
-/* Called with G.mu HELD. Releases and re-acquires mutex around the HTTP call. */
+/* Called with G.mu HELD. Releases and re-acquires mutex around the HTTP calls.
+ * Reachability tracks the GS daemon's own /link; /air/config is proxied to the
+ * drone and may 502 while the GS is up — that leaves air_snapshot stale, not
+ * a disconnect. */
 static void refresh_snapshot_unlocked(void) {
-    char *u = url_join(G.base_url, "/config");
-    if (!u) { G.connected = false; return; }
+    char *link_url = url_join(G.base_url, "/link");
+    char *air_url  = url_join(G.base_url, "/air/config");
+    if (!link_url || !air_url) { free(link_url); free(air_url); G.connected = false; return; }
     pthread_mutex_unlock(&G.mu);
-    fpvd_http_result_t r = fpvd_http_get(u);
+    fpvd_http_result_t lr = fpvd_http_get(link_url);
+    fpvd_http_result_t ar = fpvd_http_get(air_url);
     pthread_mutex_lock(&G.mu);
-    free(u);
+    free(link_url); free(air_url);
+
     bool was_connected = G.connected;
-    if (r.status == 200 && r.body) {
-        cJSON *new_snap = cJSON_Parse(r.body);
-        if (new_snap) {
-            if (G.snapshot) cJSON_Delete(G.snapshot);
-            G.snapshot = new_snap;
-            G.connected = true;
+    if (lr.status == 200 && lr.body) {
+        cJSON *flat = cJSON_Parse(lr.body);
+        if (flat) {
+            cJSON *wrap = cJSON_CreateObject();
+            if (wrap) {
+                cJSON_AddItemToObject(wrap, "link", flat);   /* wrap so paths resolve */
+                if (G.gs_snapshot) cJSON_Delete(G.gs_snapshot);
+                G.gs_snapshot = wrap;
+                G.connected = true;
+            } else {
+                cJSON_Delete(flat);   /* OOM: don't orphan the parsed body */
+            }
         }
     } else {
         G.connected = false;
     }
-    fpvd_http_result_free(&r);
+    if (ar.status == 200 && ar.body) {
+        cJSON *a = cJSON_Parse(ar.body);
+        if (a) { if (G.air_snapshot) cJSON_Delete(G.air_snapshot); G.air_snapshot = a; }
+    }
+    fpvd_http_result_free(&lr);
+    fpvd_http_result_free(&ar);
     if (was_connected != G.connected) notify_listener();
     else if (G.connected) notify_listener();
 }
@@ -501,12 +525,27 @@ static const char *parse_error_message(const char *body) {
 
 /* Mutex must be RELEASED on entry. */
 static void run_job_unlocked(fpvd_job_t job) {
-    cJSON *body = fpvd_build_patch_body(job.path, job.value, job.type);
+    /* Build the PATCH body. rx-power converts percent -> driver mBm first. */
+    cJSON *body = NULL;
+    if (job.type == FPVD_T_RXPOWER) {
+        pp_nic_driver_t drv = pp_rxpower_primary_driver();
+        int mbm = 0;
+        if (!pp_rxpower_pct_to_driver_value(drv, atoi(job.value), &mbm)) {
+            schedule_done(job.on_done, job.user_data, -1, "No supported NIC driver");
+            return;
+        }
+        char mbm_s[16]; snprintf(mbm_s, sizeof mbm_s, "%d", mbm);
+        body = fpvd_build_patch_body(job.path, mbm_s, FPVD_T_INT);
+    } else {
+        body = fpvd_build_patch_body(job.path, job.value, job.type);
+    }
     char *body_s = body ? cJSON_PrintUnformatted(body) : NULL;
     if (body) cJSON_Delete(body);
 
-    char *patch_url = url_join(G.base_url, "/config");
-    char *apply_url = url_join(G.base_url, "/apply");
+    const char *wpath = (job.endpoint == FPVD_EP_LINK) ? "/link"       : "/air/config";
+    const char *apath = (job.endpoint == FPVD_EP_LINK) ? "/link/apply" : "/air/apply";
+    char *patch_url = url_join(G.base_url, wpath);
+    char *apply_url = url_join(G.base_url, apath);
     if (!patch_url || !apply_url) {
         free(patch_url); free(apply_url); if (body_s) free(body_s);
         schedule_done(job.on_done, job.user_data, -1, "Out of memory");
@@ -517,7 +556,7 @@ static void run_job_unlocked(fpvd_job_t job) {
     int rc = 0;
     char err[160] = {0};
     if (r.status == 0) {
-        rc = -1; snprintf(err, sizeof err, "Drone unreachable");
+        rc = -1; snprintf(err, sizeof err, "GS unreachable");
         pthread_mutex_lock(&G.mu);
         bool was = G.connected; G.connected = false;
         pthread_mutex_unlock(&G.mu);
@@ -530,9 +569,16 @@ static void run_job_unlocked(fpvd_job_t job) {
     fpvd_http_result_free(&r);
 
     if (rc == 0) {
-        r = fpvd_http_post(apply_url);
+        if (job.endpoint == FPVD_EP_LINK) {
+            char apply_body[40];
+            snprintf(apply_body, sizeof apply_body, "{\"applyTo\":\"%s\"}",
+                     job.apply_to[0] ? job.apply_to : "both");
+            r = fpvd_http_post_json(apply_url, apply_body);
+        } else {
+            r = fpvd_http_post(apply_url);
+        }
         if (r.status == 0) {
-            rc = -1; snprintf(err, sizeof err, "Drone unreachable");
+            rc = -1; snprintf(err, sizeof err, "GS unreachable");
             pthread_mutex_lock(&G.mu);
             bool was = G.connected; G.connected = false;
             pthread_mutex_unlock(&G.mu);
@@ -552,7 +598,6 @@ static void run_job_unlocked(fpvd_job_t job) {
     }
 
     schedule_done(job.on_done, job.user_data, rc, err[0] ? err : NULL);
-
     free(patch_url); free(apply_url); if (body_s) free(body_s);
 }
 
@@ -599,9 +644,10 @@ static void *worker_main(void *arg) {
 static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
                            pp_settings_done_cb cb, void *ud) {
     for (size_t i = 0; i < G.queue_n; i++) {
-        if (strcmp(G.queue[i].path, e->path) == 0) {
-            /* Coalesce: replace value + callback (the older callback is dropped —
-             * the originating widget will see only the new callback's outcome). */
+        /* Two rows share path "link.txpower" on different endpoints (drone TX
+         * power vs GS card power) — coalesce only within the same endpoint. */
+        if (strcmp(G.queue[i].path, e->path) == 0 &&
+            G.queue[i].endpoint == e->endpoint) {
             strncpy(G.queue[i].value, value, sizeof G.queue[i].value - 1);
             G.queue[i].value[sizeof G.queue[i].value - 1] = '\0';
             G.queue[i].on_done = cb;
@@ -610,14 +656,16 @@ static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
         }
     }
     if (G.queue_n >= FPVD_QUEUE_CAP) {
-        /* Schedule deferred so we don't run the callback under G.mu. */
         schedule_done(cb, ud, -1, "Settings queue full");
         return;
     }
     fpvd_job_t *j = &G.queue[G.queue_n++];
-    strncpy(j->path,  e->path,  sizeof j->path  - 1); j->path [sizeof j->path -1] = '\0';
-    strncpy(j->value, value,    sizeof j->value - 1); j->value[sizeof j->value-1] = '\0';
-    j->type      = e->type;
+    strncpy(j->path,  e->path, sizeof j->path  - 1); j->path [sizeof j->path -1] = '\0';
+    strncpy(j->value, value,   sizeof j->value - 1); j->value[sizeof j->value-1] = '\0';
+    j->type     = e->type;
+    j->endpoint = e->endpoint;
+    if (e->apply_to) { strncpy(j->apply_to, e->apply_to, sizeof j->apply_to - 1); j->apply_to[sizeof j->apply_to - 1] = '\0'; }
+    else j->apply_to[0] = '\0';
     j->on_done   = cb;
     j->user_data = ud;
 }
@@ -626,9 +674,22 @@ static char *prov_get(const char *d, const char *p, const char *k) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return strdup("");
     pthread_mutex_lock(&G.mu);
-    char *out = G.snapshot
-        ? fpvd_snapshot_read_string(G.snapshot, e->path, e->type)
-        : strdup("");
+    cJSON *snap = (e->endpoint == FPVD_EP_LINK) ? G.gs_snapshot : G.air_snapshot;
+    char *out;
+    if (e->type == FPVD_T_RXPOWER) {
+        char *raw = snap ? fpvd_snapshot_read_string(snap, e->path, FPVD_T_INT) : strdup("");
+        out = strdup("");
+        if (raw && raw[0]) {
+            int pct = 0;
+            if (pp_rxpower_driver_value_to_pct(pp_rxpower_primary_driver(), atoi(raw), &pct)) {
+                char buf[16]; snprintf(buf, sizeof buf, "%d", pct);
+                free(out); out = strdup(buf);
+            }
+        }
+        free(raw);
+    } else {
+        out = snap ? fpvd_snapshot_read_string(snap, e->path, e->type) : strdup("");
+    }
     pthread_mutex_unlock(&G.mu);
     return out;
 }
@@ -637,16 +698,14 @@ static void prov_set_async(const char *d, const char *p, const char *k,
                            const char *v, pp_settings_done_cb cb, void *ud) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) { schedule_done(cb, ud, -1, "Unknown setting"); return; }
-    if (fpvd_is_locked_path(e->path)) {
+    /* Dynamic-link lock only governs drone-owned (AIR) fields. */
+    if (e->endpoint == FPVD_EP_AIR && fpvd_is_locked_path(e->path)) {
         pthread_mutex_lock(&G.mu);
-        cJSON *dlink = G.snapshot ? cJSON_GetObjectItemCaseSensitive(G.snapshot, "dynamicLink") : NULL;
+        cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;
         cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
         bool dlink_on = en && cJSON_IsTrue(en);
         pthread_mutex_unlock(&G.mu);
-        if (dlink_on) {
-            schedule_done(cb, ud, -1, "Locked by Dynamic Link");
-            return;
-        }
+        if (dlink_on) { schedule_done(cb, ud, -1, "Locked by Dynamic Link"); return; }
     }
     pthread_mutex_lock(&G.mu);
     enqueue_locked(e, v, cb, ud);
@@ -662,9 +721,10 @@ static void prov_set(const char *d, const char *p, const char *k, const char *v)
 static bool prov_is_locked(const char *d, const char *p, const char *k) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return false;
+    if (e->endpoint != FPVD_EP_AIR) return false;
     if (!fpvd_is_locked_path(e->path)) return false;
     pthread_mutex_lock(&G.mu);
-    cJSON *dlink = G.snapshot ? cJSON_GetObjectItemCaseSensitive(G.snapshot, "dynamicLink") : NULL;
+    cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;
     cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
     bool dl_on = en && cJSON_IsTrue(en);
     pthread_mutex_unlock(&G.mu);
@@ -719,18 +779,20 @@ void pp_settings_register_fpvd(void) {
 
     fpvd_curl_init_once();
     const char *u = getenv("PP_FPVD_URL");
-    strncpy(G.base_url, u && *u ? u : FPVD_DEFAULT_URL, sizeof G.base_url - 1);
-    G.base_url[sizeof G.base_url - 1] = '\0';
 
     if (!G.worker_started) {
         pthread_mutex_init(&G.mu, NULL);
         pthread_cond_init(&G.cv, NULL);
     }
     pthread_mutex_lock(&G.mu);
+    /* Write base_url under the lock — the worker reads it in refresh. */
+    strncpy(G.base_url, u && *u ? u : FPVD_DEFAULT_URL, sizeof G.base_url - 1);
+    G.base_url[sizeof G.base_url - 1] = '\0';
     G.stop      = false;
     G.visible   = false;
     G.connected = false;
-    if (G.snapshot) { cJSON_Delete(G.snapshot); G.snapshot = NULL; }
+    if (G.air_snapshot) { cJSON_Delete(G.air_snapshot); G.air_snapshot = NULL; }
+    if (G.gs_snapshot)  { cJSON_Delete(G.gs_snapshot);  G.gs_snapshot  = NULL; }
     G.queue_n   = 0;
     G.listener_cb = NULL;
     G.listener_ud = NULL;

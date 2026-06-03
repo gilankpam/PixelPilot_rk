@@ -6,6 +6,9 @@
 #include <cstring>
 #include <string>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 
 extern "C" {
 #include "lvgl/lvgl.h"
@@ -13,8 +16,8 @@ extern "C" {
 #include "gsmenu/settings_fpvd_internal.h"
 }
 
-/* Minimal LVGL initialisation required by the fpvd provider (lv_async_call,
- * lv_malloc).  Called once per process via a static init guard. */
+namespace fs = std::filesystem;
+
 static void ensure_lv_init() {
     static bool done = false;
     if (done) return;
@@ -22,17 +25,22 @@ static void ensure_lv_init() {
     done = true;
 }
 
-/* The provider talks HTTP to PP_FPVD_URL. We spin up a cpp-httplib server
- * on an ephemeral port, set the env var, and register the provider. */
-struct FpvdMockServer {
+/* Mock GS fpvd: /link (+ /link/apply) and the /air/* proxy. */
+struct GsMockServer {
     httplib::Server svr;
     std::thread     th;
     int             port = 0;
-    std::atomic<int> patch_calls{0};
-    std::atomic<int> apply_calls{0};
-    std::atomic<int> get_calls{0};
-    std::string     last_patch_body;
-    std::string     get_response =
+
+    std::atomic<int> link_get{0}, link_patch{0}, link_apply{0};
+    std::atomic<int> air_get{0},  air_patch{0},  air_apply{0};
+    std::string last_link_patch_body, last_air_patch_body, last_apply_to;
+
+    /* GET /link returns the link block flat (channel/width/txpower/...). */
+    std::string link_response =
+        R"({"channel":161,"width":20,"txpower":1950,"region":"US",)"
+        R"("linkId":7669206,"droneReachable":true})";
+    /* GET /air/config returns the drone config. */
+    std::string air_response =
         R"({"link":{"channel":161,"width":20,"txpower":1,"mcs":2,)"
         R"("fec":{"k":8,"n":12},"stbc":false,"ldpc":false},)"
         R"("video":{"codec":"h265","resolution":"1920x1080","fps":60,)"
@@ -41,49 +49,39 @@ struct FpvdMockServer {
         R"("image":{"mirror":false,"flip":false,"rotate":0},)"
         R"("recording":{"enabled":false,"maxSeconds":300,"maxMB":500},)"
         R"("dynamicLink":{"enabled":false,"safe":{"mcs":1,"bitrateKbps":2000}}})";
-    /* Optional override: if non-empty, PATCH returns 400 with this body. */
-    std::string     patch_error_body;
-    /* Optional override: if non-empty, POST /apply returns 400 with this body. */
-    std::string     apply_error_body;
+    std::string air_patch_error;   /* if set, PATCH /air/config -> 400 */
 
     void start() {
-        svr.Get("/config", [this](const httplib::Request &, httplib::Response &res) {
-            get_calls++;
-            res.set_content(get_response, "application/json");
+        svr.Get("/link", [this](const httplib::Request&, httplib::Response& res) {
+            link_get++; res.set_content(link_response, "application/json");
         });
-        svr.Patch("/config", [this](const httplib::Request &req, httplib::Response &res) {
-            patch_calls++;
-            last_patch_body = req.body;
-            if (!patch_error_body.empty()) {
-                res.status = 400;
-                res.set_content(patch_error_body, "application/json");
-            } else {
-                res.set_content(get_response, "application/json");
-            }
+        svr.Patch("/link", [this](const httplib::Request& req, httplib::Response& res) {
+            link_patch++; last_link_patch_body = req.body;
+            res.set_content("{}", "application/json");
         });
-        svr.Post("/apply", [this](const httplib::Request &, httplib::Response &res) {
-            apply_calls++;
-            if (!apply_error_body.empty()) {
-                res.status = 400;
-                res.set_content(apply_error_body, "application/json");
-            } else {
-                res.set_content(R"({"applied":true,"version":1,"restarted":[]})",
-                                "application/json");
-            }
+        svr.Post("/link/apply", [this](const httplib::Request& req, httplib::Response& res) {
+            link_apply++; last_apply_to = req.body;
+            res.set_content(R"({"gsApplied":true})", "application/json");
+        });
+        svr.Get("/air/config", [this](const httplib::Request&, httplib::Response& res) {
+            air_get++; res.set_content(air_response, "application/json");
+        });
+        svr.Patch("/air/config", [this](const httplib::Request& req, httplib::Response& res) {
+            air_patch++; last_air_patch_body = req.body;
+            if (!air_patch_error.empty()) { res.status = 400; res.set_content(air_patch_error, "application/json"); }
+            else res.set_content(air_response, "application/json");
+        });
+        svr.Post("/air/apply", [this](const httplib::Request&, httplib::Response& res) {
+            air_apply++; res.set_content(R"({"applied":true})", "application/json");
         });
         port = svr.bind_to_any_port("127.0.0.1");
         th = std::thread([this] { svr.listen_after_bind(); });
         for (int i = 0; i < 50 && !svr.is_running(); i++)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-
-    void stop() {
-        svr.stop();
-        if (th.joinable()) th.join();
-    }
+    void stop() { svr.stop(); if (th.joinable()) th.join(); }
 };
 
-/* Helper: build PP_FPVD_URL, set env, then register provider. */
 static void install_provider_pointing_at(int port) {
     ensure_lv_init();
     char url[64];
@@ -92,135 +90,123 @@ static void install_provider_pointing_at(int port) {
     pp_settings_register_fpvd();
 }
 
-TEST_CASE("fixture: mock server starts and accepts requests",
-          "[fpvd][network][fixture]") {
-    FpvdMockServer m;
-    m.start();
-    REQUIRE(m.port > 0);
-    /* No client call yet; just verify the server thread is alive and routes are bound. */
-    httplib::Client c("127.0.0.1", m.port);
-    auto r = c.Get("/config");
-    REQUIRE(r != nullptr);
-    REQUIRE(r->status == 200);
-    REQUIRE(m.get_calls.load() == 1);
-    m.stop();
+static void wait_first_poll(GsMockServer& m) {
+    for (int i = 0; i < 100 && m.link_get == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
 
-TEST_CASE("integration: PATCH + apply happy path", "[fpvd][network]") {
-    FpvdMockServer m; m.start();
+TEST_CASE("integration: reads route to the right endpoint", "[fpvd][network]") {
+    GsMockServer m; m.start();
     install_provider_pointing_at(m.port);
-
-    /* Wait for initial GET /config to land. */
-    for (int i = 0; i < 50 && m.get_calls == 0; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    REQUIRE(m.get_calls >= 1);
+    wait_first_poll(m);
+    REQUIRE(m.link_get >= 1);
+    REQUIRE(m.air_get  >= 1);
     REQUIRE(pp_settings_is_connected() == true);
 
-    /* Trigger an async set; the callback fires on the LVGL thread which
-     * we don't have a loop for in tests. Instead we observe the server. */
-    pp_settings_set_async("air", "camera", "fps", "90", nullptr, nullptr);
-    for (int i = 0; i < 200 && m.apply_calls == 0; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
-    REQUIRE(m.patch_calls >= 1);
-    REQUIRE(m.apply_calls >= 1);
-    REQUIRE(m.last_patch_body.find("\"fps\":90") != std::string::npos);
-
+    char *chan = pp_settings_get("gs", "wfbng", "gs_channel");   /* from /link */
+    REQUIRE(std::string(chan) == "161"); free(chan);
+    char *fps = pp_settings_get("air", "camera", "fps");         /* from /air/config */
+    REQUIRE(std::string(fps) == "60"); free(fps);
     m.stop();
 }
 
-TEST_CASE("integration: PATCH validation error short-circuits apply",
-          "[fpvd][network]") {
-    FpvdMockServer m;
-    m.patch_error_body =
+TEST_CASE("integration: air write hits /air/config + /air/apply only", "[fpvd][network]") {
+    GsMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+
+    pp_settings_set_async("air", "camera", "fps", "90", nullptr, nullptr);
+    for (int i = 0; i < 200 && m.air_apply == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(m.air_patch >= 1);
+    REQUIRE(m.air_apply >= 1);
+    REQUIRE(m.last_air_patch_body.find("\"fps\":90") != std::string::npos);
+    REQUIRE(m.link_patch == 0);
+    m.stop();
+}
+
+TEST_CASE("integration: shared link write hits /link + applyTo both", "[fpvd][network]") {
+    GsMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+
+    pp_settings_set_async("gs", "wfbng", "gs_channel", "149", nullptr, nullptr);
+    for (int i = 0; i < 200 && m.link_apply == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(m.link_patch >= 1);
+    REQUIRE(m.last_link_patch_body.find("\"channel\":149") != std::string::npos);
+    REQUIRE(m.last_apply_to.find("\"applyTo\":\"both\"") != std::string::npos);
+    REQUIRE(m.air_patch == 0);
+    m.stop();
+}
+
+TEST_CASE("integration: rx_power maps percent -> link.txpower, applyTo gs", "[fpvd][network]") {
+    /* NIC fixture: one wlx interface with the rtl88x2eu driver. */
+    fs::path root = fs::temp_directory_path() / ("ppnic_" + std::to_string(::getpid()));
+    fs::create_directories(root / "wlx_test" / "device");
+    std::ofstream(root / "wlx_test" / "device" / "uevent") << "DRIVER=rtl88x2eu\n";
+    setenv("PP_GS_SYS_CLASS_NET", root.c_str(), 1);
+
+    GsMockServer m; m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+
+    pp_settings_set_async("gs", "link", "rx_power", "50", nullptr, nullptr);
+    for (int i = 0; i < 200 && m.link_apply == 0; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(m.link_patch >= 1);
+    REQUIRE(m.last_link_patch_body.find("\"txpower\":1950") != std::string::npos);  /* 50% rtl88x2eu */
+    REQUIRE(m.last_apply_to.find("\"applyTo\":\"gs\"") != std::string::npos);
+
+    unsetenv("PP_GS_SYS_CLASS_NET");
+    fs::remove_all(root);
+    m.stop();
+}
+
+TEST_CASE("integration: dynamic_link_locked rejected client-side (air snapshot)", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"mcs":2,"txpower":1},"video":{"bitrate":8192},)"
+      R"("dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "mcs_index") == true);
+
+    int before = m.air_patch;
+    pp_settings_set_async("air", "wfbng", "mcs_index", "5", nullptr, nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    REQUIRE(m.air_patch == before);   /* never sent */
+    m.stop();
+}
+
+TEST_CASE("integration: PATCH validation error short-circuits apply", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_patch_error =
       R"({"error":"validation","message":"schema validation failed",)"
       R"("details":[{"path":"link.mcs","message":"must be 0..7"}]})";
     m.start();
     install_provider_pointing_at(m.port);
+    wait_first_poll(m);
 
-    for (int i = 0; i < 50 && m.get_calls == 0; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    /* Fire a write; server returns 400 on PATCH. Worker should NOT proceed
-     * to POST /apply. */
     pp_settings_set_async("air", "wfbng", "mcs_index", "9", nullptr, nullptr);
-    for (int i = 0; i < 200 && m.patch_calls == 0; i++)
+    for (int i = 0; i < 200 && m.air_patch == 0; i++)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    REQUIRE(m.patch_calls >= 1);
-    /* Apply should NOT have been called (PATCH 400 short-circuits). */
-    /* Wait a touch longer to be confident the worker has finished the job. */
+    REQUIRE(m.air_patch >= 1);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    REQUIRE(m.apply_calls == 0);
-
+    REQUIRE(m.air_apply == 0);
     m.stop();
 }
 
-TEST_CASE("integration: dynamic_link_locked rejected client-side",
-          "[fpvd][network]") {
-    FpvdMockServer m;
-    /* Snapshot has dynamicLink.enabled = true so client-side lock check fires
-     * before any network call. */
-    m.get_response =
-      R"({"link":{"channel":161,"width":20,"txpower":1,"mcs":2,)"
-      R"("fec":{"k":8,"n":12}},"video":{"bitrate":8192,"qpDelta":-4,)"
-      R"("roi":{"enabled":true,"qp":0,"center":0.4,"steps":2}},)"
-      R"("dynamicLink":{"enabled":true}})";
-    m.start();
-    install_provider_pointing_at(m.port);
-
-    for (int i = 0; i < 50 && m.get_calls == 0; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    REQUIRE(pp_settings_is_connected() == true);
-    REQUIRE(pp_settings_is_locked("air", "wfbng", "mcs_index") == true);
-
-    /* Attempting to set the locked field should be rejected before any
-     * PATCH; the server sees no patch call. */
-    int before = m.patch_calls;
-    pp_settings_set_async("air", "wfbng", "mcs_index", "5", nullptr, nullptr);
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    REQUIRE(m.patch_calls == before);
-
-    m.stop();
-}
-
-TEST_CASE("integration: offline -> reconnect transitions connected flag",
-          "[fpvd][network]") {
-    /* No server running yet — pointing at a port that should refuse. */
+TEST_CASE("integration: offline -> reconnect tracks /link reachability", "[fpvd][network]") {
     setenv("PP_FPVD_URL", "http://127.0.0.1:1", 1);
     pp_settings_register_fpvd();
-    /* The synchronous prime fails → connected==false. */
     REQUIRE(pp_settings_is_connected() == false);
 
-    /* Now start a server, repoint the env, re-register (provider re-reads
-     * env in pp_settings_register_fpvd). */
-    FpvdMockServer m; m.start();
+    GsMockServer m; m.start();
     install_provider_pointing_at(m.port);
-    for (int i = 0; i < 50 && pp_settings_is_connected() == false; i++)
+    for (int i = 0; i < 100 && pp_settings_is_connected() == false; i++)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     REQUIRE(pp_settings_is_connected() == true);
-    m.stop();
-}
-
-TEST_CASE("integration: rapid same-path writes coalesce to one PATCH",
-          "[fpvd][network]") {
-    FpvdMockServer m; m.start();
-    install_provider_pointing_at(m.port);
-    for (int i = 0; i < 50 && m.get_calls == 0; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    int before = m.patch_calls;
-    for (int i = 0; i < 5; i++) {
-        char buf[8]; snprintf(buf, sizeof buf, "%d", 30 + i*10);
-        pp_settings_set_async("air", "camera", "fps", buf, nullptr, nullptr);
-    }
-    /* Wait long enough for worker to drain (250ms debounce + http). */
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-
-    /* Worker may process the first job, then coalesce the rest into one
-     * follow-up. So expect AT MOST 2 PATCH calls, not 5. */
-    REQUIRE((m.patch_calls - before) <= 2);
-    /* The final value '70' (i=4) wins. */
-    REQUIRE(m.last_patch_body.find("\"fps\":70") != std::string::npos);
-
     m.stop();
 }

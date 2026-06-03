@@ -15,8 +15,13 @@ option(BUILD_TESTS "Build unit tests" OFF)
 if(NOT USE_SIMULATOR)
   set(LV_USE_LINUX_DRM ON)
 endif()
-set(LV_CONF_BUILD_DISABLE_DEMOS 1)
-set(LV_CONF_BUILD_DISABLE_EXAMPLES 1)
+# LVGL 9.x builds its demos/examples as separate libs and PUBLIC-links them
+# into the `lvgl` target (env_support/cmake/os_desktop.cmake), so anything
+# linking lvgl inherits a runtime dependency on liblvgl_demos/liblvgl_examples.
+# The app uses neither — turn them off. (The gate is CONFIG_LV_BUILD_*, default
+# ON; the old LV_CONF_BUILD_DISABLE_* names are not read by 9.5.0.)
+set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
+set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(lvgl)
 

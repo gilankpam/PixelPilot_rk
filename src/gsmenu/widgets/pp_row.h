@@ -25,6 +25,7 @@ typedef enum {
     PP_ROW_UNLOCKED = 0,
     PP_ROW_LOCKED_DYNAMIC = 1,
     PP_ROW_LOCKED_OFFLINE = 2,
+    PP_ROW_LOCKED_UNAVAILABLE = 3,
 } pp_row_lock_t;
 
 void pp_row_set_locked(lv_obj_t *row, pp_row_lock_t state);

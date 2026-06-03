@@ -105,7 +105,9 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
     if (v && strcmp(v, "on") == 0) lv_obj_add_state(sw, LV_STATE_CHECKED);
     free(v);
 
-    if (pp_settings_is_locked(domain, page, key)) {
+    if (!pp_settings_is_available(domain, page, key)) {
+        pp_row_set_locked(row, PP_ROW_LOCKED_UNAVAILABLE);
+    } else if (pp_settings_is_locked(domain, page, key)) {
         pp_row_set_locked(row, PP_ROW_LOCKED_DYNAMIC);
     }
 

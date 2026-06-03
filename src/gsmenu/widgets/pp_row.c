@@ -89,6 +89,7 @@ void pp_row_set_value(lv_obj_t *row, const char *value) {
 #define PP_ROW_BUSY_ICON LV_SYMBOL_LOOP
 #define PP_ROW_LOCK_ICON_DYNAMIC LV_SYMBOL_SETTINGS
 #define PP_ROW_LOCK_ICON_OFFLINE LV_SYMBOL_WARNING
+#define PP_ROW_LOCK_ICON_UNAVAILABLE LV_SYMBOL_MINUS
 
 typedef struct {
     lv_obj_t      *spinner;       /* small label, hidden when not busy */
@@ -173,8 +174,9 @@ void pp_row_set_locked(lv_obj_t *row, pp_row_lock_t state) {
         lv_obj_set_style_opa(row, LV_OPA_COVER, 0);
     } else {
         lv_label_set_text(lbl,
-            state == PP_ROW_LOCKED_OFFLINE ? PP_ROW_LOCK_ICON_OFFLINE
-                                           : PP_ROW_LOCK_ICON_DYNAMIC);
+            state == PP_ROW_LOCKED_OFFLINE     ? PP_ROW_LOCK_ICON_OFFLINE :
+            state == PP_ROW_LOCKED_UNAVAILABLE ? PP_ROW_LOCK_ICON_UNAVAILABLE :
+                                                 PP_ROW_LOCK_ICON_DYNAMIC);
         lv_obj_clear_flag(lbl, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_state(row, LV_STATE_DISABLED);
         lv_obj_set_style_opa(row, LV_OPA_60, 0);

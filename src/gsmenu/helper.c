@@ -36,7 +36,9 @@ void pp_page_reapply_lock_state(lv_obj_t *page) {
         lv_obj_t *c = lv_obj_get_child(page, i);
         struct dpk_head *h = (struct dpk_head *)lv_obj_get_user_data(c);
         if (!h || !h->d || !h->p || !h->k) continue;
-        if (!connected) {
+        if (!pp_settings_is_available(h->d, h->p, h->k)) {
+            pp_row_set_locked(c, PP_ROW_LOCKED_UNAVAILABLE);
+        } else if (!connected) {
             pp_row_set_locked(c, PP_ROW_LOCKED_OFFLINE);
         } else if (pp_settings_is_locked(h->d, h->p, h->k)) {
             pp_row_set_locked(c, PP_ROW_LOCKED_DYNAMIC);

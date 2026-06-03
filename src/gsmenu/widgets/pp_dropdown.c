@@ -306,7 +306,9 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     }
     free(v);
 
-    if (pp_settings_is_locked(domain, page, key)) {
+    if (!pp_settings_is_available(domain, page, key)) {
+        pp_row_set_locked(row, PP_ROW_LOCKED_UNAVAILABLE);
+    } else if (pp_settings_is_locked(domain, page, key)) {
         pp_row_set_locked(row, PP_ROW_LOCKED_DYNAMIC);
     }
 

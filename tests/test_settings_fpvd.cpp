@@ -281,3 +281,34 @@ TEST_CASE("path helpers route EP_CONFIG to /config and /apply", "[fpvd][endpoint
     REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_LINK), "/link") == 0);
     REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_AIR),  "/air/apply") == 0);
 }
+
+TEST_CASE("keymap: pixelpilot rows route to EP_CONFIG + pixelpilot.* paths", "[fpvd][keymap]") {
+    const fpvd_keymap_entry_t *e;
+    e = fpvd_keymap_lookup("gs", "display", "video_scale");
+    REQUIRE(e != nullptr);
+    REQUIRE(e->endpoint == FPVD_EP_CONFIG);
+    REQUIRE(std::strcmp(e->path, "pixelpilot.videoScale") == 0);
+    REQUIRE(e->type == FPVD_T_PERCENT_TO_FRAC);
+
+    e = fpvd_keymap_lookup("gs", "display", "screen_mode");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "pixelpilot.screenMode") == 0);
+    REQUIRE(e->type == FPVD_T_STRING);
+
+    e = fpvd_keymap_lookup("gs", "display", "rtp_jitter_ms");
+    REQUIRE(std::strcmp(e->path, "pixelpilot.rtpJitterMs") == 0);
+
+    e = fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate");
+    REQUIRE(e != nullptr);
+    REQUIRE(e->endpoint == FPVD_EP_CONFIG);
+    REQUIRE(std::strcmp(e->path, "pixelpilot.dvr.reencBitrate") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+
+    e = fpvd_keymap_lookup("gs", "dvr", "dvr_osd");
+    REQUIRE(std::strcmp(e->path, "pixelpilot.dvr.osd") == 0);
+    REQUIRE(e->type == FPVD_T_BOOL);
+
+    // color correction stays unmapped (handled by the unavailable rule)
+    REQUIRE(fpvd_keymap_lookup("gs", "display", "color_correction") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_enabled") == nullptr);
+}

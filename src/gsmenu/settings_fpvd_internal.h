@@ -19,15 +19,28 @@ typedef enum {
     FPVD_T_BITRATE_KBPS,    /* UI string "15M" ↔ JSON int 15000 */
     FPVD_T_SECONDS_FROM_MIN, /* UI int minutes ↔ JSON int seconds */
     FPVD_T_PERCENT_TO_FRAC,  /* UI int 0..100 ↔ JSON float 0.0..1.0 */
+    FPVD_T_RXPOWER,          /* UI pct 1..100 ↔ GS link.txpower mBm (driver curve) */
 } fpvd_type_t;
 
+typedef enum {
+    FPVD_EP_AIR,   /* drone proxy:   /air/config + /air/apply,  GET /air/config */
+    FPVD_EP_LINK,  /* GS link coord: /link       + /link/apply, GET /link       */
+} fpvd_endpoint_t;
+
 typedef struct {
-    const char *domain;
-    const char *page;
-    const char *key;
-    const char *path;
-    fpvd_type_t type;
+    const char     *domain;
+    const char     *page;
+    const char     *key;
+    const char     *path;
+    fpvd_type_t     type;
+    fpvd_endpoint_t endpoint;
+    const char     *apply_to;  /* LINK: "both"|"gs"; AIR: NULL (ignored) */
 } fpvd_keymap_entry_t;
+
+/* Endpoint → URL path. Pure; never NULL. */
+const char *fpvd_write_path(const fpvd_keymap_entry_t *e);
+const char *fpvd_apply_path(const fpvd_keymap_entry_t *e);
+const char *fpvd_read_path (const fpvd_keymap_entry_t *e);
 
 const fpvd_keymap_entry_t *fpvd_keymap_lookup(const char *domain,
                                               const char *page,
@@ -61,9 +74,7 @@ void fpvd_http_result_free(fpvd_http_result_t *r);
 fpvd_http_result_t fpvd_http_get(const char *url);
 fpvd_http_result_t fpvd_http_patch_json(const char *url, const char *body);
 fpvd_http_result_t fpvd_http_post(const char *url);
-
-/* For use by settings_router only. Returns the static provider table. */
-const pp_settings_provider_t *pp_fpvd_provider_for_router(void);
+fpvd_http_result_t fpvd_http_post_json(const char *url, const char *body);
 
 #ifdef __cplusplus
 }

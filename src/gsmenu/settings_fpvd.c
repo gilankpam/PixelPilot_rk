@@ -49,61 +49,66 @@ static fpvd_state_t G;
 
 static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
-    { "air", "camera", "size",       "video.resolution",  FPVD_T_STRING },
-    { "air", "camera", "fps",        "video.fps",         FPVD_T_INT    },
-    { "air", "camera", "bitrate",    "video.bitrate",     FPVD_T_BITRATE_KBPS },
-    { "air", "camera", "codec",      "video.codec",       FPVD_T_ENUM   },
-    { "air", "camera", "gopsize",    "video.gopSize",     FPVD_T_FLOAT  },
-    { "air", "camera", "rc_mode",    "video.rcMode",      FPVD_T_ENUM   },
-    { "air", "camera", "qp_delta",   "video.qpDelta",     FPVD_T_INT    },
+    { "air", "camera", "size",       "video.resolution",  FPVD_T_STRING,         FPVD_EP_AIR, NULL },
+    { "air", "camera", "fps",        "video.fps",         FPVD_T_INT,            FPVD_EP_AIR, NULL },
+    { "air", "camera", "bitrate",    "video.bitrate",     FPVD_T_BITRATE_KBPS,   FPVD_EP_AIR, NULL },
+    { "air", "camera", "codec",      "video.codec",       FPVD_T_ENUM,           FPVD_EP_AIR, NULL },
+    { "air", "camera", "gopsize",    "video.gopSize",     FPVD_T_FLOAT,          FPVD_EP_AIR, NULL },
+    { "air", "camera", "rc_mode",    "video.rcMode",      FPVD_T_ENUM,           FPVD_EP_AIR, NULL },
+    { "air", "camera", "qp_delta",   "video.qpDelta",     FPVD_T_INT,            FPVD_EP_AIR, NULL },
 
     /* Camera — ROI */
-    { "air", "camera", "roi_enabled","video.roi.enabled", FPVD_T_BOOL   },
-    { "air", "camera", "roi_qp",     "video.roi.qp",      FPVD_T_INT    },
-    { "air", "camera", "roi_center", "video.roi.center",  FPVD_T_PERCENT_TO_FRAC },
-    { "air", "camera", "roi_steps",  "video.roi.steps",   FPVD_T_INT    },
+    { "air", "camera", "roi_enabled","video.roi.enabled", FPVD_T_BOOL,           FPVD_EP_AIR, NULL },
+    { "air", "camera", "roi_qp",     "video.roi.qp",      FPVD_T_INT,            FPVD_EP_AIR, NULL },
+    { "air", "camera", "roi_center", "video.roi.center",  FPVD_T_PERCENT_TO_FRAC,FPVD_EP_AIR, NULL },
+    { "air", "camera", "roi_steps",  "video.roi.steps",   FPVD_T_INT,            FPVD_EP_AIR, NULL },
 
     /* Camera — Image */
-    { "air", "camera", "mirror",     "image.mirror",      FPVD_T_BOOL   },
-    { "air", "camera", "flip",       "image.flip",        FPVD_T_BOOL   },
-    { "air", "camera", "rotate",     "image.rotate",      FPVD_T_INT    },
+    { "air", "camera", "mirror",     "image.mirror",      FPVD_T_BOOL,           FPVD_EP_AIR, NULL },
+    { "air", "camera", "flip",       "image.flip",        FPVD_T_BOOL,           FPVD_EP_AIR, NULL },
+    { "air", "camera", "rotate",     "image.rotate",      FPVD_T_INT,            FPVD_EP_AIR, NULL },
 
     /* Camera — Recording */
-    { "air", "camera", "rec_enable", "recording.enabled",    FPVD_T_BOOL },
-    { "air", "camera", "rec_split",  "recording.maxSeconds", FPVD_T_SECONDS_FROM_MIN },
-    { "air", "camera", "rec_maxmb",  "recording.maxMB",      FPVD_T_INT  },
+    { "air", "camera", "rec_enable", "recording.enabled",    FPVD_T_BOOL,            FPVD_EP_AIR, NULL },
+    { "air", "camera", "rec_split",  "recording.maxSeconds", FPVD_T_SECONDS_FROM_MIN,FPVD_EP_AIR, NULL },
+    { "air", "camera", "rec_maxmb",  "recording.maxMB",      FPVD_T_INT,             FPVD_EP_AIR, NULL },
 
-    /* Link — WFB-NG */
-    { "gs",  "wfbng", "gs_channel", "link.channel",  FPVD_T_INT },
-    { "gs",  "wfbng", "bandwidth",  "link.width",    FPVD_T_INT },
-    { "gs",  "wfbng", "txpower",    "link.txpower",  FPVD_T_INT },
-    { "air", "wfbng", "mcs_index",  "link.mcs",      FPVD_T_INT },
-    { "air", "wfbng", "stbc",       "link.stbc",     FPVD_T_BOOL },
-    { "air", "wfbng", "ldpc",       "link.ldpc",     FPVD_T_BOOL },
-    { "air", "wfbng", "fec_k",      "link.fec.k",    FPVD_T_INT },
-    { "air", "wfbng", "fec_n",      "link.fec.n",    FPVD_T_INT },
+    /* Link — shared radio (GS-local-first, pushed to drone server-side) */
+    { "gs",  "wfbng", "gs_channel", "link.channel",  FPVD_T_INT,     FPVD_EP_LINK, "both" },
+    { "gs",  "wfbng", "bandwidth",  "link.width",    FPVD_T_INT,     FPVD_EP_LINK, "both" },
+
+    /* Link — GS card power (percent slider → GS link.txpower mBm, GS-only) */
+    { "gs",  "link",  "rx_power",   "link.txpower",  FPVD_T_RXPOWER, FPVD_EP_LINK, "gs" },
+
+    /* Link — drone TX power + modulation (drone-owned) */
+    { "gs",  "wfbng", "txpower",    "link.txpower",  FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "wfbng", "mcs_index",  "link.mcs",      FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "wfbng", "stbc",       "link.stbc",     FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "wfbng", "ldpc",       "link.ldpc",     FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "wfbng", "fec_k",      "link.fec.k",    FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "wfbng", "fec_n",      "link.fec.n",    FPVD_T_INT,  FPVD_EP_AIR, NULL },
 
     /* Dynamic Link */
-    { "air", "dlink", "enabled",              "dynamicLink.enabled",              FPVD_T_BOOL },
-    { "air", "dlink", "interleaving",         "dynamicLink.interleavingSupported",FPVD_T_BOOL },
-    { "air", "dlink", "mavlink_enable",       "dynamicLink.mavlinkEnable",        FPVD_T_BOOL },
-    { "air", "dlink", "osd_enabled",          "dynamicLink.osd.enabled",          FPVD_T_BOOL },
-    { "air", "dlink", "osd_debug_latency",    "dynamicLink.osd.debugLatency",     FPVD_T_BOOL },
-    { "air", "dlink", "health_timeout_ms",    "dynamicLink.healthTimeoutMs",      FPVD_T_INT },
-    { "air", "dlink", "min_idr_interval_ms",  "dynamicLink.minIdrIntervalMs",     FPVD_T_INT },
-    { "air", "dlink", "apply_stagger_ms",     "dynamicLink.applyStaggerMs",       FPVD_T_INT },
-    { "air", "dlink", "apply_subpace_ms",     "dynamicLink.applySubPaceMs",       FPVD_T_INT },
-    { "air", "dlink", "roiqp_threshold_kbps", "dynamicLink.roiQp.thresholdKbps",  FPVD_T_INT },
-    { "air", "dlink", "roiqp_low_anchor_kbps","dynamicLink.roiQp.lowAnchorKbps",  FPVD_T_INT },
-    { "air", "dlink", "roiqp_floor",          "dynamicLink.roiQp.floor",          FPVD_T_INT },
-    { "air", "dlink", "roiqp_step",           "dynamicLink.roiQp.step",           FPVD_T_INT },
-    { "air", "dlink", "safe_mcs",             "dynamicLink.safe.mcs",             FPVD_T_INT },
-    { "air", "dlink", "safe_k",               "dynamicLink.safe.k",               FPVD_T_INT },
-    { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT },
-    { "air", "dlink", "safe_depth",           "dynamicLink.safe.depth",           FPVD_T_INT },
-    { "air", "dlink", "safe_bandwidth",       "dynamicLink.safe.bandwidth",       FPVD_T_INT },
-    { "air", "dlink", "safe_txpower_dbm",     "dynamicLink.safe.txPowerDbm",      FPVD_T_INT },
-    { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT },
+    { "air", "dlink", "enabled",              "dynamicLink.enabled",              FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "dlink", "interleaving",         "dynamicLink.interleavingSupported",FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "dlink", "mavlink_enable",       "dynamicLink.mavlinkEnable",        FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "dlink", "osd_enabled",          "dynamicLink.osd.enabled",          FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "dlink", "osd_debug_latency",    "dynamicLink.osd.debugLatency",     FPVD_T_BOOL, FPVD_EP_AIR, NULL },
+    { "air", "dlink", "health_timeout_ms",    "dynamicLink.healthTimeoutMs",      FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "min_idr_interval_ms",  "dynamicLink.minIdrIntervalMs",     FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "apply_stagger_ms",     "dynamicLink.applyStaggerMs",       FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "apply_subpace_ms",     "dynamicLink.applySubPaceMs",       FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "roiqp_threshold_kbps", "dynamicLink.roiQp.thresholdKbps",  FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "roiqp_low_anchor_kbps","dynamicLink.roiQp.lowAnchorKbps",  FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "roiqp_floor",          "dynamicLink.roiQp.floor",          FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "roiqp_step",           "dynamicLink.roiQp.step",           FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_mcs",             "dynamicLink.safe.mcs",             FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_k",               "dynamicLink.safe.k",               FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_depth",           "dynamicLink.safe.depth",           FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_bandwidth",       "dynamicLink.safe.bandwidth",       FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_txpower_dbm",     "dynamicLink.safe.txPowerDbm",      FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, NULL },
 };
 
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);
@@ -122,6 +127,16 @@ const fpvd_keymap_entry_t *fpvd_keymap_lookup(const char *d, const char *p, cons
 const fpvd_keymap_entry_t *fpvd_keymap_at(size_t i) {
     if (i >= KEYMAP_N) return NULL;
     return &KEYMAP[i];
+}
+
+const char *fpvd_write_path(const fpvd_keymap_entry_t *e) {
+    return (e && e->endpoint == FPVD_EP_LINK) ? "/link" : "/air/config";
+}
+const char *fpvd_apply_path(const fpvd_keymap_entry_t *e) {
+    return (e && e->endpoint == FPVD_EP_LINK) ? "/link/apply" : "/air/apply";
+}
+const char *fpvd_read_path(const fpvd_keymap_entry_t *e) {
+    return (e && e->endpoint == FPVD_EP_LINK) ? "/link" : "/air/config";
 }
 
 static cJSON *walk_path(cJSON *root, const char *path) {
@@ -187,6 +202,13 @@ char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type)
             return strdup(buf);
         }
         break;
+    case FPVD_T_RXPOWER:
+        /* Read-back treated as raw int (mBm) for now; rendered as percent by caller. */
+        if (cJSON_IsNumber(node)) {
+            snprintf(buf, sizeof buf, "%d", (int)node->valuedouble);
+            return strdup(buf);
+        }
+        break;
     }
     return strdup("");
 }
@@ -231,6 +253,14 @@ static cJSON *value_to_cjson(const char *value, fpvd_type_t type) {
         long v = strtol(value, &end, 10);
         if (end == value) return NULL;
         return cJSON_CreateNumber((double)v / 100.0);
+    }
+    case FPVD_T_RXPOWER: {
+        /* Conversion from percent to mBm implemented in a later task;
+         * for now pass raw int through. */
+        char *end;
+        long v = strtol(value, &end, 10);
+        if (end == value) return NULL;
+        return cJSON_CreateNumber((double)v);
     }
     }
     return NULL;

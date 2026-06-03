@@ -220,3 +220,44 @@ TEST_CASE("http: GET against impossible host returns transport failure",
     REQUIRE(r.status == 0);
     fpvd_http_result_free(&r);
 }
+
+TEST_CASE("endpoint: keymap entries carry the right endpoint + applyTo", "[fpvd][endpoint]") {
+    const fpvd_keymap_entry_t *e;
+
+    e = fpvd_keymap_lookup("air", "camera", "fps");
+    REQUIRE(e->endpoint == FPVD_EP_AIR);
+
+    e = fpvd_keymap_lookup("gs", "wfbng", "gs_channel");
+    REQUIRE(e->endpoint == FPVD_EP_LINK);
+    REQUIRE(std::strcmp(e->apply_to, "both") == 0);
+
+    e = fpvd_keymap_lookup("gs", "wfbng", "bandwidth");
+    REQUIRE(e->endpoint == FPVD_EP_LINK);
+    REQUIRE(std::strcmp(e->apply_to, "both") == 0);
+
+    /* GS card power: percent slider -> GS link.txpower, GS-only apply. */
+    e = fpvd_keymap_lookup("gs", "link", "rx_power");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "link.txpower") == 0);
+    REQUIRE(e->type == FPVD_T_RXPOWER);
+    REQUIRE(e->endpoint == FPVD_EP_LINK);
+    REQUIRE(std::strcmp(e->apply_to, "gs") == 0);
+
+    /* Drone TX power (1..63 driver units): air endpoint. */
+    e = fpvd_keymap_lookup("gs", "wfbng", "txpower");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "link.txpower") == 0);
+    REQUIRE(e->endpoint == FPVD_EP_AIR);
+}
+
+TEST_CASE("endpoint: routing helpers pick air vs link paths", "[fpvd][endpoint]") {
+    const fpvd_keymap_entry_t *air = fpvd_keymap_lookup("air", "camera", "fps");
+    REQUIRE(std::strcmp(fpvd_write_path(air), "/air/config") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(air), "/air/apply") == 0);
+    REQUIRE(std::strcmp(fpvd_read_path(air),  "/air/config") == 0);
+
+    const fpvd_keymap_entry_t *lnk = fpvd_keymap_lookup("gs", "wfbng", "gs_channel");
+    REQUIRE(std::strcmp(fpvd_write_path(lnk), "/link") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(lnk), "/link/apply") == 0);
+    REQUIRE(std::strcmp(fpvd_read_path(lnk),  "/link") == 0);
+}

@@ -8,11 +8,10 @@
 #include "gsmenu/styles.h"
 #include "gsmenu/widgets/pp_tabbar.h"
 #include "gsmenu/widgets/pp_page.h"
-#include "gsmenu/pages/display.h"
+#include "gsmenu/pages/pixelpilot.h"
 #include "gsmenu/pages/camera.h"
 #include "gsmenu/pages/link.h"
 #include "gsmenu/pages/dynamiclink.h"
-#include "gsmenu/pages/dvr.h"
 #include "gsmenu/pages/system.h"
 #include "lvosd.h"
 
@@ -70,25 +69,21 @@ void pp_menu_main(void)
     lv_obj_t *dl  = build_dynamiclink_tab(root);
     lv_obj_set_flex_grow(dl, 1);
     lv_obj_set_height(dl, LV_PCT(100));
-    lv_obj_t *dsp = build_display_tab(root);
-    lv_obj_set_flex_grow(dsp, 1);
-    lv_obj_set_height(dsp, LV_PCT(100));
-    lv_obj_t *dvr = build_dvr_tab(root);
-    lv_obj_set_flex_grow(dvr, 1);
-    lv_obj_set_height(dvr, LV_PCT(100));
+    lv_obj_t *pp  = build_pixelpilot_tab(root);
+    lv_obj_set_flex_grow(pp, 1);
+    lv_obj_set_height(pp, LV_PCT(100));
     lv_obj_t *sys = build_system_tab(root);
     lv_obj_set_flex_grow(sys, 1);
     lv_obj_set_height(sys, LV_PCT(100));
 
-    pp_tabbar_item_t items[6] = {
-        { "Camera",  LV_SYMBOL_IMAGE,     cam },
-        { "Link",    LV_SYMBOL_WIFI,      lnk },
-        { "DLink",   LV_SYMBOL_LOOP,      dl  },
-        { "Display", LV_SYMBOL_EYE_OPEN,  dsp },
-        { "DVR",     LV_SYMBOL_VIDEO,     dvr },
-        { "System",  LV_SYMBOL_SETTINGS,  sys },
+    pp_tabbar_item_t items[5] = {
+        { "Camera",     LV_SYMBOL_IMAGE,     cam },
+        { "Link",       LV_SYMBOL_WIFI,      lnk },
+        { "DLink",      LV_SYMBOL_LOOP,      dl  },
+        { "PixelPilot", LV_SYMBOL_VIDEO,     pp  },
+        { "System",     LV_SYMBOL_SETTINGS,  sys },
     };
-    pp_tabbar_t *tabbar = pp_tabbar_create(root, items, 6);
+    pp_tabbar_t *tabbar = pp_tabbar_create(root, items, 5);
     lv_obj_move_to_index(pp_tabbar_root(tabbar), 0);
     lv_obj_add_event_cb(pp_tabbar_root(tabbar), on_tabbar_cancel,
                         LV_EVENT_CANCEL, NULL);
@@ -98,9 +93,9 @@ void pp_menu_main(void)
      * so A (HOME) from inside a page returns focus to the tab strip.
      * pp_page_set_back_group also enables LV_OBJ_FLAG_EVENT_BUBBLE on
      * each child so the page's HOME handler actually receives the key. */
-    lv_obj_t *pages[6] = { cam, lnk, dl, dsp, dvr, sys };
+    lv_obj_t *pages[5] = { cam, lnk, dl, pp, sys };
     main_group = pp_tabbar_group(tabbar);
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 5; i++) {
         pp_page_set_back_group(pages[i], main_group);
     }
 

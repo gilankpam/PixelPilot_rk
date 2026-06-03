@@ -77,16 +77,14 @@ set(SIMULATOR_SOURCES
         src/gsmenu/widgets/pp_drilldown.c
         src/gsmenu/widgets/pp_toast.h
         src/gsmenu/widgets/pp_toast.c
-        src/gsmenu/pages/display.h
-        src/gsmenu/pages/display.c
+        src/gsmenu/pages/pixelpilot.h
+        src/gsmenu/pages/pixelpilot.c
         src/gsmenu/pages/camera.h
         src/gsmenu/pages/camera.c
         src/gsmenu/pages/link.h
         src/gsmenu/pages/link.c
         src/gsmenu/pages/dynamiclink.h
         src/gsmenu/pages/dynamiclink.c
-        src/gsmenu/pages/dvr.h
-        src/gsmenu/pages/dvr.c
         src/gsmenu/pages/system.h
         src/gsmenu/pages/system.c
         src/gsmenu/settings.h
@@ -135,16 +133,14 @@ set(LIB_SOURCE_FILES
         src/gsmenu/widgets/pp_drilldown.c
         src/gsmenu/widgets/pp_toast.h
         src/gsmenu/widgets/pp_toast.c
-        src/gsmenu/pages/display.h
-        src/gsmenu/pages/display.c
+        src/gsmenu/pages/pixelpilot.h
+        src/gsmenu/pages/pixelpilot.c
         src/gsmenu/pages/camera.h
         src/gsmenu/pages/camera.c
         src/gsmenu/pages/link.h
         src/gsmenu/pages/link.c
         src/gsmenu/pages/dynamiclink.h
         src/gsmenu/pages/dynamiclink.c
-        src/gsmenu/pages/dvr.h
-        src/gsmenu/pages/dvr.c
         src/gsmenu/pages/system.h
         src/gsmenu/pages/system.c
         src/gsmenu/settings.h

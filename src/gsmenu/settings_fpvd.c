@@ -136,14 +136,26 @@ const fpvd_keymap_entry_t *fpvd_keymap_at(size_t i) {
     return &KEYMAP[i];
 }
 
-const char *fpvd_write_path(const fpvd_keymap_entry_t *e) {
-    return (e && e->endpoint == FPVD_EP_LINK) ? "/link" : "/air/config";
+const char *fpvd_write_path(fpvd_endpoint_t ep) {
+    switch (ep) {
+    case FPVD_EP_LINK:   return "/link";
+    case FPVD_EP_CONFIG: return "/config";
+    default:             return "/air/config";
+    }
 }
-const char *fpvd_apply_path(const fpvd_keymap_entry_t *e) {
-    return (e && e->endpoint == FPVD_EP_LINK) ? "/link/apply" : "/air/apply";
+const char *fpvd_apply_path(fpvd_endpoint_t ep) {
+    switch (ep) {
+    case FPVD_EP_LINK:   return "/link/apply";
+    case FPVD_EP_CONFIG: return "/apply";
+    default:             return "/air/apply";
+    }
 }
-const char *fpvd_read_path(const fpvd_keymap_entry_t *e) {
-    return (e && e->endpoint == FPVD_EP_LINK) ? "/link" : "/air/config";
+const char *fpvd_read_path(fpvd_endpoint_t ep) {
+    switch (ep) {
+    case FPVD_EP_LINK:   return "/link";
+    case FPVD_EP_CONFIG: return "/config";
+    default:             return "/air/config";
+    }
 }
 
 static cJSON *walk_path(cJSON *root, const char *path) {
@@ -545,8 +557,8 @@ static void run_job_unlocked(fpvd_job_t job) {
     char *body_s = body ? cJSON_PrintUnformatted(body) : NULL;
     if (body) cJSON_Delete(body);
 
-    const char *wpath = (job.endpoint == FPVD_EP_LINK) ? "/link"       : "/air/config";
-    const char *apath = (job.endpoint == FPVD_EP_LINK) ? "/link/apply" : "/air/apply";
+    const char *wpath = fpvd_write_path(job.endpoint);
+    const char *apath = fpvd_apply_path(job.endpoint);
     char *patch_url = url_join(G.base_url, wpath);
     char *apply_url = url_join(G.base_url, apath);
     if (!patch_url || !apply_url) {

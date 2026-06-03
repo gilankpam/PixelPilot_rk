@@ -263,12 +263,21 @@ TEST_CASE("endpoint: keymap entries carry the right endpoint + applyTo", "[fpvd]
 
 TEST_CASE("endpoint: routing helpers pick air vs link paths", "[fpvd][endpoint]") {
     const fpvd_keymap_entry_t *air = fpvd_keymap_lookup("air", "camera", "fps");
-    REQUIRE(std::strcmp(fpvd_write_path(air), "/air/config") == 0);
-    REQUIRE(std::strcmp(fpvd_apply_path(air), "/air/apply") == 0);
-    REQUIRE(std::strcmp(fpvd_read_path(air),  "/air/config") == 0);
+    REQUIRE(std::strcmp(fpvd_write_path(air->endpoint), "/air/config") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(air->endpoint), "/air/apply") == 0);
+    REQUIRE(std::strcmp(fpvd_read_path(air->endpoint),  "/air/config") == 0);
 
     const fpvd_keymap_entry_t *lnk = fpvd_keymap_lookup("gs", "wfbng", "gs_channel");
-    REQUIRE(std::strcmp(fpvd_write_path(lnk), "/link") == 0);
-    REQUIRE(std::strcmp(fpvd_apply_path(lnk), "/link/apply") == 0);
-    REQUIRE(std::strcmp(fpvd_read_path(lnk),  "/link") == 0);
+    REQUIRE(std::strcmp(fpvd_write_path(lnk->endpoint), "/link") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(lnk->endpoint), "/link/apply") == 0);
+    REQUIRE(std::strcmp(fpvd_read_path(lnk->endpoint),  "/link") == 0);
+}
+
+TEST_CASE("path helpers route EP_CONFIG to /config and /apply", "[fpvd][endpoint]") {
+    REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_CONFIG), "/config") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_CONFIG), "/apply")  == 0);
+    REQUIRE(std::strcmp(fpvd_read_path (FPVD_EP_CONFIG), "/config") == 0);
+    // existing groups unchanged
+    REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_LINK), "/link") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_AIR),  "/air/apply") == 0);
 }

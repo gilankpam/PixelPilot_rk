@@ -23,8 +23,9 @@ typedef enum {
 } fpvd_type_t;
 
 typedef enum {
-    FPVD_EP_AIR,   /* drone proxy:   /air/config + /air/apply,  GET /air/config */
-    FPVD_EP_LINK,  /* GS link coord: /link       + /link/apply, GET /link       */
+    FPVD_EP_AIR,    /* drone proxy:   /air/config + /air/apply,  GET /air/config */
+    FPVD_EP_LINK,   /* GS link coord: /link       + /link/apply, GET /link       */
+    FPVD_EP_CONFIG, /* GS config:     /config     + /apply,      GET /config (pending) */
 } fpvd_endpoint_t;
 
 typedef struct {
@@ -38,9 +39,9 @@ typedef struct {
 } fpvd_keymap_entry_t;
 
 /* Endpoint → URL path. Pure; never NULL. */
-const char *fpvd_write_path(const fpvd_keymap_entry_t *e);
-const char *fpvd_apply_path(const fpvd_keymap_entry_t *e);
-const char *fpvd_read_path (const fpvd_keymap_entry_t *e);
+const char *fpvd_write_path(fpvd_endpoint_t ep);
+const char *fpvd_apply_path(fpvd_endpoint_t ep);
+const char *fpvd_read_path (fpvd_endpoint_t ep);
 
 const fpvd_keymap_entry_t *fpvd_keymap_lookup(const char *domain,
                                               const char *page,

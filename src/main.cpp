@@ -60,9 +60,6 @@ extern "C" {
 #include <iostream>
 #include "WiFiRSSIMonitor.hpp"
 #include "latency_probe.hpp"
-#include "gsmenu/gs_system.h"
-#include "gsmenu/air_actions.h"
-#include "gsmenu/gs_actions.h"
 #include "gsmenu/settings.h"
 #include "menu.h"
 
@@ -141,10 +138,6 @@ static pthread_t g_tid_dvr_reenc = 0;
 uint32_t decoded_hor_stride = 0;
 uint32_t decoded_ver_stride = 0;
 OsSensors os_sensors; // TODO: pass as argument to `main_loop`
-MenuAction airactions[MAX_ACTIONS];
-size_t airactions_count;
-MenuAction gsactions[MAX_ACTIONS];
-size_t gsactions_count;
 
 // Add global variables for plane id overrides
 uint32_t video_plane_id_override = 0;
@@ -981,7 +974,6 @@ void main_loop() {
     }
 
     while (!signal_flag) {
-        // TODO: put gsmenu main loop here
         msg_manager.check_message();
 		os_sensors.run();
 		if (RXMODE == APFPV) {
@@ -1463,52 +1455,6 @@ int main(int argc, char **argv)
             if (config["gsmenu"]["enabled"]) {
                 gsmenu_enabled = config["gsmenu"]["enabled"].as<bool>();
             }
-		if (gsmenu_enabled && config["gsmenu"]["actions"]) {
-			if (config["gsmenu"]["actions"]["air"]) {
-				const YAML::Node& actionsNode = config["gsmenu"]["actions"]["air"];
-				airactions_count = 0;
-				
-				for (YAML::const_iterator it = actionsNode.begin(); 
-					it != actionsNode.end() && airactions_count < MAX_ACTIONS; 
-					++it) {
-					
-					std::string label = (*it)["label"].as<std::string>();
-					std::string cmd = (*it)["action"].as<std::string>();
-					
-					// Access the global array at the current index
-					strncpy(airactions[airactions_count].label, label.c_str(), MAX_LABEL_LEN - 1);
-					airactions[airactions_count].label[MAX_LABEL_LEN - 1] = '\0';
-					
-					strncpy(airactions[airactions_count].action, cmd.c_str(), MAX_ACTION_LEN - 1);
-					airactions[airactions_count].action[MAX_ACTION_LEN - 1] = '\0';
-					
-					airactions_count++;
-				}
-				spdlog::debug("Parsed {} GS Actions", airactions_count);
-			}
-			if (config["gsmenu"]["actions"]["ground"]) {
-				const YAML::Node& actionsNode = config["gsmenu"]["actions"]["ground"];
-				gsactions_count = 0;
-				
-				for (YAML::const_iterator it = actionsNode.begin(); 
-					it != actionsNode.end() && gsactions_count < MAX_ACTIONS; 
-					++it) {
-					
-					std::string label = (*it)["label"].as<std::string>();
-					std::string cmd = (*it)["action"].as<std::string>();
-					
-					// Access the global array at the current index
-					strncpy(gsactions[gsactions_count].label, label.c_str(), MAX_LABEL_LEN - 1);
-					gsactions[gsactions_count].label[MAX_LABEL_LEN - 1] = '\0';
-					
-					strncpy(gsactions[gsactions_count].action, cmd.c_str(), MAX_ACTION_LEN - 1);
-					gsactions[gsactions_count].action[MAX_ACTION_LEN - 1] = '\0';
-					
-					gsactions_count++;
-				}
-				spdlog::debug("Parsed {} GS Actions", gsactions_count);
-			}
-		}
 		}
 
 		if (config["restream"] && config["restream"]["manual_ip"]) {

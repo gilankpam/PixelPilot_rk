@@ -20,7 +20,8 @@ void pp_row_set_busy(lv_obj_t *row, bool busy);
 
 /* Mark the row as read-only. Disables input and applies a greyed style.
  * `reason` selects the lock icon (LOCK = dynamic link, OFFLINE = drone
- * unreachable). When false, restores the row to interactive state. */
+ * unreachable, UNAVAILABLE = no provider route (key not backed by the active
+ * settings provider)). When false, restores the row to interactive state. */
 typedef enum {
     PP_ROW_UNLOCKED = 0,
     PP_ROW_LOCKED_DYNAMIC = 1,

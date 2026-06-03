@@ -56,7 +56,7 @@ void pp_menu_main(void)
      * values and the panel's right edge. Leaves more video visible too. */
     lv_obj_t *root = lv_obj_create(pp_menu_screen);
     lv_obj_remove_style_all(root);
-    lv_obj_set_size(root, LV_PCT(45), LV_PCT(100));
+    lv_obj_set_size(root, LV_PCT(PP_SCALE(45)), LV_PCT(100));
     lv_obj_set_pos(root, 0, 0);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
 

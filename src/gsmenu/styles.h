@@ -6,6 +6,13 @@ extern "C" {
 
 #include "lvgl/lvgl.h"
 
+/* gsmenu UI scale knob. 100 = original design size; bumped for legibility on
+ * low-res FPV goggles. PP_SCALE() scales absolute px dimensions. Font sizes are
+ * set separately to nearest Montserrat-available sizes in styles.c so the
+ * LV_SYMBOL icons (Montserrat fallback) stay aligned with the Geist text. */
+#define PP_UI_SCALE_PCT 150
+#define PP_SCALE(x) (((x) * PP_UI_SCALE_PCT) / 100)
+
 extern lv_style_t style_rootmenu;
 extern lv_style_t style_openipc;
 extern lv_style_t style_openipc_dropdown;

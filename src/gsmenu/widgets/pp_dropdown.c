@@ -65,9 +65,9 @@ static void popup_open(pp_dd_data_t *d) {
     lv_obj_t *p = lv_obj_create(top);
     lv_obj_remove_style_all(p);
     lv_obj_add_style(p, &pp_style_panel, 0);
-    lv_obj_set_style_radius(p, 6, 0);
-    lv_obj_set_style_pad_all(p, 4, 0);
-    lv_obj_set_style_shadow_width(p, 16, 0);
+    lv_obj_set_style_radius(p, PP_SCALE(6), 0);
+    lv_obj_set_style_pad_all(p, PP_SCALE(4), 0);
+    lv_obj_set_style_shadow_width(p, PP_SCALE(16), 0);
     lv_obj_set_style_shadow_opa(p, LV_OPA_50, 0);
     lv_obj_set_style_shadow_color(p, lv_color_hex(0x000000), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
@@ -75,7 +75,7 @@ static void popup_open(pp_dd_data_t *d) {
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Width: comfortable fixed column. Height: clamp to visible page. */
-    lv_obj_set_width(p, 180);
+    lv_obj_set_width(p, PP_SCALE(180));
     lv_obj_set_style_max_height(p, lv_display_get_vertical_resolution(NULL) - 80, 0);
     lv_obj_set_height(p, LV_SIZE_CONTENT);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -107,10 +107,10 @@ static void popup_open(pp_dd_data_t *d) {
         lv_obj_t *item = lv_obj_create(p);
         lv_obj_remove_style_all(item);
         lv_obj_set_width(item, LV_PCT(100));
-        lv_obj_set_height(item, 26);
-        lv_obj_set_style_pad_hor(item, 10, 0);
-        lv_obj_set_style_pad_ver(item, 4, 0);
-        lv_obj_set_style_radius(item, 4, 0);
+        lv_obj_set_height(item, PP_SCALE(26));
+        lv_obj_set_style_pad_hor(item, PP_SCALE(10), 0);
+        lv_obj_set_style_pad_ver(item, PP_SCALE(4), 0);
+        lv_obj_set_style_radius(item, PP_SCALE(4), 0);
         lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
         if (i == cur) {
             lv_obj_set_style_bg_color(item, lv_color_hex(0x4C60D8), 0);
@@ -248,7 +248,7 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     lv_obj_add_style(row, &pp_style_row, 0);
     lv_obj_add_style(row, &pp_style_row_focus, LV_STATE_FOCUS_KEY);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, 36);
+    lv_obj_set_height(row, PP_SCALE(36));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
@@ -257,18 +257,18 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     if (icon_text) {
         lv_obj_t *icon = lv_label_create(row);
         lv_label_set_text(icon, icon_text);
-        lv_obj_set_style_pad_right(icon, 12, 0);
+        lv_obj_set_style_pad_right(icon, PP_SCALE(12), 0);
     }
 
     lv_obj_t *label_obj = lv_label_create(row);
     lv_label_set_text(label_obj, label);
     lv_obj_set_style_min_width(label_obj, 200, 0);
-    lv_obj_set_style_pad_right(label_obj, 16, 0);
+    lv_obj_set_style_pad_right(label_obj, PP_SCALE(16), 0);
     lv_obj_set_flex_grow(label_obj, 1);
 
     lv_obj_t *value_label = lv_label_create(row);
     lv_label_set_text(value_label, "—");
-    lv_obj_set_style_pad_right(value_label, 8, 0);
+    lv_obj_set_style_pad_right(value_label, PP_SCALE(8), 0);
 
     /* Hidden dropdown — we drive it with keys, not its own popup.
      * Our own popup (popup_open) renders all options visibly. */

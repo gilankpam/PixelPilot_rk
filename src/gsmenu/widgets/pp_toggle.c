@@ -68,7 +68,7 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
     lv_obj_add_style(row, &pp_style_row, 0);
     lv_obj_add_style(row, &pp_style_row_focus, LV_STATE_FOCUS_KEY);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, 36);
+    lv_obj_set_height(row, PP_SCALE(36));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
@@ -89,7 +89,7 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
     lv_obj_t *sw = lv_switch_create(row);
     lv_obj_add_style(sw, &pp_style_switch_on,
                      LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_set_size(sw, 40, 22);
+    lv_obj_set_size(sw, PP_SCALE(40), PP_SCALE(22));
 
     pp_toggle_data_t *d = calloc(1, sizeof(*d));
     d->domain = strdup(domain);

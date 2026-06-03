@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>   /* getenv: PP_PANEL_FX opt-in for the costly panel effects */
+#include "styles.h"   /* PP_SCALE + style/ font declarations */
 
 /* Geist font instances loaded via lv_tiny_ttf at startup. NULL if the
  * TTF wasn't found at any known prefix — the styles fall back to the
@@ -30,13 +31,13 @@ static lv_font_t *load_geist(int size) {
 }
 
 const lv_font_t *pp_font_geist_14(void) {
-    return g_font_geist_14 ? g_font_geist_14 : &lv_font_montserrat_14;
+    return g_font_geist_14 ? g_font_geist_14 : &lv_font_montserrat_22;
 }
 const lv_font_t *pp_font_geist_16(void) {
-    return g_font_geist_16 ? g_font_geist_16 : &lv_font_montserrat_16;
+    return g_font_geist_16 ? g_font_geist_16 : &lv_font_montserrat_24;
 }
 const lv_font_t *pp_font_geist_22(void) {
-    return g_font_geist_22 ? g_font_geist_22 : &lv_font_montserrat_22;
+    return g_font_geist_22 ? g_font_geist_22 : &lv_font_montserrat_32;
 }
 
 
@@ -70,17 +71,21 @@ int style_init(void) {
      * Geist is a normal text typeface and does not include the
      * LV_SYMBOL_* private-use glyphs. Chain Montserrat at the same
      * size as the fallback font so icons keep rendering inline. */
+    /* Sizes are the ~1.5x-scaled values (14/16/22 -> 22/24/32) for goggle
+     * legibility. They land on Montserrat-available sizes so the LV_SYMBOL
+     * icon fallback matches the Geist text size exactly. The pp_font_geist_*
+     * accessor names refer to their original role, not the literal px. */
     if (!g_font_geist_14) {
-        g_font_geist_14 = load_geist(14);
-        if (g_font_geist_14) g_font_geist_14->fallback = &lv_font_montserrat_14;
+        g_font_geist_14 = load_geist(22);
+        if (g_font_geist_14) g_font_geist_14->fallback = &lv_font_montserrat_22;
     }
     if (!g_font_geist_16) {
-        g_font_geist_16 = load_geist(16);
-        if (g_font_geist_16) g_font_geist_16->fallback = &lv_font_montserrat_16;
+        g_font_geist_16 = load_geist(24);
+        if (g_font_geist_16) g_font_geist_16->fallback = &lv_font_montserrat_24;
     }
     if (!g_font_geist_22) {
-        g_font_geist_22 = load_geist(22);
-        if (g_font_geist_22) g_font_geist_22->fallback = &lv_font_montserrat_22;
+        g_font_geist_22 = load_geist(32);
+        if (g_font_geist_22) g_font_geist_22->fallback = &lv_font_montserrat_32;
     }
 
     lv_style_reset(&style_rootmenu);
@@ -182,7 +187,7 @@ int style_init(void) {
     lv_style_set_border_color(&pp_style_tabbar, lv_color_hex(0xFFFFFF));
     lv_style_set_border_opa(&pp_style_tabbar, 33);
     lv_style_set_border_width(&pp_style_tabbar, 1);
-    lv_style_set_pad_ver(&pp_style_tabbar, 16);
+    lv_style_set_pad_ver(&pp_style_tabbar, PP_SCALE(16));
     lv_style_set_radius(&pp_style_tabbar, 0);
 
     lv_style_init(&pp_style_tab);
@@ -190,7 +195,7 @@ int style_init(void) {
     lv_style_set_text_color(&pp_style_tab, c_text);
     lv_style_set_text_opa(&pp_style_tab, 115);
     lv_style_set_text_font(&pp_style_tab, pp_font_geist_14());
-    lv_style_set_pad_ver(&pp_style_tab, 12);
+    lv_style_set_pad_ver(&pp_style_tab, PP_SCALE(12));
     lv_style_set_radius(&pp_style_tab, 0);
     lv_style_set_border_width(&pp_style_tab, 0);
 
@@ -203,15 +208,15 @@ int style_init(void) {
     lv_style_set_text_color(&pp_style_section_hdr, c_text);
     lv_style_set_text_opa(&pp_style_section_hdr, 102);
     lv_style_set_text_font(&pp_style_section_hdr, pp_font_geist_14());
-    lv_style_set_text_letter_space(&pp_style_section_hdr, 2);
-    lv_style_set_pad_top(&pp_style_section_hdr, 8);
-    lv_style_set_pad_left(&pp_style_section_hdr, 20);
-    lv_style_set_pad_bottom(&pp_style_section_hdr, 4);
+    lv_style_set_text_letter_space(&pp_style_section_hdr, PP_SCALE(2));
+    lv_style_set_pad_top(&pp_style_section_hdr, PP_SCALE(8));
+    lv_style_set_pad_left(&pp_style_section_hdr, PP_SCALE(20));
+    lv_style_set_pad_bottom(&pp_style_section_hdr, PP_SCALE(4));
 
     lv_style_init(&pp_style_row);
     lv_style_set_bg_opa(&pp_style_row, LV_OPA_TRANSP);
-    lv_style_set_pad_hor(&pp_style_row, 20);
-    lv_style_set_pad_ver(&pp_style_row, 8);
+    lv_style_set_pad_hor(&pp_style_row, PP_SCALE(20));
+    lv_style_set_pad_ver(&pp_style_row, PP_SCALE(8));
     lv_style_set_text_color(&pp_style_row, c_text);
     lv_style_set_text_font(&pp_style_row, pp_font_geist_16());
     lv_style_set_border_side(&pp_style_row, LV_BORDER_SIDE_BOTTOM);
@@ -226,8 +231,8 @@ int style_init(void) {
     lv_style_set_border_side(&pp_style_row_focus, LV_BORDER_SIDE_LEFT);
     lv_style_set_border_color(&pp_style_row_focus, c_accent);
     lv_style_set_border_opa(&pp_style_row_focus, LV_OPA_COVER);
-    lv_style_set_border_width(&pp_style_row_focus, 2);
-    lv_style_set_pad_left(&pp_style_row_focus, 18);
+    lv_style_set_border_width(&pp_style_row_focus, PP_SCALE(2));
+    lv_style_set_pad_left(&pp_style_row_focus, PP_SCALE(18));
 
     lv_style_init(&pp_style_value_focus);
     lv_style_set_text_color(&pp_style_value_focus, c_accent);

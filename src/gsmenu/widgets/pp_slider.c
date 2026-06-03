@@ -212,7 +212,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_add_style(row, &pp_style_row, 0);
     lv_obj_add_style(row, &pp_style_row_focus, LV_STATE_FOCUS_KEY);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, 36);
+    lv_obj_set_height(row, PP_SCALE(36));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);

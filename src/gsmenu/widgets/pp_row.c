@@ -35,7 +35,7 @@ lv_obj_t *pp_row_text(lv_obj_t *parent_page,
     lv_obj_add_style(row, &pp_style_row, 0);
     lv_obj_add_style(row, &pp_style_row_focus, LV_STATE_FOCUS_KEY);
     lv_obj_set_width(row, LV_PCT(100));
-    lv_obj_set_height(row, 36);
+    lv_obj_set_height(row, PP_SCALE(36));
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
@@ -45,7 +45,7 @@ lv_obj_t *pp_row_text(lv_obj_t *parent_page,
     if (icon_text) {
         lv_obj_t *icon = lv_label_create(row);
         lv_label_set_text(icon, icon_text);
-        lv_obj_set_style_pad_right(icon, 12, 0);
+        lv_obj_set_style_pad_right(icon, PP_SCALE(12), 0);
     }
 
     lv_obj_t *label_obj = lv_label_create(row);
@@ -133,7 +133,7 @@ static lv_obj_t *ensure_spinner(lv_obj_t *row, pp_row_state_t *s) {
     s->spinner = lv_label_create(row);
     lv_label_set_text(s->spinner, PP_ROW_BUSY_ICON);
     lv_obj_set_style_text_color(s->spinner, lv_color_hex(0x6B7FFF), 0);
-    lv_obj_set_style_pad_left(s->spinner, 6, 0);
+    lv_obj_set_style_pad_left(s->spinner, PP_SCALE(6), 0);
     lv_obj_add_flag(s->spinner, LV_OBJ_FLAG_HIDDEN);
     return s->spinner;
 }
@@ -143,7 +143,7 @@ static lv_obj_t *ensure_lock_label(lv_obj_t *row, pp_row_state_t *s) {
     s->lock_label = lv_label_create(row);
     lv_label_set_text(s->lock_label, PP_ROW_LOCK_ICON_DYNAMIC);
     lv_obj_set_style_text_color(s->lock_label, lv_color_hex(0xAAAAAA), 0);
-    lv_obj_set_style_pad_left(s->lock_label, 6, 0);
+    lv_obj_set_style_pad_left(s->lock_label, PP_SCALE(6), 0);
     lv_obj_add_flag(s->lock_label, LV_OBJ_FLAG_HIDDEN);
     return s->lock_label;
 }

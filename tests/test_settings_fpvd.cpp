@@ -296,6 +296,7 @@ TEST_CASE("keymap: pixelpilot rows route to EP_CONFIG + pixelpilot.* paths", "[f
     REQUIRE(e->type == FPVD_T_STRING);
 
     e = fpvd_keymap_lookup("gs", "display", "rtp_jitter_ms");
+    REQUIRE(e != nullptr);
     REQUIRE(std::strcmp(e->path, "pixelpilot.rtpJitterMs") == 0);
 
     e = fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate");

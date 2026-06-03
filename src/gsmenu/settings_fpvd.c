@@ -115,17 +115,17 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, NULL },
 
     /* PixelPilot launch config → fpvd /config (pixelpilot.*); staged, applied on demand */
-    { "gs","display","screen_mode",      "pixelpilot.screenMode",          FPVD_T_STRING,          FPVD_EP_CONFIG, NULL },
-    { "gs","display","video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_CONFIG, NULL },
-    { "gs","display","rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_mode",             "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","rec_fps",              "pixelpilot.dvr.framerate",       FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_max_size",         "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_reenc_codec",      "pixelpilot.dvr.reencCodec",      FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_reenc_resolution", "pixelpilot.dvr.reencResolution", FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_reenc_fps",        "pixelpilot.dvr.reencFps",        FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_reenc_bitrate",    "pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs","dvr","dvr_osd",              "pixelpilot.dvr.osd",             FPVD_T_BOOL,            FPVD_EP_CONFIG, NULL },
+    { "gs",  "display", "screen_mode",      "pixelpilot.screenMode",          FPVD_T_STRING,          FPVD_EP_CONFIG, NULL },
+    { "gs",  "display", "video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_CONFIG, NULL },
+    { "gs",  "display", "rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_mode",         "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "rec_fps",          "pixelpilot.dvr.framerate",       FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_max_size",     "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_reenc_codec",  "pixelpilot.dvr.reencCodec",      FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_reenc_resolution", "pixelpilot.dvr.reencResolution", FPVD_T_ENUM,        FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_reenc_fps",    "pixelpilot.dvr.reencFps",        FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_reenc_bitrate","pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
+    { "gs",  "dvr",     "dvr_osd",          "pixelpilot.dvr.osd",             FPVD_T_BOOL,            FPVD_EP_CONFIG, NULL },
 };
 
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);

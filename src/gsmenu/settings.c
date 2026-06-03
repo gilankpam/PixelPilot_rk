@@ -109,6 +109,25 @@ void pp_settings_set_visibility(bool visible) {
     }
 }
 
+bool pp_settings_is_available(const char *d, const char *p, const char *k) {
+    if (g_provider && g_provider->is_available) {
+        return g_provider->is_available(d, p, k);
+    }
+    return true;
+}
+
+void pp_settings_apply(pp_settings_done_cb on_done, void *user_data) {
+    if (g_provider && g_provider->apply) {
+        g_provider->apply(on_done, user_data);
+    } else if (on_done) {
+        on_done(-1, "apply not supported", user_data);
+    }
+}
+
+bool pp_settings_has_pending(void) {
+    return (g_provider && g_provider->has_pending) ? g_provider->has_pending() : false;
+}
+
 char *pp_settings_get_options(const char *domain, const char *page, const char *key) {
     if (!domain || !page || !key) return NULL;
     if (strcmp(domain, "gs") == 0 && strcmp(page, "wfbng") == 0 && strcmp(key, "gs_channel") == 0)

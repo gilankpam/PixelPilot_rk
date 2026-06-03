@@ -143,3 +143,12 @@ TEST_CASE("dispatch: forwards is_locked / is_connected when provider has them") 
     REQUIRE(pp_settings_is_connected() == false);
     REQUIRE(connected_called == true);
 }
+
+TEST_CASE("provider wrappers return safe defaults when methods are absent", "[settings][caps]") {
+    pp_settings_register_stub();                 // stub omits the new methods
+    REQUIRE(pp_settings_is_available("x","y","z") == true);   // default available
+    REQUIRE(pp_settings_has_pending() == false);             // default no pending
+    int rc = 99;
+    pp_settings_apply([](int r, const char*, void* ud){ *(int*)ud = r; }, &rc);
+    REQUIRE(rc == -1);                            // no apply method → error callback
+}

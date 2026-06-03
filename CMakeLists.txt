@@ -215,6 +215,7 @@ if(USE_SIMULATOR)
     add_executable(settings_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_dummy.c
+      src/gsmenu/settings_stub.c
       src/gsmenu/settings_gs_enum.c
       ${PP_CJSON_SOURCES}
       src/gsmenu/widgets/pp_slider_bounds.c

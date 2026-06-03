@@ -52,6 +52,17 @@ typedef struct {
     /* Optional: hint about UI visibility so the backend can throttle polls.
      * NULL pointer → dispatcher no-op. */
     void  (*set_visibility)(bool visible);
+
+    /* Optional: returns true if the key is backed by this provider (has a
+     * route). NULL → dispatcher returns true (row stays interactive). */
+    bool  (*is_available)(const char *domain, const char *page, const char *key);
+
+    /* Optional: commit staged changes (e.g. POST /apply). on_done may be NULL.
+     * NULL → dispatcher calls on_done(-1, ...). */
+    void  (*apply)(pp_settings_done_cb on_done, void *user_data);
+
+    /* Optional: true if there are staged-but-unapplied changes. NULL → false. */
+    bool  (*has_pending)(void);
 } pp_settings_provider_t;
 
 /* Install (or replace) the active provider. Pointer must outlive the program.
@@ -81,6 +92,10 @@ bool  pp_settings_is_connected(void);
 void  pp_settings_set_snapshot_listener(pp_settings_snapshot_cb cb,
                                         void *user_data);
 void  pp_settings_set_visibility(bool visible);
+bool  pp_settings_is_available(const char *domain, const char *page,
+                               const char *key);
+void  pp_settings_apply(pp_settings_done_cb on_done, void *user_data);
+bool  pp_settings_has_pending(void);
 
 /* Registers the built-in no-op stub provider. */
 void pp_settings_register_stub(void);

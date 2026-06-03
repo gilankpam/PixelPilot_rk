@@ -31,6 +31,14 @@ char *pp_rxpower_build_json(const char *const *nics,
                             const pp_nic_driver_t *driver_for,
                             int pct);
 
+/* Inverse of pp_rxpower_pct_to_driver_value: map a driver value back to a
+ * percent (1..100, rounded). Returns 0 and sets *out_pct=0 for UNKNOWN. */
+int pp_rxpower_driver_value_to_pct(pp_nic_driver_t driver, int value, int *out_pct);
+
+/* Driver of the first wlx* NIC (via the enumeration helpers above), or
+ * PP_NIC_UNKNOWN when none is present. Honors PP_GS_SYS_CLASS_NET in tests. */
+pp_nic_driver_t pp_rxpower_primary_driver(void);
+
 /* Enumerate wlx* interfaces from /sys/class/net (path overridable via env
  * PP_GS_SYS_CLASS_NET — used in tests). Returns NULL-terminated heap array
  * of heap-allocated strings; caller frees each + array. */

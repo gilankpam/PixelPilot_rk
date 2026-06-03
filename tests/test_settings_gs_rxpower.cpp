@@ -67,3 +67,25 @@ TEST_CASE("rxpower: json all-unknown returns NULL", "[gs][rxpower]") {
     char *j = pp_rxpower_build_json(nics, drv, 50);
     REQUIRE(j == nullptr);
 }
+
+TEST_CASE("rxpower: value -> pct inverts the forward map", "[gs][rxpower]") {
+    int p = 0;
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88X2EU, 1950, &p) == 1);
+    REQUIRE(p == 50);
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88X2EU, 1019, &p) == 1);
+    REQUIRE(p == 1);
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88X2EU, 2900, &p) == 1);
+    REQUIRE(p == 100);
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88XXAU_WFB, -2000, &p) == 1);
+    REQUIRE(p == 50);
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88XXAU_WFB, -1020, &p) == 1);
+    REQUIRE(p == 1);
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_RTL88XXAU_WFB, -3000, &p) == 1);
+    REQUIRE(p == 100);
+}
+
+TEST_CASE("rxpower: value -> pct unknown driver returns 0", "[gs][rxpower]") {
+    int p = 77;
+    REQUIRE(pp_rxpower_driver_value_to_pct(PP_NIC_UNKNOWN, 1500, &p) == 0);
+    REQUIRE(p == 0);
+}

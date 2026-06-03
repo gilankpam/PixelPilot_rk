@@ -59,7 +59,7 @@ void pp_menu_main(void)
     lv_obj_set_pos(root, 0, 0);
     lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
 
-    /* Build pages — Camera + Display are real, others are placeholders. */
+    /* Build the five tab pages. */
     lv_obj_t *cam = build_camera_tab(root);
     lv_obj_set_flex_grow(cam, 1);
     lv_obj_set_height(cam, LV_PCT(100));

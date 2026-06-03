@@ -2,6 +2,7 @@
 #include "lvgl/src/libs/tiny_ttf/lv_tiny_ttf.h"
 #include <stdio.h>
 #include <stddef.h>
+#include <stdlib.h>   /* getenv: PP_PANEL_FX opt-in for the costly panel effects */
 
 /* Geist font instances loaded via lv_tiny_ttf at startup. NULL if the
  * TTF wasn't found at any known prefix — the styles fall back to the
@@ -144,6 +145,14 @@ int style_init(void) {
     lv_style_set_radius(&pp_style_panel, 0);
     lv_style_set_pad_all(&pp_style_panel, 0);
 
+    /* The two new v9.5 software effects below (native backdrop blur + Gaussian
+     * drop shadow) are the dominant gsmenu nav-slowness factor on the RK3566
+     * ground station: ~250 ms of the per-render cost, on top of which they
+     * neither vectorize (NEON) nor parallelize across draw units (the IIR blur
+     * is one sequential whole-panel task). Disabled by default for responsive
+     * navigation; set PP_PANEL_FX=1 to restore the look on capable hardware.
+     * See docs/superpowers/notes/2026-06-03-gsmenu-nav-slowness-handoff.md. */
+    if (getenv("PP_PANEL_FX")) {
     /* Native backdrop blur — blurs the live-video content behind each page panel
      * (LVGL v9.5+). Radius 8 is a conservative starting value; tune after
      * interactive verification. blur_backdrop=true requires bg_opa < LV_OPA_COVER
@@ -157,6 +166,7 @@ int style_init(void) {
     lv_style_set_drop_shadow_opa(&pp_style_panel, LV_OPA_50);
     lv_style_set_drop_shadow_color(&pp_style_panel, lv_color_black());
     lv_style_set_drop_shadow_offset_y(&pp_style_panel, 4);
+    }
 
     /* ALT state variant — distinguishing bg color for future day/night theme.
      * Applied when LV_STATE_ALT is set on the panel object; no user-facing

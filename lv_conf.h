@@ -191,7 +191,11 @@
 
     /** Set number of draw units.
      *  - > 1 requires operating system to be enabled in `LV_USE_OS`.
-     *  - > 1 means multiple threads will render the screen in parallel. */
+     *  - > 1 means multiple threads will render the screen in parallel.
+     *  NOTE: keep at 1. >1 races the tiny_ttf (Geist) glyph/bitmap caches across
+     *  draw-unit threads — only lv_cache itself is mutexed, the label glyph draw
+     *  path is not — producing intermittently blank letters. The NEON fix below
+     *  is the real win; parallel SW rendering needs a thread-safe font path first. */
     #define LV_DRAW_SW_DRAW_UNIT_CNT    1
 
     /** Use Arm-2D to accelerate software (sw) rendering. */
@@ -218,8 +222,11 @@
         #define LV_DRAW_SW_CIRCLE_CACHE_SIZE 4
     #endif
 
-    /** Use NEON SIMD acceleration on ARM targets; fall back to plain C on x86/sim */
-    #ifdef __ARM_NEON__
+    /** Use NEON SIMD acceleration on ARM targets; fall back to plain C on x86/sim.
+     * NOTE: AArch64 defines __ARM_NEON (NEON is mandatory in ARMv8-A); the legacy
+     * __ARM_NEON__ spelling is AArch32-only, so checking only it silently disabled
+     * NEON on this aarch64 GS build. Accept both. */
+    #if defined(__ARM_NEON__) || defined(__ARM_NEON)
         #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NEON
     #else
         #define  LV_USE_DRAW_SW_ASM     LV_DRAW_SW_ASM_NONE

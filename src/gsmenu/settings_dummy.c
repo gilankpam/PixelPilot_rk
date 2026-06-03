@@ -90,6 +90,8 @@ static const dummy_entry_t g_seed[] = {
 
     /* Display */
     { "video_scale",      "100" },
+    { "screen_mode",      "1920x1080@60" },
+    { "rtp_jitter_ms",    "5" },
     { "color_correction", "off" },
     { "cc_gain",          "25" },
     { "cc_offset",        "0" },
@@ -100,7 +102,7 @@ static const dummy_entry_t g_seed[] = {
     { "rec_fps",              "60" },
     { "dvr_max_size",         "4000" },
     { "dvr_reenc_codec",      "h265" },
-    { "dvr_reenc_resolution", "1920x1080" },
+    { "dvr_reenc_resolution", "1080p" },
     { "dvr_reenc_fps",        "60" },
     { "dvr_reenc_bitrate",    "8000" },
     { "dvr_osd",              "on" },
@@ -252,12 +254,23 @@ static void dummy_set_async(const char *d, const char *p, const char *k,
     lv_timer_set_repeat_count(t, 1);
 }
 
+static bool dummy_is_available(const char *d, const char *p, const char *k) {
+    (void)d; (void)p; (void)k; return true;   /* sim: every row is live */
+}
+static void dummy_apply(pp_settings_done_cb cb, void *ud) {
+    if (cb) cb(0, NULL, ud);                   /* sim: no-op success */
+}
+static bool dummy_has_pending(void) { return false; }
+
 static const pp_settings_provider_t g_dummy = {
     .set       = dummy_set,
     .get       = dummy_get,
     .set_async = dummy_set_async,
     .is_locked = dummy_is_locked,
     .set_snapshot_listener = dummy_set_snapshot_listener,
+    .is_available = dummy_is_available,
+    .apply        = dummy_apply,
+    .has_pending  = dummy_has_pending,
 };
 
 void pp_settings_register_dummy(void) {

@@ -255,7 +255,11 @@ static void dummy_set_async(const char *d, const char *p, const char *k,
 }
 
 static bool dummy_is_available(const char *d, const char *p, const char *k) {
-    (void)d; (void)p; (void)k; return true;   /* sim: every row is live */
+    (void)d; (void)p; (void)k;
+    /* sim: every row is live — the dummy has no keymap to gate on. Intentionally
+     * diverges from the real prov_is_available (keymap-gated) so new UI rows stay
+     * exercisable in the simulator before their fpvd route exists. */
+    return true;
 }
 static void dummy_apply(pp_settings_done_cb cb, void *ud) {
     if (cb) cb(0, NULL, ud);                   /* sim: no-op success */

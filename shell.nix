@@ -9,5 +9,7 @@ pkgs.mkShell {
     pkgs.spdlog
     pkgs.fmt
     pkgs.curl
+    pkgs.SDL2            # lvgl SDL driver (USE_SIMULATOR sim + host tests)
+    pkgs.libpng         # lvgl png decoder + find_package(PNG)
   ];
 }

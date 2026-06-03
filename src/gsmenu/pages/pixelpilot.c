@@ -48,7 +48,7 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
                 "1920x1080@60\n1920x1080@120\n1280x720@60\n1280x720@120\n"
                 "2560x1440@60\n3840x2160@60");
     pp_slider(page, LV_SYMBOL_IMAGE, "Video Scale",
-              "gs", "display", "video_scale", 50, 200);
+              "gs", "display", "video_scale", 50, 100);
     pp_slider(page, LV_SYMBOL_SETTINGS, "RTP Jitter (ms)",
               "gs", "display", "rtp_jitter_ms", 0, 50);
     pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Color correction",
@@ -73,7 +73,7 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
                 "gs", "dvr", "dvr_reenc_codec", "h264\nh265");
     pp_dropdown(page, LV_SYMBOL_VIDEO, "Resolution",
                 "gs", "dvr", "dvr_reenc_resolution",
-                "1920x1080\n1280x720\n854x480");
+                "1080p\n720p");
     pp_dropdown(page, LV_SYMBOL_REFRESH, "Re-encode FPS",
                 "gs", "dvr", "dvr_reenc_fps", "30\n60");
     pp_dropdown(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",

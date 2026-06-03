@@ -578,8 +578,8 @@ static void run_job_unlocked(fpvd_job_t job) {
             pp_nic_driver_t drv = pp_rxpower_primary_driver();
             int mbm = 0;
             if (!pp_rxpower_pct_to_driver_value(drv, atoi(job.value), &mbm)) {
-                schedule_done(job.on_done, job.user_data, -1, "No supported NIC driver");
-                return;
+                rc = -1; snprintf(err, sizeof err, "No supported NIC driver");
+                goto done;   /* nothing allocated yet; frees only NULLs */
             }
             char mbm_s[16]; snprintf(mbm_s, sizeof mbm_s, "%d", mbm);
             body = fpvd_build_patch_body(job.path, mbm_s, FPVD_T_INT);
@@ -591,9 +591,8 @@ static void run_job_unlocked(fpvd_job_t job) {
 
         patch_url = url_join(G.base_url, fpvd_write_path(job.endpoint));
         if (!patch_url) {
-            if (body_s) free(body_s);
-            schedule_done(job.on_done, job.user_data, -1, "Out of memory");
-            return;
+            rc = -1; snprintf(err, sizeof err, "Out of memory");
+            goto done;
         }
 
         fpvd_http_result_t r = fpvd_http_patch_json(patch_url, body_s ? body_s : "{}");
@@ -611,15 +610,14 @@ static void run_job_unlocked(fpvd_job_t job) {
         fpvd_http_result_free(&r);
 
         /* EP_CONFIG rows stage only: a successful PATCH marks pending dirty and
-         * stops here (no apply). AIR/LINK fall through to apply immediately. */
+         * stops here (no apply). AIR/LINK fall through to apply immediately.
+         * rc==0 and err is empty here, so done: reports success with NULL. */
         if (rc == 0 && job.endpoint == FPVD_EP_CONFIG) {
             pthread_mutex_lock(&G.mu);
             G.config_dirty = true;
             refresh_snapshot_unlocked();
             pthread_mutex_unlock(&G.mu);
-            schedule_done(job.on_done, job.user_data, 0, NULL);
-            free(patch_url); if (body_s) free(body_s);
-            return;
+            goto done;
         }
     }
 
@@ -627,9 +625,8 @@ static void run_job_unlocked(fpvd_job_t job) {
     if (rc == 0) {
         apply_url = url_join(G.base_url, fpvd_apply_path(job.endpoint));
         if (!apply_url) {
-            free(patch_url); if (body_s) free(body_s);
-            schedule_done(job.on_done, job.user_data, -1, "Out of memory");
-            return;
+            rc = -1; snprintf(err, sizeof err, "Out of memory");
+            goto done;
         }
         fpvd_http_result_t r;
         if (job.endpoint == FPVD_EP_LINK) {
@@ -665,8 +662,13 @@ static void run_job_unlocked(fpvd_job_t job) {
         pthread_mutex_unlock(&G.mu);
     }
 
+done:
+    /* Single exit: every path lands here with rc/err set. The three URL/body
+     * pointers are NULL-initialised, so free(NULL) is safe on early returns. */
     schedule_done(job.on_done, job.user_data, rc, err[0] ? err : NULL);
-    free(patch_url); free(apply_url); if (body_s) free(body_s);
+    free(patch_url);
+    free(apply_url);
+    free(body_s);
 }
 
 /* -------------------------------------------------------------------------
@@ -728,13 +730,15 @@ static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
         return;
     }
     fpvd_job_t *j = &G.queue[G.queue_n++];
+    /* Zero the slot first: it may be reused from a prior apply-only job, so any
+     * field not explicitly written below (notably apply_only and apply_to) must
+     * not inherit stale values. New job fields then auto-zero by default. */
+    memset(j, 0, sizeof *j);
     strncpy(j->path,  e->path, sizeof j->path  - 1); j->path [sizeof j->path -1] = '\0';
     strncpy(j->value, value,   sizeof j->value - 1); j->value[sizeof j->value-1] = '\0';
     j->type       = e->type;
     j->endpoint   = e->endpoint;
-    j->apply_only = false;   /* slot may be reused from a prior apply-only job */
     if (e->apply_to) { strncpy(j->apply_to, e->apply_to, sizeof j->apply_to - 1); j->apply_to[sizeof j->apply_to - 1] = '\0'; }
-    else j->apply_to[0] = '\0';
     j->on_done   = cb;
     j->user_data = ud;
 }

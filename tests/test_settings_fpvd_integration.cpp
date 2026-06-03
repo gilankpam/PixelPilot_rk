@@ -220,6 +220,9 @@ TEST_CASE("integration: pixelpilot row stages via /config, no apply; Apply posts
     install_provider_pointing_at(m.port);
     wait_first_poll(m);
 
+    /* The mock registers Get("/config"); httplib matches on path and ignores
+     * the "?pending=true" query, so the staged-snapshot read still resolves. */
+
     /* a DVR row stages: PATCH /config, NO /apply */
     pp_settings_set_async("gs", "dvr", "dvr_reenc_bitrate", "12000", nullptr, nullptr);
     for (int i = 0; i < 200 && m.config_patch == 0; i++)
@@ -227,6 +230,11 @@ TEST_CASE("integration: pixelpilot row stages via /config, no apply; Apply posts
     REQUIRE(m.config_patch >= 1);
     REQUIRE(m.apply_post == 0);                          // staged, not applied
     REQUIRE(m.last_config_patch_body.find("\"reencBitrate\":12000") != std::string::npos);
+    /* Staging sets config_dirty AFTER the PATCH returns, so poll the flag itself
+     * (not just config_patch) to avoid racing the worker's dirty mark. */
+    for (int i = 0; i < 200 && !pp_settings_has_pending(); i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(pp_settings_has_pending());
 
     /* explicit Apply: POST /apply, no further PATCH */
     int patch_before = m.config_patch.load();
@@ -235,6 +243,11 @@ TEST_CASE("integration: pixelpilot row stages via /config, no apply; Apply posts
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     REQUIRE(m.apply_post >= 1);
     REQUIRE(m.config_patch == patch_before);            // apply does not PATCH
+    /* Apply clears config_dirty AFTER the /apply POST returns, so poll the flag
+     * itself (not just apply_post) to avoid racing the worker's clear. */
+    for (int i = 0; i < 200 && pp_settings_has_pending(); i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    REQUIRE(!pp_settings_has_pending());
     m.stop();
 }
 

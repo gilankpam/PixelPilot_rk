@@ -10,6 +10,10 @@ void normal_playback();
 void pause_playback();
 void resume_playback();
 
+/* DVR live-control C interface (defined extern "C" in main.cpp). */
+extern "C" void dvr_start_all(void);
+extern "C" void dvr_stop_all(void);
+
 /* --- Console arguments parser --- */
 #define __BeginParseConsoleArguments__(printHelpFunction) \
   if (argc < 1 || (argc == 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "/?") \

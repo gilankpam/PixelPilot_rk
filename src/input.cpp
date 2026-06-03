@@ -250,10 +250,10 @@ void send_button_event(size_t button_index) {
                 next_key = LV_KEY_ENTER;
             }
             else if (strcmp(gpio_buttons[button_index].name, "rec") == 0) {
-                #ifdef USE_SIMULATOR
-                                dvr_enabled ^= 1;
-                #endif
-                            toggle_rec_enabled();
+#ifdef USE_SIMULATOR
+                dvr_enabled ^= 1;
+#endif
+                toggle_rec_enabled();
             }
             break;
             
@@ -427,6 +427,17 @@ void restore_stdin(void) {
     tcgetattr(STDIN_FILENO, &term);
     term.c_lflag |= (ICANON | ECHO);
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
+}
+
+void toggle_rec_enabled(void) {
+#ifndef USE_SIMULATOR
+    /* Device: toggle the on-board DVR via the C interface in main.cpp. */
+    if (dvr_enabled) dvr_stop_all();
+    else             dvr_start_all();
+#endif
+    /* Simulator: no-op. The sim "rec" button path in send_button_event
+     * already flips dvr_enabled itself, so doing nothing here avoids a
+     * double toggle. */
 }
 
 void toggle_screen(void) {

@@ -73,6 +73,9 @@ extern pthread_cond_t video_cond;
 bool osd_update_ready = false;
 bool menu_active = false;
 bool gsmenu_enabled = false;
+/* Receiver mode, default WFB. Was defined in the purged gsmenu/gs_system.c
+ * and set by old menu dropdowns; the new menu has no RX-mode control yet. */
+enum RXMode RXMODE = WFB;
 
 OsdGl osd_gl;
 extern bool enable_live_colortrans;

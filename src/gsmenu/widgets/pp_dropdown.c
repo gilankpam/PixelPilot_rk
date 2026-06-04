@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Scaled menu-row text font (same accessor pp_style_row uses). Declared
+ * extern here per the pp_drilldown.c pattern so the popup option labels
+ * render at the 1.5x-scaled size instead of the 14px LVGL default. */
+extern const lv_font_t *pp_font_geist_16(void);
+
 typedef struct pp_dd_data pp_dd_data_t;
 
 struct pp_dd_data {
@@ -70,6 +75,9 @@ static void popup_open(pp_dd_data_t *d) {
     lv_obj_set_style_shadow_width(p, PP_SCALE(16), 0);
     lv_obj_set_style_shadow_opa(p, LV_OPA_50, 0);
     lv_obj_set_style_shadow_color(p, lv_color_hex(0x000000), 0);
+    /* Option labels inherit this; without it they fall back to the 14px
+     * LVGL default and stay unscaled while the rest of the UI is 1.5x. */
+    lv_obj_set_style_text_font(p, pp_font_geist_16(), 0);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -86,11 +94,11 @@ static void popup_open(pp_dd_data_t *d) {
      * of the row's value column, place popup just to the left of that. */
     lv_area_t coords;
     lv_obj_get_coords(d->value_label, &coords);
-    int32_t x = coords.x2 + 8 - 180;          /* right-align popup to value end */
+    int32_t x = coords.x2 + PP_SCALE(8) - PP_SCALE(180);  /* right-align popup to value end (match scaled width) */
     if (x < 8) x = 8;
     int32_t y = coords.y1;
     int32_t bottom_limit = lv_display_get_vertical_resolution(NULL) - 16;
-    int32_t pop_h_estimate = (lv_dropdown_get_option_count(d->dd) * 28) + 8;
+    int32_t pop_h_estimate = (lv_dropdown_get_option_count(d->dd) * PP_SCALE(28)) + PP_SCALE(8);
     if (y + pop_h_estimate > bottom_limit) y = bottom_limit - pop_h_estimate;
     if (y < 8) y = 8;
     lv_obj_set_pos(p, x, y);

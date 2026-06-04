@@ -828,7 +828,13 @@ static bool prov_has_pending(void) {
 static bool prov_is_locked(const char *d, const char *p, const char *k) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return false;
-    if (e->endpoint != FPVD_EP_AIR) return false;
+    /* DL governs drone-owned (AIR) fields. The Bandwidth row is the one LINK
+     * exception: gs/wfbng/bandwidth -> link.width is pushed to the drone and
+     * rejected by its dynamic-link lock, so disable it too. Other LINK rows
+     * (e.g. rx_power = the GS card's own power) stay editable. */
+    bool is_bandwidth = (!strcmp(d, "gs") && !strcmp(p, "wfbng") &&
+                         !strcmp(k, "bandwidth"));
+    if (e->endpoint != FPVD_EP_AIR && !is_bandwidth) return false;
     if (!fpvd_is_locked_path(e->path)) return false;
     pthread_mutex_lock(&G.mu);
     cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;

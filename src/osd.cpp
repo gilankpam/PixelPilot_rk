@@ -13,6 +13,8 @@
  * MSP/Displayport OSD.
  */
 #include <cmath>
+#include <algorithm>
+#include <cstdio>
 extern "C" {
 #include "drm.h"
 #include "mavlink.h"
@@ -1468,7 +1470,292 @@ public:
         }
     }
 
-    void draw(cairo_t *cr) override { /* implemented in Task 9 */ }
+    void draw(cairo_t *cr) override {
+        cairo_surface_t *target = cairo_get_target(cr);
+        const double W = cairo_image_surface_get_width(target);
+        const double H = cairo_image_surface_get_height(target);
+        const double s = H / 1080.0; // uniform scale; 16:9 stays undistorted
+
+        cairo_save(cr);
+        draw_gradient_rail(cr, W, H, s);
+        draw_strip(cr, W, H, s);
+        draw_rec_badge(cr, W, H, s);
+        cairo_restore(cr);
+    }
+
+private:
+    // ---- pixel snapping helpers -------------------------------------------
+    static double px(double v, double min_px) { // scaled, integer-snapped, floored
+        double r = std::round(v);
+        return r < min_px ? min_px : r;
+    }
+    static void set_rgba(cairo_t *cr, aio::Rgba c) {
+        cairo_set_source_rgba(cr, c.r, c.g, c.b, c.a);
+    }
+    // ---- fonts (toy API + fontconfig-resolved Barlow Condensed) -----------
+    static void font_value(cairo_t *cr, double size) { // 800 italic
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_ITALIC, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, size);
+    }
+    static void font_label(cairo_t *cr, double size) { // 600
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        cairo_set_font_size(cr, size);
+    }
+    static void font_unit(cairo_t *cr, double size) {  // 700
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, size);
+    }
+    static void font_rec(cairo_t *cr, double size) {   // 800 italic
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_ITALIC, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, size);
+    }
+    // Text with a 1px dark shadow behind it (legibility over video).
+    void text_shadow(cairo_t *cr, double x, double y, const std::string &t,
+                     aio::Rgba col, double s) {
+        double off = px(1 * s, 1);
+        cairo_move_to(cr, x + off, y + off);
+        cairo_set_source_rgba(cr, 0, 0, 0, 0.7);
+        cairo_show_text(cr, t.c_str());
+        cairo_move_to(cr, x, y);
+        set_rgba(cr, col);
+        cairo_show_text(cr, t.c_str());
+    }
+
+    // A resolved tile ready to render.
+    struct Tile {
+        std::string label;
+        std::string value;
+        std::string unit;   // may be empty
+        aio::Rgba value_col;
+        aio::Rgba rail_col;
+    };
+
+    aio::Rgba neutral_rail() const { return aio::Rgba{1, 1, 1, 0.5}; }
+    aio::Rgba label_col() const    { return aio::Rgba{1, 1, 1, 0.62}; }
+    aio::Rgba unit_col() const     { return aio::Rgba{1, 1, 1, 0.66}; }
+
+    // Build a metric tile (threshold-colored unless neutral).
+    Tile metric_tile(const std::string &label, const std::string &value,
+                     const std::string &unit, aio::Metric m, double v) {
+        aio::Band band = aio::resolve_band(m, v);
+        aio::Rgba col = aio::resolve_color(band, scheme, false);
+        aio::Rgba rail = (scheme == aio::Scheme::Accent)
+                             ? col : aio::Rgba{1, 1, 1, 1};
+        return Tile{label, value, unit, col, rail};
+    }
+    Tile neutral_tile(const std::string &label, const std::string &value,
+                      const std::string &unit) {
+        return Tile{label, value, unit,
+                    aio::Rgba{1, 1, 1, 1}, neutral_rail()};
+    }
+
+    // Returns the tile's drawn width so the caller can advance x.
+    double draw_tile(cairo_t *cr, double x, double baseline, const Tile &t, double s) {
+        const double pad   = px(26 * s, 2);
+        const double rail_w = px(30 * s, 4);
+        const double rail_h = px(4 * s, 2);
+        const double gap    = px(2 * s, 1);
+        const double label_sz = 14 * s;
+        const double value_sz = 46 * s;
+        const double unit_sz  = 16 * s;
+
+        double cx = x + pad;
+        // Accent rail (top of the tile). Place it above the label.
+        double rail_y = baseline - value_sz - label_sz - gap * 2 - rail_h;
+        set_rgba(cr, t.rail_col);
+        rounded_rect(cr, cx, rail_y, rail_w, rail_h, px(2 * s, 1));
+        cairo_fill(cr);
+
+        // Label.
+        font_label(cr, label_sz);
+        double label_y = rail_y + rail_h + gap + label_sz;
+        text_shadow(cr, cx, label_y, t.label, label_col(), s);
+
+        // Value.
+        font_value(cr, value_sz);
+        double value_y = baseline;
+        text_shadow(cr, cx, value_y, t.value, t.value_col, s);
+        cairo_text_extents_t ve;
+        cairo_text_extents(cr, t.value.c_str(), &ve);
+        double after_value = cx + ve.x_advance + px(6 * s, 1);
+
+        // Unit (optional), baseline-aligned with the value.
+        double tile_right = cx + ve.x_advance;
+        if (!t.unit.empty()) {
+            font_unit(cr, unit_sz);
+            text_shadow(cr, after_value, value_y, t.unit, unit_col(), s);
+            cairo_text_extents_t ue;
+            cairo_text_extents(cr, t.unit.c_str(), &ue);
+            tile_right = after_value + ue.x_advance;
+        }
+        // Tile width = max(rail extent, value/unit extent) + trailing pad.
+        double content_right = std::max(cx + rail_w, tile_right);
+        return (content_right - x) + pad;
+    }
+
+    static void rounded_rect(cairo_t *cr, double x, double y, double w, double h,
+                             double r) {
+        if (r * 2 > h) r = h / 2;
+        if (r * 2 > w) r = w / 2;
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, x + w - r, y + r, r, -M_PI / 2, 0);
+        cairo_arc(cr, x + w - r, y + h - r, r, 0, M_PI / 2);
+        cairo_arc(cr, x + r, y + h - r, r, M_PI / 2, M_PI);
+        cairo_arc(cr, x + r, y + r, r, M_PI, 3 * M_PI / 2);
+        cairo_close_path(cr);
+    }
+
+    void draw_gradient_rail(cairo_t *cr, double W, double H, double s) {
+        double rail_h = px(150 * s, 4);
+        cairo_pattern_t *g = cairo_pattern_create_linear(0, H - rail_h, 0, H);
+        cairo_pattern_add_color_stop_rgba(g, 0.00, 10/255.0, 11/255.0, 14/255.0, 0.00);
+        cairo_pattern_add_color_stop_rgba(g, 0.55, 10/255.0, 11/255.0, 14/255.0, 0.10);
+        cairo_pattern_add_color_stop_rgba(g, 1.00, 10/255.0, 11/255.0, 14/255.0, 0.34);
+        cairo_rectangle(cr, 0, H - rail_h, W, rail_h);
+        cairo_set_source(cr, g);
+        cairo_fill(cr);
+        cairo_pattern_destroy(g);
+    }
+
+    void draw_signal_bars(cairo_t *cr, double x, double baseline, int filled,
+                          aio::Rgba on_col, double s) {
+        const int N = 5;
+        const double bw  = px(8 * s, 3);
+        const double gap = px(5 * s, 1);
+        const double maxh = px(42 * s, 6);
+        const double rad = px(2 * s, 1);
+        for (int i = 0; i < N; ++i) {
+            double frac = 0.32 + (1.0 - 0.32) * (i / double(N - 1));
+            double h = px(maxh * frac, 2);
+            double bx = x + i * (bw + gap);
+            double by = baseline - h;
+            aio::Rgba c = (i < filled) ? on_col : aio::Rgba{1, 1, 1, 0.26};
+            set_rgba(cr, c);
+            rounded_rect(cr, bx, by, bw, h, rad);
+            cairo_fill(cr);
+        }
+    }
+
+    void draw_strip(cairo_t *cr, double W, double H, double s) {
+        const double pad_x = px(46 * s, 2);
+        const double pad_b = px(26 * s, 2);
+        const double baseline = H - pad_b;
+
+        // ---- Left group: VIDEO, WIFI CH -----------------------------------
+        ulong vh = arg_u(SLOT_VIDEO_H);
+        ulong vfps = arg_u(SLOT_VIDEO_FPS);
+        std::string video = vh ? (std::to_string(vh) + "p" + std::to_string(vfps))
+                               : std::string("--");
+        std::string chan = "--";
+        if (last_freq > 0) {
+            auto c = aio::freq_to_channel((int)last_freq);
+            chan = c ? std::to_string(*c) : (std::to_string(last_freq));
+        }
+        double x = pad_x;
+        x += draw_tile(cr, x, baseline, neutral_tile("VIDEO", video, ""), s);
+        x += draw_tile(cr, x, baseline, neutral_tile("WIFI CH", chan, ""), s);
+
+        // ---- Right group: signal bars + 5 metrics (right-anchored) --------
+        int lq = aio::link_quality_pct(window_sum(pkt_all), window_sum(pkt_lost));
+        aio::Rgba link_col = aio::resolve_color(
+            aio::resolve_band(aio::Metric::Link, lq), scheme, false);
+
+        double br = arg_d(SLOT_BITRATE);
+        long lat = (long)arg_u(SLOT_LATENCY);
+        auto rssi = rssi_agg.best(now_ms());
+        auto snr  = snr_agg.best(now_ms());
+
+        std::vector<Tile> right;
+        right.push_back(metric_tile("LINK", std::to_string(lq), "%",
+                                    aio::Metric::Link, lq));
+        right.push_back(metric_tile("BITRATE", fmt1(br), "Mb/s",
+                                    aio::Metric::Bitrate, br));
+        right.push_back(metric_tile("LATENCY", std::to_string(lat), "ms",
+                                    aio::Metric::Latency, (double)lat));
+        right.push_back(rssi
+            ? metric_tile("RSSI", std::to_string(*rssi), "dBm", aio::Metric::Rssi, (double)*rssi)
+            : neutral_tile("RSSI", "--", "dBm"));
+        right.push_back(snr
+            ? metric_tile("SNR", std::to_string(*snr), "dB", aio::Metric::Snr, (double)*snr)
+            : neutral_tile("SNR", "--", "dB"));
+
+        // Lay the right group out from the right edge: measure, then place.
+        const double bars_w = 5 * px(8 * s, 3) + 4 * px(5 * s, 1) + px(26 * s, 2);
+        double total = bars_w;
+        for (auto &t : right) total += measure_tile(cr, t, s);
+        double rx = W - pad_x - total;
+        draw_signal_bars(cr, rx, baseline, aio::signal_bar_count(lq), link_col, s);
+        rx += bars_w;
+        for (auto &t : right) rx += draw_tile(cr, rx, baseline, t, s);
+    }
+
+    // Measure a tile's width. Note: this sets Cairo font state (font_value/font_unit);
+    // draw_tile re-sets the font before drawing, and draw()'s save/restore bounds it.
+    double measure_tile(cairo_t *cr, const Tile &t, double s) {
+        const double pad = px(26 * s, 2);
+        const double rail_w = px(30 * s, 4);
+        font_value(cr, 46 * s);
+        cairo_text_extents_t ve; cairo_text_extents(cr, t.value.c_str(), &ve);
+        double right = ve.x_advance;
+        if (!t.unit.empty()) {
+            font_unit(cr, 16 * s);
+            cairo_text_extents_t ue; cairo_text_extents(cr, t.unit.c_str(), &ue);
+            right += px(6 * s, 1) + ue.x_advance;
+        }
+        double content = std::max(rail_w, right);
+        return pad + content + pad;
+    }
+
+    void draw_rec_badge(cairo_t *cr, double W, double H, double s) {
+        if (!recording) return;
+        long now = now_ms();
+        if (now - blink_last_ms >= 1100) { blink_on = !blink_on; blink_last_ms = now; }
+
+        const double top = px(38 * s, 1);
+        const double right = px(48 * s, 1);
+        const double gap = px(12 * s, 1);
+        const double dot = px(14 * s, 4);
+        const double rec_sz = 26 * s;
+
+        std::string tc = aio::format_timecode((now - rec_start_ms) / 1000);
+        font_rec(cr, rec_sz);
+        cairo_text_extents_t re; cairo_text_extents(cr, "REC", &re);
+        cairo_text_extents_t te; cairo_text_extents(cr, tc.c_str(), &te);
+        double total = dot + gap + re.x_advance + px(10 * s, 1) + te.x_advance;
+        double x = W - right - total;
+        double cy = top + rec_sz; // baseline-ish
+
+        // Dot (red even in white scheme; hard blink).
+        if (blink_on) cairo_set_source_rgba(cr, 0xff/255.0, 0x2e/255.0, 0x3e/255.0, 1);
+        else          cairo_set_source_rgba(cr, 0xff/255.0, 0x2e/255.0, 0x3e/255.0, 0.28);
+        rounded_rect(cr, x, cy - dot, dot, dot, px(3 * s, 1));
+        cairo_fill(cr);
+        x += dot + gap;
+
+        font_rec(cr, rec_sz);
+        text_shadow(cr, x, cy, "REC", aio::Rgba{1, 1, 1, 1}, s);
+        x += re.x_advance + px(10 * s, 1);
+        font_unit(cr, rec_sz);
+        text_shadow(cr, x, cy, tc, aio::Rgba{1, 1, 1, 0.92}, s);
+    }
+
+    // ---- small arg accessors ----
+    ulong arg_u(int idx) {
+        return args[idx].isDefined() ? (ulong)args[idx] : 0ul;
+    }
+    double arg_d(int idx) {
+        return args[idx].isDefined() ? (double)args[idx] : 0.0;
+    }
+    long window_sum(const RunningAverage &ra) {
+        return ra.get_stats_over_last_ms_result(1000).sum;
+    }
+    static std::string fmt1(double v) {
+        char b[32]; std::snprintf(b, sizeof(b), "%.1f", v); return std::string(b);
+    }
 
 protected:
     static long now_ms() {

@@ -136,16 +136,16 @@ int style_init(void) {
     //lv_style_set_line_color(&style_openipc_disabled, lv_color_hex(0xffd8ce36));
     //lv_style_set_border_color(&style_openipc_disabled, lv_color_hex(0xffe61212));
 
-    /* Color tokens */
-    const lv_color_t c_panel   = lv_color_hex(0x0F1116);
-    const lv_color_t c_tabbar  = lv_color_hex(0x000000);
-    const lv_color_t c_text    = lv_color_hex(0xFFFFFF);
-    const lv_color_t c_accent  = lv_color_hex(0x6B7FFF);
-    const lv_color_t c_accentd = lv_color_hex(0x4C60D8);
+    /* Color tokens — OSD reskin (amber/opaque). */
+    const lv_color_t c_panel   = lv_color_hex(PP_C_PANEL);
+    const lv_color_t c_tabbar  = lv_color_hex(PP_C_RAIL);
+    const lv_color_t c_text    = lv_color_hex(PP_C_INK);
+    const lv_color_t c_accent  = lv_color_hex(PP_C_ACCENT);
+    const lv_color_t c_accentd = lv_color_hex(PP_C_ACCENT);
 
     lv_style_init(&pp_style_panel);
     lv_style_set_bg_color(&pp_style_panel, c_panel);
-    lv_style_set_bg_opa(&pp_style_panel, LV_OPA_70); /* lets more video bleed through; backdrop blur active */
+    lv_style_set_bg_opa(&pp_style_panel, LV_OPA_COVER); /* opaque flat fill (design: no blur) */
     lv_style_set_border_width(&pp_style_panel, 0);
     lv_style_set_radius(&pp_style_panel, 0);
     lv_style_set_pad_all(&pp_style_panel, 0);
@@ -157,7 +157,7 @@ int style_init(void) {
      * is one sequential whole-panel task). Disabled by default for responsive
      * navigation; set PP_PANEL_FX=1 to restore the look on capable hardware.
      * See docs/superpowers/notes/2026-06-03-gsmenu-nav-slowness-handoff.md. */
-    if (getenv("PP_PANEL_FX")) {
+    if (0 && getenv("PP_PANEL_FX")) {
     /* Native backdrop blur — blurs the live-video content behind each page panel
      * (LVGL v9.5+). Radius 8 is a conservative starting value; tune after
      * interactive verification. blur_backdrop=true requires bg_opa < LV_OPA_COVER
@@ -182,7 +182,7 @@ int style_init(void) {
 
     lv_style_init(&pp_style_tabbar);
     lv_style_set_bg_color(&pp_style_tabbar, c_tabbar);
-    lv_style_set_bg_opa(&pp_style_tabbar, 77);
+    lv_style_set_bg_opa(&pp_style_tabbar, LV_OPA_COVER);
     lv_style_set_border_side(&pp_style_tabbar, LV_BORDER_SIDE_RIGHT);
     lv_style_set_border_color(&pp_style_tabbar, lv_color_hex(0xFFFFFF));
     lv_style_set_border_opa(&pp_style_tabbar, 33);

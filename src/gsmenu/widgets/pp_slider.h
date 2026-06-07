@@ -3,6 +3,7 @@
 #include <lvgl.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "pp_slider_scale.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -10,6 +11,13 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
                     const char *icon_text, const char *label,
                     const char *domain, const char *page, const char *key,
                     int32_t min, int32_t max);
+
+/* Config-driven slider (fractional / scaled / variable-step). `pp_slider`
+ * above is a thin wrapper over this with a plain-integer default config. */
+lv_obj_t *pp_slider_ex(lv_obj_t *parent_page,
+                       const char *icon_text, const char *label,
+                       const char *domain, const char *page, const char *key,
+                       const pp_slider_cfg_t *cfg);
 
 /* Optional: tie this slider's effective max (or min) to the live value
  * of another settings key. The effective bound becomes

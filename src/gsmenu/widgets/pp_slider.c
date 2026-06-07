@@ -1,6 +1,7 @@
 #include "pp_slider.h"
 #include "pp_slider_bounds.h"
 #include "pp_slider_accel.h"
+#include "pp_slider_scale.h"
 #include "pp_toast.h"
 #include "pp_row.h"
 #include "../styles.h"
@@ -16,15 +17,21 @@
  *     ▼      <- down chevron
  *
  * Chevrons start dim and brighten when the row enters EDIT mode so the
- * user has a clear cue that W/S now adjusts the number. */
+ * user has a clear cue that W/S now adjusts the number.
+ *
+ * The value is an integer "raw" driven by a pp_slider_cfg_t: bounds, step
+ * (with optional fine/coarse variable step), display scaling (raw/disp_div
+ * with decimals + unit) and serialization. pp_slider() is a thin wrapper
+ * with a plain-integer config. */
 
 struct pp_slider_data {
     char *domain, *page, *key;
-    int32_t min, max;
-    int32_t value;
+    pp_slider_cfg_t cfg;     /* value model: bounds, step, scaling, serialize */
+    int32_t value;           /* raw value */
     int32_t saved_val;
     lv_obj_t *num, *up_chev, *down_chev;
     lv_obj_t *row;
+    lv_obj_t *unit_lbl;      /* small dim unit label; NULL if cfg.unit empty */
     bool      in_flight;
 
     /* Optional relation: effective bound is rel_val + rel_offset, where
@@ -44,18 +51,18 @@ typedef struct pp_slider_data pp_slider_data_t;
 
 static int32_t effective_max(pp_slider_data_t *d) {
     if (d->rel_key && d->rel_is_max) {
-        return pp_slider_bound_max(d->max, d->rel_domain, d->rel_page,
+        return pp_slider_bound_max(d->cfg.raw_max, d->rel_domain, d->rel_page,
                                    d->rel_key, d->rel_offset);
     }
-    return d->max;
+    return d->cfg.raw_max;
 }
 
 static int32_t effective_min(pp_slider_data_t *d) {
     if (d->rel_key && !d->rel_is_max) {
-        return pp_slider_bound_min(d->min, d->rel_domain, d->rel_page,
+        return pp_slider_bound_min(d->cfg.raw_min, d->rel_domain, d->rel_page,
                                    d->rel_key, d->rel_offset);
     }
-    return d->min;
+    return d->cfg.raw_min;
 }
 
 /* Forward declaration — defined after struct pp_slider_data below. */
@@ -91,17 +98,9 @@ static void on_delete(lv_event_t *e) {
 }
 
 static void refresh_num(pp_slider_data_t *d) {
-    char buf[16];
-    snprintf(buf, sizeof buf, "%d", (int)d->value);
+    char buf[32];
+    pp_slider_fmt(d->value, &d->cfg, buf, sizeof buf);
     lv_label_set_text(d->num, buf);
-}
-
-static int32_t step_for(int32_t min, int32_t max) {
-    int32_t range = max - min;
-    if (range < 0) range = -range;
-    int32_t s = range / 20;
-    if (s < 1) s = 1;
-    return s;
 }
 
 /* Visually mark the spinbox as "currently editing" — chevrons brighten
@@ -124,7 +123,6 @@ static void on_key(lv_event_t *e) {
     lv_key_t k = lv_event_get_key(e);
     extern gsmenu_control_mode_t control_mode;
     bool consumed = false;
-    int32_t step = step_for(d->min, d->max);
 
     if (k == LV_KEY_ENTER) {
         if (control_mode == GSMENU_CONTROL_MODE_NAV) {
@@ -147,7 +145,7 @@ static void on_key(lv_event_t *e) {
                 consumed = true;          /* no change — skip the round-trip */
             } else {
                 char buf[32];
-                snprintf(buf, sizeof buf, "%d", (int)d->value);
+                pp_slider_ser(d->value, &d->cfg, buf, sizeof buf);
                 /* Revert the visible value to saved_val until apply confirms;
                  * we keep the *attempted* value in ctx->target_val. */
                 int32_t attempted = d->value;
@@ -170,6 +168,7 @@ static void on_key(lv_event_t *e) {
                                                    d->last_key, k, d->hold_count);
             d->last_key = k;
             d->last_key_ms = now;
+            int32_t step = pp_slider_step(d->value, &d->cfg, +1);
             int32_t scaled = pp_slider_accel_step(step, d->hold_count);
             int32_t emax = effective_max(d);
             d->value += scaled;
@@ -184,6 +183,7 @@ static void on_key(lv_event_t *e) {
                                                    d->last_key, k, d->hold_count);
             d->last_key = k;
             d->last_key_ms = now;
+            int32_t step = pp_slider_step(d->value, &d->cfg, -1);
             int32_t scaled = pp_slider_accel_step(step, d->hold_count);
             int32_t emin = effective_min(d);
             d->value -= scaled;
@@ -203,10 +203,10 @@ static void on_key(lv_event_t *e) {
     if (consumed) lv_event_stop_bubbling(e);
 }
 
-lv_obj_t *pp_slider(lv_obj_t *parent_page,
-                    const char *icon_text, const char *label,
-                    const char *domain, const char *page, const char *key,
-                    int32_t min, int32_t max) {
+lv_obj_t *pp_slider_ex(lv_obj_t *parent_page,
+                       const char *icon_text, const char *label,
+                       const char *domain, const char *page, const char *key,
+                       const pp_slider_cfg_t *cfg) {
     lv_obj_t *row = lv_obj_create(parent_page);
     lv_obj_remove_style_all(row);
     lv_obj_add_style(row, &pp_style_row, 0);
@@ -247,6 +247,17 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_set_style_text_font(num, pp_font_xb_md(), 0);
     lv_label_set_text(num, "—");
 
+    /* Optional dim unit label (e.g. "Mbps") after the value. */
+    lv_obj_t *unit = NULL;
+    if (cfg->unit && *cfg->unit) {
+        unit = lv_label_create(col);
+        lv_label_set_text(unit, cfg->unit);
+        lv_obj_set_style_text_font(unit, pp_font_med_sm(), 0);
+        lv_obj_set_style_text_color(unit, lv_color_hex(PP_C_INK), 0);
+        lv_obj_set_style_text_opa(unit, 102, 0);            /* ~40% dim */
+        lv_obj_set_style_pad_left(unit, PP_SCALE(4), 0);
+    }
+
     lv_obj_t *dn = lv_label_create(col);
     lv_label_set_text(dn, LV_SYMBOL_DOWN);
     lv_obj_set_style_text_font(dn, &lv_font_montserrat_14, 0);
@@ -255,10 +266,10 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     d->domain = strdup(domain);
     d->page   = strdup(page);
     d->key    = strdup(key);
-    d->min    = min;
-    d->max    = max;
-    d->value  = min;
+    d->cfg    = *cfg;
+    d->value  = cfg->raw_min;
     d->num    = num;
+    d->unit_lbl  = unit;
     d->up_chev   = up;
     d->down_chev = dn;
 
@@ -269,12 +280,10 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
 
     set_edit_state(d, false);
 
-    /* Read initial value via settings provider. */
+    /* Read initial value via settings provider (parsed + clamped per cfg). */
     char *v = pp_settings_get(domain, page, key);
     if (v && *v) {
-        d->value = atoi(v);
-        if (d->value < min) d->value = min;
-        if (d->value > max) d->value = max;
+        d->value = pp_slider_parse(v, &d->cfg);
         refresh_num(d);
     }
     free(v);
@@ -286,6 +295,22 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     }
 
     return row;
+}
+
+lv_obj_t *pp_slider(lv_obj_t *parent_page,
+                    const char *icon_text, const char *label,
+                    const char *domain, const char *page, const char *key,
+                    int32_t min, int32_t max) {
+    int32_t range = max - min;
+    if (range < 0) range = -range;
+    int32_t step = range / 20;
+    if (step < 1) step = 1;
+    pp_slider_cfg_t cfg = {
+        .raw_min = min, .raw_max = max, .step = step,
+        .fine_step = 0, .fine_threshold = 0,
+        .disp_div = 1, .decimals = 0, .unit = NULL, .serialize = PP_SER_INT,
+    };
+    return pp_slider_ex(parent_page, icon_text, label, domain, page, key, &cfg);
 }
 
 void pp_slider_set_relation(lv_obj_t *row,

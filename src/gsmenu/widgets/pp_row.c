@@ -56,6 +56,7 @@ lv_obj_t *pp_row_text(lv_obj_t *parent_page,
     d->key = key ? strdup(key) : NULL;
 
     d->value_label = lv_label_create(row);
+    lv_obj_set_style_text_font(d->value_label, pp_font_xb_md(), 0);
     lv_label_set_text(d->value_label, "—");
 
     lv_obj_set_user_data(row, d);
@@ -129,7 +130,7 @@ static lv_obj_t *ensure_spinner(lv_obj_t *row, pp_row_state_t *s) {
     if (s->spinner) return s->spinner;
     s->spinner = lv_label_create(row);
     lv_label_set_text(s->spinner, PP_ROW_BUSY_ICON);
-    lv_obj_set_style_text_color(s->spinner, lv_color_hex(0x6B7FFF), 0);
+    lv_obj_set_style_text_color(s->spinner, lv_color_hex(PP_C_ACCENT), 0);
     lv_obj_set_style_pad_left(s->spinner, PP_SCALE(6), 0);
     lv_obj_add_flag(s->spinner, LV_OBJ_FLAG_HIDDEN);
     return s->spinner;

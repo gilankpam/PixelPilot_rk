@@ -121,7 +121,6 @@ int style_init(void) {
     const lv_color_t c_tabbar  = lv_color_hex(PP_C_RAIL);
     const lv_color_t c_text    = lv_color_hex(PP_C_INK);
     const lv_color_t c_accent  = lv_color_hex(PP_C_ACCENT);
-    const lv_color_t c_accentd = lv_color_hex(PP_C_ACCENT);
 
     lv_style_init(&pp_style_panel);
     lv_style_set_bg_color(&pp_style_panel, c_panel);
@@ -181,6 +180,7 @@ int style_init(void) {
 
     lv_style_init(&pp_style_tab_active);
     lv_style_set_text_color(&pp_style_tab_active, c_accent);
+    lv_style_set_text_opa(&pp_style_tab_active, LV_OPA_COVER);
     lv_style_set_bg_opa(&pp_style_tab_active, LV_OPA_TRANSP);
     lv_style_set_border_side(&pp_style_tab_active, LV_BORDER_SIDE_LEFT);
     lv_style_set_border_color(&pp_style_tab_active, c_accent);

@@ -46,35 +46,65 @@ void pp_menu_main(void)
 
     pp_menu_screen = lv_obj_create(NULL);
     lv_obj_remove_style_all(pp_menu_screen);
-    lv_obj_set_style_bg_opa(pp_menu_screen, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_opa(pp_menu_screen, LV_OPA_TRANSP, 0);  /* video shows through */
     lv_obj_clear_flag(pp_menu_screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Root row inside the menu screen: tabbar (left) + tab pages (right).
-     * Anchored to left edge; ~45% width fits the row content (icon + 200px
-     * label column + value) without leaving a large empty area between
-     * values and the panel's right edge. Leaves more video visible too. */
-    lv_obj_t *root = lv_obj_create(pp_menu_screen);
-    lv_obj_remove_style_all(root);
-    lv_obj_set_size(root, LV_PCT(PP_SCALE(45)), LV_PCT(100));
-    lv_obj_set_pos(root, 0, 0);
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_ROW);
+    /* Full-frame scrim: a semi-opaque dark child the video shows through.
+     * On device the video is the layer below this transparent screen; on the
+     * sim a placeholder frame is inserted behind it for screenshots. */
+    lv_obj_t *scrim = lv_obj_create(pp_menu_screen);
+    lv_obj_remove_style_all(scrim);
+    lv_obj_set_size(scrim, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(scrim, lv_color_hex(PP_C_SCRIM), 0);
+    lv_obj_set_style_bg_opa(scrim, PP_OPA_SCRIM, 0);
+    lv_obj_clear_flag(scrim, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Build the five tab pages. */
-    lv_obj_t *cam = build_camera_tab(root);
-    lv_obj_set_flex_grow(cam, 1);
-    lv_obj_set_height(cam, LV_PCT(100));
-    lv_obj_t *lnk = build_link_tab(root);
-    lv_obj_set_flex_grow(lnk, 1);
-    lv_obj_set_height(lnk, LV_PCT(100));
-    lv_obj_t *dl  = build_dynamiclink_tab(root);
-    lv_obj_set_flex_grow(dl, 1);
-    lv_obj_set_height(dl, LV_PCT(100));
-    lv_obj_t *pp  = build_pixelpilot_tab(root);
-    lv_obj_set_flex_grow(pp, 1);
-    lv_obj_set_height(pp, LV_PCT(100));
-    lv_obj_t *sys = build_system_tab(root);
-    lv_obj_set_flex_grow(sys, 1);
-    lv_obj_set_height(sys, LV_PCT(100));
+    /* Centered floating panel: [ rail | content-col ]. Width is proportional
+     * with a max cap so it adapts to non-1920 panels. */
+    lv_obj_t *panel = lv_obj_create(pp_menu_screen);
+    lv_obj_remove_style_all(panel);
+    lv_obj_set_width(panel, LV_PCT(72));
+    lv_obj_set_style_max_width(panel, 1240, 0);
+    lv_obj_set_height(panel, LV_PCT(86));
+    lv_obj_center(panel);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(PP_C_PANEL), 0);
+    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(panel, 10, 0);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(PP_C_INK), 0);
+    lv_obj_set_style_border_opa(panel, 30, 0);
+    lv_obj_set_style_pad_all(panel, 0, 0);
+    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_ROW);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Content column: pages-area (grows) + footer (fixed, added later). Rail is
+     * added by pp_tabbar_create below and moved to index 0. */
+    lv_obj_t *content = lv_obj_create(panel);
+    lv_obj_remove_style_all(content);
+    lv_obj_set_flex_grow(content, 1);
+    lv_obj_set_height(content, LV_PCT(100));
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(content, 0, 0);
+
+    lv_obj_t *pages_area = lv_obj_create(content);
+    lv_obj_remove_style_all(pages_area);
+    lv_obj_set_width(pages_area, LV_PCT(100));
+    lv_obj_set_flex_grow(pages_area, 1);
+    lv_obj_clear_flag(pages_area, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(pages_area, 0, 0);
+
+    /* Build the five tab pages into pages_area (was: into the old root). */
+    lv_obj_t *cam = build_camera_tab(pages_area);
+    lv_obj_set_size(cam, LV_PCT(100), LV_PCT(100));
+    lv_obj_t *lnk = build_link_tab(pages_area);
+    lv_obj_set_size(lnk, LV_PCT(100), LV_PCT(100));
+    lv_obj_t *dl  = build_dynamiclink_tab(pages_area);
+    lv_obj_set_size(dl, LV_PCT(100), LV_PCT(100));
+    lv_obj_t *pp  = build_pixelpilot_tab(pages_area);
+    lv_obj_set_size(pp, LV_PCT(100), LV_PCT(100));
+    lv_obj_t *sys = build_system_tab(pages_area);
+    lv_obj_set_size(sys, LV_PCT(100), LV_PCT(100));
 
     pp_tabbar_item_t items[5] = {
         { "Camera",     LV_SYMBOL_IMAGE,     cam },
@@ -83,8 +113,8 @@ void pp_menu_main(void)
         { "PixelPilot", LV_SYMBOL_VIDEO,     pp  },
         { "System",     LV_SYMBOL_SETTINGS,  sys },
     };
-    pp_tabbar_t *tabbar = pp_tabbar_create(root, items, 5);
-    lv_obj_move_to_index(pp_tabbar_root(tabbar), 0);
+    pp_tabbar_t *tabbar = pp_tabbar_create(panel, items, 5);
+    lv_obj_move_to_index(pp_tabbar_root(tabbar), 0);   /* rail leftmost */
     lv_obj_add_event_cb(pp_tabbar_root(tabbar), on_tabbar_cancel,
                         LV_EVENT_CANCEL, NULL);
 

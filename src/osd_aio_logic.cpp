@@ -53,12 +53,6 @@ int link_quality_pct(long all, long lost) {
     return static_cast<int>(pct);
 }
 
-int signal_bar_count(int lq_pct) {
-    int n = static_cast<int>(std::lround(lq_pct / 100.0 * 5.0));
-    if (n < 0) n = 0;
-    if (n > 5) n = 5;
-    return n;
-}
 
 std::optional<int> freq_to_channel(int f) {
     if (f == 2484) return 14;                                  // 2.4 GHz ch 14

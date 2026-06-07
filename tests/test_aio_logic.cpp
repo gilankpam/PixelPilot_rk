@@ -67,16 +67,6 @@ TEST_CASE("link_quality_pct", "[aio]") {
     REQUIRE(link_quality_pct(100, 200) == 0);   // clamp: lost > all
 }
 
-TEST_CASE("signal_bar_count", "[aio]") {
-    using aio::signal_bar_count;
-    REQUIRE(signal_bar_count(0) == 0);
-    REQUIRE(signal_bar_count(100) == 5);
-    REQUIRE(signal_bar_count(92) == 5);   // round(4.6)
-    REQUIRE(signal_bar_count(41) == 2);   // round(2.05)
-    REQUIRE(signal_bar_count(50) == 3);   // round(2.5)
-    REQUIRE(signal_bar_count(-10) == 0);  // clamp low
-    REQUIRE(signal_bar_count(150) == 5);  // clamp high
-}
 
 TEST_CASE("freq_to_channel", "[aio]") {
     using aio::freq_to_channel;

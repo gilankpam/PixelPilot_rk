@@ -29,7 +29,7 @@ static const dummy_entry_t g_seed[] = {
     /* Camera — Video */
     { "size",         "1920x1080" },
     { "fps",          "60" },
-    { "bitrate",      "15M" },
+    { "bitrate",      "12000" },
     { "codec",        "h265" },
     { "gopsize",      "1" },
     { "rc_mode",      "cbr" },

@@ -4,6 +4,7 @@
 #include "../widgets/pp_row.h"
 #include "../widgets/pp_toggle.h"
 #include "../widgets/pp_slider.h"
+#include "../widgets/pp_slider_scale.h"
 #include "../widgets/pp_dropdown.h"
 #include "../settings.h"
 
@@ -21,14 +22,23 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
     pp_dropdown(page, LV_SYMBOL_REFRESH, "FPS",
                 "air", "camera", "fps",
                 "30\n60\n90\n120");
-    pp_dropdown(page, LV_SYMBOL_AUDIO, "Bitrate",
-                "air", "camera", "bitrate",
-                "5M\n10M\n15M\n20M\n25M");
+    static const pp_slider_cfg_t bitrate_cfg = {
+        .raw_min = 500, .raw_max = 26000, .step = 500,
+        .fine_step = 0, .fine_threshold = 0,
+        .disp_div = 1000, .decimals = 1, .unit = "Mbps", .serialize = PP_SER_INT,
+    };
+    pp_slider_ex(page, LV_SYMBOL_AUDIO, "Bitrate",
+                 "air", "camera", "bitrate", &bitrate_cfg);
     pp_dropdown(page, LV_SYMBOL_VIDEO, "Codec",
                 "air", "camera", "codec",
                 "h264\nh265");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "GOP size",
-              "air", "camera", "gopsize", 1, 20);
+    static const pp_slider_cfg_t gop_cfg = {
+        .raw_min = 0, .raw_max = 300, .step = 10,
+        .fine_step = 1, .fine_threshold = 10,
+        .disp_div = 10, .decimals = 1, .unit = NULL, .serialize = PP_SER_FLOAT_DIV,
+    };
+    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "GOP size",
+                 "air", "camera", "gopsize", &gop_cfg);
     pp_dropdown(page, LV_SYMBOL_SETTINGS, "RC Mode",
                 "air", "camera", "rc_mode",
                 "cbr\nvbr");

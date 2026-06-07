@@ -58,7 +58,7 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
     { "air", "camera", "size",       "video.resolution",  FPVD_T_STRING,         FPVD_EP_AIR, NULL },
     { "air", "camera", "fps",        "video.fps",         FPVD_T_INT,            FPVD_EP_AIR, NULL },
-    { "air", "camera", "bitrate",    "video.bitrate",     FPVD_T_BITRATE_KBPS,   FPVD_EP_AIR, NULL },
+    { "air", "camera", "bitrate",    "video.bitrate",     FPVD_T_INT,            FPVD_EP_AIR, NULL },
     { "air", "camera", "codec",      "video.codec",       FPVD_T_ENUM,           FPVD_EP_AIR, NULL },
     { "air", "camera", "gopsize",    "video.gopSize",     FPVD_T_FLOAT,          FPVD_EP_AIR, NULL },
     { "air", "camera", "rc_mode",    "video.rcMode",      FPVD_T_ENUM,           FPVD_EP_AIR, NULL },
@@ -331,7 +331,8 @@ cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t ty
 
 static const char *LOCKED_PATHS[] = {
     "link.mcs",
-    "link.txpower",
+    /* link.txpower intentionally NOT locked: TX Power stays editable while
+     * dynamic link is on (the air unit accepts it). */
     "link.fec",
     "link.width",
     "video.bitrate",

@@ -21,4 +21,7 @@ struct Rgba {
 // functions in later tasks.
 const char* aio_logic_version();
 
+// Threshold band for a metric value (units as displayed: Mb/s, ms, dBm, dB, %).
+Band resolve_band(Metric m, double value);
+
 } // namespace aio

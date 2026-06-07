@@ -300,6 +300,8 @@ else()
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
       src/gsmenu/settings_fpvd.c
+      src/gsmenu/osd_air_bridge.h
+      src/gsmenu/osd_air_bridge.c
       third_party/cjson/cJSON.c
   )
 

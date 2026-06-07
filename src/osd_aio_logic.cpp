@@ -30,4 +30,15 @@ Band resolve_band(Metric m, double v) {
     return Band::Neutral;
 }
 
+Rgba resolve_color(Band band, Scheme scheme, bool is_neutral) {
+    const Rgba white{1, 1, 1, 1};
+    if (scheme == Scheme::White || is_neutral || band == Band::Neutral) return white;
+    switch (band) {
+    case Band::Good: return Rgba{0x1f / 255.0, 0xe0 / 255.0, 0x84 / 255.0, 1};
+    case Band::Warn: return Rgba{0xff / 255.0, 0xb3 / 255.0, 0x00 / 255.0, 1};
+    case Band::Crit: return Rgba{0xff / 255.0, 0x2e / 255.0, 0x3e / 255.0, 1};
+    default:         return white;
+    }
+}
+
 } // namespace aio

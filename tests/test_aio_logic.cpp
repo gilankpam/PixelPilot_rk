@@ -38,3 +38,22 @@ TEST_CASE("resolve_band boundaries", "[aio]") {
     REQUIRE(resolve_band(Metric::Snr, 6) == Band::Warn);
     REQUIRE(resolve_band(Metric::Snr, 5) == Band::Crit);
 }
+
+TEST_CASE("resolve_color schemes", "[aio]") {
+    using aio::Band; using aio::Scheme; using aio::Rgba; using aio::resolve_color;
+    const Rgba white{1, 1, 1, 1};
+    const Rgba green{0x1f / 255.0, 0xe0 / 255.0, 0x84 / 255.0, 1};
+    const Rgba amber{0xff / 255.0, 0xb3 / 255.0, 0x00 / 255.0, 1};
+    const Rgba red  {0xff / 255.0, 0x2e / 255.0, 0x3e / 255.0, 1};
+
+    // White scheme: everything white regardless of band.
+    REQUIRE(resolve_color(Band::Good, Scheme::White, false) == white);
+    REQUIRE(resolve_color(Band::Crit, Scheme::White, false) == white);
+    REQUIRE(resolve_color(Band::Neutral, Scheme::White, true) == white);
+
+    // Accent scheme: threshold palette for metrics, white for neutral tiles.
+    REQUIRE(resolve_color(Band::Good, Scheme::Accent, false) == green);
+    REQUIRE(resolve_color(Band::Warn, Scheme::Accent, false) == amber);
+    REQUIRE(resolve_color(Band::Crit, Scheme::Accent, false) == red);
+    REQUIRE(resolve_color(Band::Neutral, Scheme::Accent, true) == white);
+}

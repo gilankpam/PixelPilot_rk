@@ -24,4 +24,8 @@ const char* aio_logic_version();
 // Threshold band for a metric value (units as displayed: Mb/s, ms, dBm, dB, %).
 Band resolve_band(Metric m, double value);
 
+// Final value/threshold color. is_neutral marks informational tiles (VIDEO, WIFI CH)
+// which are always white. White scheme returns white for every band.
+Rgba resolve_color(Band band, Scheme scheme, bool is_neutral);
+
 } // namespace aio

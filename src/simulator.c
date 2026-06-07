@@ -10,6 +10,54 @@
 #include "input.h"
 #include "gsmenu/helper.h"
 #include "gsmenu/settings.h"
+#include <png.h>
+#include <stdlib.h>
+
+/* defined in menu.cpp — used by the screenshot harness below */
+extern lv_obj_t *pp_menu_screen;
+
+static int sim_write_png(const char *path, const uint8_t *argb,
+                         uint32_t w, uint32_t h, uint32_t stride) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return -1;
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png) { fclose(fp); unlink(path); return -1; }
+    png_infop info = png_create_info_struct(png);
+    if (!info) { png_destroy_write_struct(&png, NULL); fclose(fp); unlink(path); return -1; }
+    uint8_t *row = NULL;
+    if (setjmp(png_jmpbuf(png))) {
+        free(row);
+        png_destroy_write_struct(&png, &info);
+        fclose(fp);
+        unlink(path);
+        return -1;
+    }
+    row = (uint8_t *)malloc((size_t)w * 4);
+    if (!row) { png_destroy_write_struct(&png, &info); fclose(fp); unlink(path); return -1; }
+    png_init_io(png, fp);
+    png_set_IHDR(png, info, w, h, 8, PNG_COLOR_TYPE_RGBA,
+                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_write_info(png, info);
+    for (uint32_t y = 0; y < h; y++) {
+        const uint8_t *src = argb + (size_t)y * stride;   /* ARGB8888 LE bytes: B,G,R,A */
+        for (uint32_t x = 0; x < w; x++) {
+            row[x*4+0] = src[x*4+2];  /* R */
+            row[x*4+1] = src[x*4+1];  /* G */
+            row[x*4+2] = src[x*4+0];  /* B */
+            row[x*4+3] = src[x*4+3];  /* A */
+        }
+        png_write_row(png, row);
+    }
+    free(row);
+    png_write_end(png, info);
+    png_destroy_write_struct(&png, &info);
+    fclose(fp);
+    return 0;
+}
+
+static void sim_settle(int frames) {
+    for (int i = 0; i < frames; i++) { lv_task_handler(); usleep(8000); }
+}
 
 void dispatch_input_char(char c);
 
@@ -95,6 +143,41 @@ int main(int argc, char **argv)
     }
 
     pp_menu_main();
+
+    const char *shot = getenv("PP_SIM_SHOT");
+    if (shot) {
+        /* settle counts: ~20 x 8ms frames, enough for layout + the 120ms page fade */
+        sim_settle(20);
+        toggle_screen();                 /* loads pp_menu_screen + sets the group */
+        sim_settle(20);
+        const char *keys = getenv("PP_SIM_KEYS");
+        if (keys) {
+            for (const char *p = keys; *p; ++p) {
+                if (*p == ' ') continue;
+                dispatch_input_char(*p);
+                sim_settle(8);
+            }
+        }
+        /* Insert the placeholder video frame as the bottom child so the
+         * scrim composites over it in the snapshot (device shows real video
+         * through the scrim's transparency). Sim-only, for the screenshot. */
+        lv_obj_t *bg = lv_image_create(pp_menu_screen);
+        lv_image_set_src(bg, find_resource_file("osd-bg-2.png"));
+        lv_obj_set_size(bg, LV_PCT(100), LV_PCT(100));
+        lv_image_set_inner_align(bg, LV_IMAGE_ALIGN_STRETCH);
+        lv_obj_move_to_index(bg, 0);
+        sim_settle(20);
+
+        lv_obj_t *scr = lv_screen_active();
+        lv_draw_buf_t *snap = lv_snapshot_take(scr, LV_COLOR_FORMAT_ARGB8888);
+        int rc = -1;
+        if (snap) {
+            rc = sim_write_png(shot, snap->data, snap->header.w, snap->header.h, snap->header.stride);
+            lv_draw_buf_destroy(snap);
+        }
+        return rc;   /* non-zero => screenshot failed (visible to CI) */
+    }
+
     while (1) {
         handle_keyboard_input();
         lv_task_handler();

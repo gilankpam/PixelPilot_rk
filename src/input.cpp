@@ -440,7 +440,7 @@ void toggle_rec_enabled(void) {
      * double toggle. */
 }
 
-void toggle_screen(void) {
+extern "C" void toggle_screen(void) {
     if( ! menu_active ) {
         lv_scr_load(pp_menu_screen);
         lv_indev_set_group(indev_drv,main_group);

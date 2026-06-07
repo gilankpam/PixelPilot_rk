@@ -8,6 +8,7 @@
 #include "gsmenu/styles.h"
 #include "gsmenu/widgets/pp_tabbar.h"
 #include "gsmenu/widgets/pp_page.h"
+#include "gsmenu/widgets/pp_footer.h"
 #include "gsmenu/pages/pixelpilot.h"
 #include "gsmenu/pages/camera.h"
 #include "gsmenu/pages/link.h"
@@ -105,6 +106,8 @@ void pp_menu_main(void)
     lv_obj_set_size(pp, LV_PCT(100), LV_PCT(100));
     lv_obj_t *sys = build_system_tab(pages_area);
     lv_obj_set_size(sys, LV_PCT(100), LV_PCT(100));
+
+    pp_footer_create(content);
 
     pp_tabbar_item_t items[5] = {
         { "Camera",     LV_SYMBOL_IMAGE,     cam },

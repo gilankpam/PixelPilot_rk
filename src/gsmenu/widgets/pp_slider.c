@@ -109,14 +109,14 @@ static int32_t step_for(int32_t min, int32_t max) {
  * intentionally does not highlight the number; the row's own focus
  * background is enough to show which row is selected. */
 static void set_edit_state(pp_slider_data_t *d, bool active) {
-    lv_color_t c = active ? lv_color_hex(0x6B7FFF) : lv_color_hex(0xFFFFFF);
+    lv_color_t c = active ? lv_color_hex(PP_C_ACCENT) : lv_color_hex(PP_C_INK);
     lv_opa_t   o = active ? LV_OPA_COVER : 90;
     lv_obj_set_style_text_color(d->up_chev,   c, 0);
     lv_obj_set_style_text_color(d->down_chev, c, 0);
     lv_obj_set_style_text_opa(d->up_chev,   o, 0);
     lv_obj_set_style_text_opa(d->down_chev, o, 0);
     lv_obj_set_style_text_color(d->num,
-        active ? lv_color_hex(0x6B7FFF) : lv_color_hex(0xFFFFFF), 0);
+        active ? lv_color_hex(PP_C_ACCENT) : lv_color_hex(PP_C_INK), 0);
 }
 
 static void on_key(lv_event_t *e) {
@@ -244,6 +244,7 @@ lv_obj_t *pp_slider(lv_obj_t *parent_page,
     lv_obj_set_style_text_font(up, &lv_font_montserrat_14, 0);
 
     lv_obj_t *num = lv_label_create(col);
+    lv_obj_set_style_text_font(num, pp_font_xb_md(), 0);
     lv_label_set_text(num, "—");
 
     lv_obj_t *dn = lv_label_create(col);

@@ -36,6 +36,19 @@ static void on_key(lv_event_t *e) {
     lv_indev_set_group(indev_drv, d->back_group);
 }
 
+/* Scroll the newly-focused row into view WITHOUT animation. The row widgets
+ * set LV_OBJ_FLAG_SCROLL_ON_FOCUS, which scrolls with LV_ANIM_ON — several
+ * full-panel repaints per keypress on the single-threaded SW renderer (the
+ * RK3566 GS has no GPU draw unit). We clear that flag in set_back_group and
+ * do an instant scroll here instead: one repaint per keypress. The event is
+ * bubbled from the focused child (EVENT_BUBBLE, also set in set_back_group),
+ * so get_target is the row, not the page. */
+static void on_focus(lv_event_t *e) {
+    lv_obj_t *row = lv_event_get_target(e);
+    if (row && row != lv_event_get_current_target(e))
+        lv_obj_scroll_to_view(row, LV_ANIM_OFF);
+}
+
 lv_obj_t *pp_page_create(lv_obj_t *parent,
                          const char *domain, const char *page) {
     lv_obj_t *p = lv_obj_create(parent);
@@ -52,8 +65,9 @@ lv_obj_t *pp_page_create(lv_obj_t *parent,
     d->group  = lv_group_create();
     d->back_group = NULL;
     lv_obj_set_user_data(p, d);
-    lv_obj_add_event_cb(p, on_delete, LV_EVENT_DELETE, d);
-    lv_obj_add_event_cb(p, on_key,    LV_EVENT_KEY,    d);
+    lv_obj_add_event_cb(p, on_delete, LV_EVENT_DELETE,  d);
+    lv_obj_add_event_cb(p, on_key,    LV_EVENT_KEY,     d);
+    lv_obj_add_event_cb(p, on_focus,  LV_EVENT_FOCUSED, d);
     return p;
 }
 
@@ -80,6 +94,9 @@ void pp_page_set_back_group(lv_obj_t *page, lv_group_t *back_group) {
      * children have been added — done from menu.c after page-build. */
     uint32_t n = lv_obj_get_child_cnt(page);
     for (uint32_t i = 0; i < n; i++) {
-        lv_obj_add_flag(lv_obj_get_child(page, i), LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_t *c = lv_obj_get_child(page, i);
+        lv_obj_add_flag(c, LV_OBJ_FLAG_EVENT_BUBBLE);
+        /* Disable the animated scroll-on-focus; on_focus does it instantly. */
+        lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     }
 }

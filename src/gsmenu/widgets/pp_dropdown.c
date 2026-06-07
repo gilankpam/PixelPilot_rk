@@ -66,28 +66,18 @@ static void refresh_label(pp_dd_data_t *d) {
 static void popup_open(pp_dd_data_t *d) {
     if (d->popup) return;
 
-    /* Use the active screen so lv_snapshot_take() captures the modal.
-     * Move to foreground so it renders above all other screen children. */
+    /* Parent the modal box directly to the active screen — NO full-screen
+     * translucent backdrop. A translucent (NOT_COVER) full-screen dim forces
+     * the single-threaded software renderer on the RK3566 GS to recomposite
+     * the entire frame on open (scrim + every panel row's tiny_ttf glyphs +
+     * the blend) — that was the ~1-2 s dropdown-open latency. The page scrim
+     * already dims the menu, and this box is opaque, so only the box's own
+     * area redraws. Active screen (not lv_layer_top) so lv_snapshot_take()
+     * still captures it for the screenshot harness; the error toast stays on
+     * lv_layer_top so it renders above this box. move_foreground puts the box
+     * above the panel. */
     lv_obj_t *scr = lv_screen_active();
-
-    /* Parent the modal to the active screen (not lv_layer_top): the headless
-     * screenshot harness snapshots lv_screen_active(), which does NOT include
-     * the top layer, so a top-layer modal would be invisible in design-
-     * verification screenshots. move_foreground keeps it above the panel.
-     * The error toast still uses lv_layer_top(), so it correctly renders above
-     * this modal. Do not move this back to lv_layer_top() without also fixing
-     * the harness to capture the top layer. */
-    /* Dim backdrop behind the modal. */
-    lv_obj_t *back = lv_obj_create(scr);
-    lv_obj_remove_style_all(back);
-    lv_obj_set_size(back, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_color(back, lv_color_hex(0x060709), 0);
-    lv_obj_set_style_bg_opa(back, 140, 0);             /* ~55% */
-    lv_obj_clear_flag(back, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_move_foreground(back);
-
-    /* Modal box. */
-    lv_obj_t *p = lv_obj_create(back);
+    lv_obj_t *p = lv_obj_create(scr);
     lv_obj_remove_style_all(p);
     lv_obj_set_style_bg_color(p, lv_color_hex(PP_C_MODAL), 0);
     lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
@@ -103,6 +93,7 @@ static void popup_open(pp_dd_data_t *d) {
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_center(p);
+    lv_obj_move_foreground(p);   /* render above the panel */
 
     /* Header: amber marker + uppercase label. */
     lv_obj_t *hdr = lv_obj_create(p);
@@ -180,13 +171,12 @@ static void popup_open(pp_dd_data_t *d) {
         lv_obj_t *cur_item = lv_obj_get_child(p, cur + 1); /* +1 for header */
         if (cur_item) lv_obj_scroll_to_view(cur_item, LV_ANIM_OFF);
     }
-    d->popup = back;   /* deleting the backdrop closes the whole modal */
+    d->popup = p;   /* the box itself; popup_close deletes it */
 }
 
 static void popup_refresh(pp_dd_data_t *d) {
     if (!d->popup) return;
-    lv_obj_t *box = lv_obj_get_child(d->popup, 0);     /* modal box inside backdrop */
-    if (!box) return;
+    lv_obj_t *box = d->popup;                          /* d->popup is the box itself now */
     uint16_t cur = lv_dropdown_get_selected(d->dd);
     uint32_t cnt = lv_obj_get_child_cnt(box);
     for (uint32_t i = 1; i < cnt; i++) {               /* i=0 is header */

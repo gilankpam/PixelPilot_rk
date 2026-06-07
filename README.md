@@ -354,6 +354,25 @@ Specific widgets expect quite concrete facts as input:
 * `{"type": "IconSelectorWidget", "ranges_and_icons": [{"range": [0, 10], "icon_path": "0_10.png"}, {"range": [11, 20], ...}]}` - shows
   different icon depending on the range where the value lands to.
 
+### AIOWidget (all-in-one link OSD)
+
+A single widget that renders the full ground-station link overlay (bottom
+telemetry strip + top-right REC badge) defined in `design_handoff_gs_osd/`.
+
+Minimal config (accent threshold palette):
+
+    { "name": "All-in-one link OSD", "type": "AIOWidget" }
+
+Monochrome:
+
+    { "name": "All-in-one link OSD", "type": "AIOWidget", "color_scheme": "white" }
+
+It auto-discovers all telemetry (RSSI/SNR/freq across every antenna, link
+quality from packet stats) — no `facts`/`x`/`y` needed. See
+`docs/superpowers/specs/2026-06-07-aiowidget-design.md`. Requires the Barlow
+Condensed font installed on the ground station; without it the OSD falls back
+to the default system font.
+
 ## Color Correction
 
 PixelPilot supports a real-time GPU-accelerated color transform applied to the live video feed.

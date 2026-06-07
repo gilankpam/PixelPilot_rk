@@ -118,3 +118,13 @@ TEST_CASE("AntennaAggregator best + staleness", "[aio]") {
     REQUIRE(agg.best(10000) == std::nullopt);
     REQUIRE(agg.live_count(10000) == 0u);
 }
+
+TEST_CASE("format_video_mode", "[aio]") {
+    using aio::format_video_mode;
+    REQUIRE(format_video_mode("1920x1080", 60) == "1080p60");
+    REQUIRE(format_video_mode("1280x720", 120) == "720p120");
+    REQUIRE(format_video_mode("960x540", 60) == "540p60");
+    REQUIRE(format_video_mode("1920x1080", 0) == "1080p");   // fps<=0 -> omit
+    REQUIRE(format_video_mode("foo", 60) == "foo");          // not WxH -> raw
+    REQUIRE(format_video_mode("", 60) == "");                // empty -> empty
+}

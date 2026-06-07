@@ -99,4 +99,16 @@ std::size_t AntennaAggregator::live_count(long now_ms) const {
     return n;
 }
 
+std::string format_video_mode(const std::string& resolution, int fps) {
+    if (resolution.empty()) return "";
+    auto xpos = resolution.find('x');
+    if (xpos == std::string::npos) return resolution;       // not WxH -> raw
+    std::string h = resolution.substr(xpos + 1);
+    if (h.empty()) return resolution;
+    for (char c : h) if (c < '0' || c > '9') return resolution; // non-numeric -> raw
+    std::string out = h + "p";
+    if (fps > 0) out += std::to_string(fps);
+    return out;
+}
+
 } // namespace aio

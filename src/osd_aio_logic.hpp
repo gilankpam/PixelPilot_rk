@@ -54,4 +54,9 @@ private:
     long stale_ms_;
 };
 
+// "1920x1080", 60 -> "1080p60". Parses the height after 'x'; if the string isn't
+// WxH with a numeric height, returns it unchanged; if fps <= 0 the fps suffix is
+// omitted; empty input -> "".
+std::string format_video_mode(const std::string& resolution, int fps);
+
 } // namespace aio

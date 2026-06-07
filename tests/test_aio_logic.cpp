@@ -128,3 +128,14 @@ TEST_CASE("format_video_mode", "[aio]") {
     REQUIRE(format_video_mode("foo", 60) == "foo");          // not WxH -> raw
     REQUIRE(format_video_mode("", 60) == "");                // empty -> empty
 }
+
+TEST_CASE("rssi_to_bars", "[aio]") {
+    using aio::rssi_to_bars;
+    REQUIRE(rssi_to_bars(-55) == 5);
+    REQUIRE(rssi_to_bars(-90) == 0);
+    REQUIRE(rssi_to_bars(-40) == 5);    // clamp high
+    REQUIRE(rssi_to_bars(-100) == 0);   // clamp low
+    REQUIRE(rssi_to_bars(-62) == 4);
+    REQUIRE(rssi_to_bars(-70) == 3);
+    REQUIRE(rssi_to_bars(-80) == 1);
+}

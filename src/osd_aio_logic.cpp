@@ -111,4 +111,13 @@ std::string format_video_mode(const std::string& resolution, int fps) {
     return out;
 }
 
+int rssi_to_bars(int rssi_dbm) {
+    const double lo = -90.0, hi = -55.0;
+    double f = (static_cast<double>(rssi_dbm) - lo) / (hi - lo);
+    int n = static_cast<int>(std::lround(f * 5.0));
+    if (n < 0) n = 0;
+    if (n > 5) n = 5;
+    return n;
+}
+
 } // namespace aio

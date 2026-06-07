@@ -59,4 +59,7 @@ private:
 // omitted; empty input -> "".
 std::string format_video_mode(const std::string& resolution, int fps);
 
+// RSSI dBm -> 0..5 bars, linear: -90 dBm -> 0, -55 dBm -> 5, clamped.
+int rssi_to_bars(int rssi_dbm);
+
 } // namespace aio

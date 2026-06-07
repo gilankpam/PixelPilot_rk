@@ -6,8 +6,8 @@
 
 extern lv_indev_t *indev_drv;
 
-#define PP_TAB_W 72
-#define PP_TAB_H 56
+#define PP_TAB_W 150
+#define PP_TAB_H 84
 
 struct pp_tabbar {
     lv_obj_t  *root;

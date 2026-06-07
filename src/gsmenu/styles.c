@@ -173,7 +173,7 @@ int style_init(void) {
     lv_style_init(&pp_style_tab);
     lv_style_set_bg_opa(&pp_style_tab, LV_OPA_TRANSP);
     lv_style_set_text_color(&pp_style_tab, c_text);
-    lv_style_set_text_opa(&pp_style_tab, 115);
+    lv_style_set_text_opa(&pp_style_tab, 128);
     lv_style_set_text_font(&pp_style_tab, pp_font_med_sm());
     lv_style_set_pad_ver(&pp_style_tab, PP_SCALE(12));
     lv_style_set_radius(&pp_style_tab, 0);
@@ -181,8 +181,11 @@ int style_init(void) {
 
     lv_style_init(&pp_style_tab_active);
     lv_style_set_text_color(&pp_style_tab_active, c_accent);
-    lv_style_set_bg_color(&pp_style_tab_active, c_accentd);
-    lv_style_set_bg_opa(&pp_style_tab_active, 79);
+    lv_style_set_bg_opa(&pp_style_tab_active, LV_OPA_TRANSP);
+    lv_style_set_border_side(&pp_style_tab_active, LV_BORDER_SIDE_LEFT);
+    lv_style_set_border_color(&pp_style_tab_active, c_accent);
+    lv_style_set_border_opa(&pp_style_tab_active, LV_OPA_COVER);
+    lv_style_set_border_width(&pp_style_tab_active, PP_SCALE(3));
 
     lv_style_init(&pp_style_section_hdr);
     lv_style_set_text_color(&pp_style_section_hdr, c_text);

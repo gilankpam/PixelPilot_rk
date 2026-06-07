@@ -1403,17 +1403,18 @@ public:
     // Fixed slot order. The factory registers one tagless matcher per slot in
     // exactly this order, so setFact's idx maps directly to a Slot.
     enum Slot {
-        SLOT_VIDEO_H = 0,  // video.height            (uint)
-        SLOT_VIDEO_FPS,    // video.displayed_frame   (uint, -> per-second)
-        SLOT_FREQ,         // wfbcli.rx.ant_stats.freq(uint, per-antenna)
-        SLOT_PKT_ALL,      // wfbcli.rx.packets.all.delta   (uint)
-        SLOT_PKT_LOST,     // wfbcli.rx.packets.lost.delta  (uint)
-        SLOT_PKT_FEC,      // wfbcli.rx.packets.fec_rec.delta (uint, reserved)
-        SLOT_BITRATE,      // gstreamer.received_bytes(uint, -> Mb/s)
-        SLOT_LATENCY,      // video.latency.total_ms  (uint)
-        SLOT_RSSI,         // wfbcli.rx.ant_stats.rssi_avg (int, per-antenna)
-        SLOT_SNR,          // wfbcli.rx.ant_stats.snr_avg  (int, per-antenna)
-        SLOT_REC,          // dvr.recording           (bool)
+        SLOT_VIDEO_RES = 0, // air.video.resolution    (string)
+        SLOT_VIDEO_FPS,     // air.video.fps           (int, configured)
+        SLOT_FREQ,          // wfbcli.rx.ant_stats.freq(uint, per-antenna)
+        SLOT_PKT_ALL,       // wfbcli.rx.packets.all.delta   (uint)
+        SLOT_PKT_LOST,      // wfbcli.rx.packets.lost.delta  (uint)
+        SLOT_PKT_FEC,       // wfbcli.rx.packets.fec_rec.delta (uint, reserved)
+        SLOT_BITRATE,       // gstreamer.received_bytes(uint, -> Mb/s)
+        SLOT_LATENCY,       // video.latency.total_ms  (uint)
+        SLOT_FPS_LIVE,      // video.displayed_frame   (uint, -> per-second)
+        SLOT_RSSI,          // wfbcli.rx.ant_stats.rssi_avg (int, per-antenna)
+        SLOT_SNR,           // wfbcli.rx.ant_stats.snr_avg  (int, per-antenna)
+        SLOT_REC,           // dvr.recording           (bool)
         SLOT_COUNT
     };
 
@@ -1426,9 +1427,9 @@ public:
         if (idx >= SLOT_COUNT) return;
         long now = now_ms();
         switch (idx) {
-        case SLOT_VIDEO_FPS:
+        case SLOT_FPS_LIVE:
             fps.add(static_cast<long>(fact.getUintValue()));
-            args[idx] = Fact(FactMeta("aio.fps"),
+            args[idx] = Fact(FactMeta("aio.fps_live"),
                              (ulong)fps.rate_per_second_over_last_ms(1000));
             break;
         case SLOT_BITRATE:
@@ -1464,7 +1465,7 @@ public:
             args[idx] = fact;
             break;
         }
-        default: // SLOT_VIDEO_H, SLOT_LATENCY, SLOT_PKT_FEC
+        default: // SLOT_VIDEO_RES, SLOT_VIDEO_FPS, SLOT_LATENCY, SLOT_PKT_FEC
             args[idx] = fact;
             break;
         }
@@ -1525,35 +1526,38 @@ private:
         cairo_show_text(cr, t.c_str());
     }
 
-    // A resolved tile ready to render.
     struct Tile {
         std::string label;
         std::string value;
-        std::string unit;   // may be empty
+        std::string unit;     // may be empty
         aio::Rgba value_col;
         aio::Rgba rail_col;
+        std::string reserve;  // width sample (widest expected value); fixes layout
     };
 
     aio::Rgba neutral_rail() const { return aio::Rgba{1, 1, 1, 0.5}; }
     aio::Rgba label_col() const    { return aio::Rgba{1, 1, 1, 0.62}; }
     aio::Rgba unit_col() const     { return aio::Rgba{1, 1, 1, 0.66}; }
 
-    // Build a metric tile (threshold-colored unless neutral).
+    // Threshold-/band-colored tile. Pass the resolved band directly so callers
+    // can use any band source (resolve_band, fps_band, ...).
     Tile metric_tile(const std::string &label, const std::string &value,
-                     const std::string &unit, aio::Metric m, double v) {
-        aio::Band band = aio::resolve_band(m, v);
+                     const std::string &unit, aio::Band band,
+                     const std::string &reserve) {
         aio::Rgba col = aio::resolve_color(band, scheme, false);
-        aio::Rgba rail = (scheme == aio::Scheme::Accent)
+        aio::Rgba rail = (scheme == aio::Scheme::Accent && band != aio::Band::Neutral)
                              ? col : aio::Rgba{1, 1, 1, 1};
-        return Tile{label, value, unit, col, rail};
+        return Tile{label, value, unit, col, rail, reserve};
     }
     Tile neutral_tile(const std::string &label, const std::string &value,
-                      const std::string &unit) {
+                      const std::string &unit, const std::string &reserve) {
         return Tile{label, value, unit,
-                    aio::Rgba{1, 1, 1, 1}, neutral_rail()};
+                    aio::Rgba{1, 1, 1, 1}, neutral_rail(), reserve};
     }
 
-    // Returns the tile's drawn width so the caller can advance x.
+    // Returns the tile's drawn width so the caller can advance x. The value-field
+    // width comes from t.reserve (a fixed sample), NOT the live value, so the
+    // value, unit, and all neighbouring tiles stay put as digits change.
     double draw_tile(cairo_t *cr, double x, double baseline, const Tile &t, double s) {
         const double pad   = px(26 * s, 2);
         const double rail_w = px(30 * s, 4);
@@ -1564,35 +1568,35 @@ private:
         const double unit_sz  = 16 * s;
 
         double cx = x + pad;
-        // Accent rail (top of the tile). Place it above the label.
         double rail_y = baseline - value_sz - label_sz - gap * 2 - rail_h;
         set_rgba(cr, t.rail_col);
         rounded_rect(cr, cx, rail_y, rail_w, rail_h, px(2 * s, 1));
         cairo_fill(cr);
 
-        // Label.
         font_label(cr, label_sz);
         double label_y = rail_y + rail_h + gap + label_sz;
         text_shadow(cr, cx, label_y, t.label, label_col(), s);
 
-        // Value.
+        // Reserved value-field width from the widest sample.
         font_value(cr, value_sz);
+        cairo_text_extents_t re;
+        cairo_text_extents(cr, t.reserve.c_str(), &re);
+        double value_field = re.x_advance;
+
+        // Value, left-aligned within the reserved field.
         double value_y = baseline;
         text_shadow(cr, cx, value_y, t.value, t.value_col, s);
-        cairo_text_extents_t ve;
-        cairo_text_extents(cr, t.value.c_str(), &ve);
-        double after_value = cx + ve.x_advance + px(6 * s, 1);
 
-        // Unit (optional), baseline-aligned with the value.
-        double tile_right = cx + ve.x_advance;
+        // Unit (optional) at a fixed offset after the reserved value field.
+        double tile_right = cx + value_field;
         if (!t.unit.empty()) {
             font_unit(cr, unit_sz);
-            text_shadow(cr, after_value, value_y, t.unit, unit_col(), s);
+            double ux = cx + value_field + px(6 * s, 1);
+            text_shadow(cr, ux, value_y, t.unit, unit_col(), s);
             cairo_text_extents_t ue;
             cairo_text_extents(cr, t.unit.c_str(), &ue);
-            tile_right = after_value + ue.x_advance;
+            tile_right = ux + ue.x_advance;
         }
-        // Tile width = max(rail extent, value/unit extent) + trailing pad.
         double content_right = std::max(cx + rail_w, tile_right);
         return (content_right - x) + pad;
     }
@@ -1645,62 +1649,78 @@ private:
         const double pad_b = px(26 * s, 2);
         const double baseline = H - pad_b;
 
-        // ---- Left group: VIDEO, WIFI CH -----------------------------------
-        ulong vh = arg_u(SLOT_VIDEO_H);
-        ulong vfps = arg_u(SLOT_VIDEO_FPS);
-        std::string video = vh ? (std::to_string(vh) + "p" + std::to_string(vfps))
-                               : std::string("--");
+        // ---- Left group: VIDEO (configured air mode), WIFI CH -------------
+        std::string res = arg_s(SLOT_VIDEO_RES);
+        int cfg_fps = (int)arg_u(SLOT_VIDEO_FPS);
+        std::string video = res.empty() ? std::string("--")
+                                        : aio::format_video_mode(res, cfg_fps);
         std::string chan = "--";
         if (last_freq > 0) {
             auto c = aio::freq_to_channel((int)last_freq);
             chan = c ? std::to_string(*c) : (std::to_string(last_freq));
         }
         double x = pad_x;
-        x += draw_tile(cr, x, baseline, neutral_tile("VIDEO", video, ""), s);
-        x += draw_tile(cr, x, baseline, neutral_tile("WIFI CH", chan, ""), s);
+        x += draw_tile(cr, x, baseline, neutral_tile("VIDEO", video, "", "1080p120"), s);
+        x += draw_tile(cr, x, baseline, neutral_tile("WIFI CH", chan, "", "8888"), s);
 
-        // ---- Right group: signal bars + 5 metrics (right-anchored) --------
+        // ---- Right group (right-anchored, fixed widths) ------------------
         int lq = aio::link_quality_pct(window_sum(pkt_all), window_sum(pkt_lost));
-        aio::Rgba link_col = aio::resolve_color(
-            aio::resolve_band(aio::Metric::Link, lq), scheme, false);
-
         double br = arg_d(SLOT_BITRATE);
         long lat = (long)arg_u(SLOT_LATENCY);
         auto rssi = rssi_agg.best(now_ms());
         auto snr  = snr_agg.best(now_ms());
 
+        // Live FPS tile, deviation-colored vs configured fps.
+        Tile fps_t = neutral_tile("FPS", "--", "", "888");
+        if (args[SLOT_FPS_LIVE].isDefined()) {
+            int live = (int)arg_u(SLOT_FPS_LIVE);
+            aio::Band fb = aio::fps_band(live, cfg_fps);
+            fps_t = (fb == aio::Band::Neutral)
+                ? neutral_tile("FPS", std::to_string(live), "", "888")
+                : metric_tile("FPS", std::to_string(live), "", fb, "888");
+        }
+
         std::vector<Tile> right;
         right.push_back(metric_tile("LINK", std::to_string(lq), "%",
-                                    aio::Metric::Link, lq));
+                                    aio::resolve_band(aio::Metric::Link, lq), "100"));
         right.push_back(metric_tile("BITRATE", fmt1(br), "Mb/s",
-                                    aio::Metric::Bitrate, br));
+                                    aio::resolve_band(aio::Metric::Bitrate, br), "888.8"));
         right.push_back(metric_tile("LATENCY", std::to_string(lat), "ms",
-                                    aio::Metric::Latency, (double)lat));
+                                    aio::resolve_band(aio::Metric::Latency, (double)lat), "888"));
+        right.push_back(fps_t);
         right.push_back(rssi
-            ? metric_tile("RSSI", std::to_string(*rssi), "dBm", aio::Metric::Rssi, (double)*rssi)
-            : neutral_tile("RSSI", "--", "dBm"));
+            ? metric_tile("RSSI", std::to_string(*rssi), "dBm",
+                          aio::resolve_band(aio::Metric::Rssi, (double)*rssi), "-888")
+            : neutral_tile("RSSI", "--", "dBm", "-888"));
         right.push_back(snr
-            ? metric_tile("SNR", std::to_string(*snr), "dB", aio::Metric::Snr, (double)*snr)
-            : neutral_tile("SNR", "--", "dB"));
+            ? metric_tile("SNR", std::to_string(*snr), "dB",
+                          aio::resolve_band(aio::Metric::Snr, (double)*snr), "-88")
+            : neutral_tile("SNR", "--", "dB", "-88"));
 
-        // Lay the right group out from the right edge: measure, then place.
+        // Signal bars = RSSI strength, RSSI-band colored.
+        int bars = rssi ? aio::rssi_to_bars((int)*rssi) : 0;
+        aio::Rgba bar_col = rssi
+            ? aio::resolve_color(aio::resolve_band(aio::Metric::Rssi, (double)*rssi), scheme, false)
+            : aio::Rgba{1, 1, 1, 1};
+
         const double bars_w = 5 * px(8 * s, 3) + 4 * px(5 * s, 1) + px(26 * s, 2);
         double total = bars_w;
         for (auto &t : right) total += measure_tile(cr, t, s);
         double rx = W - pad_x - total;
-        draw_signal_bars(cr, rx, baseline, aio::signal_bar_count(lq), link_col, s);
+        draw_signal_bars(cr, rx, baseline, bars, bar_col, s);
         rx += bars_w;
         for (auto &t : right) rx += draw_tile(cr, rx, baseline, t, s);
     }
 
-    // Measure a tile's width. Note: this sets Cairo font state (font_value/font_unit);
-    // draw_tile re-sets the font before drawing, and draw()'s save/restore bounds it.
+    // Measure a tile's width from its reserve sample. Note: sets Cairo font state
+    // (font_value/font_unit); draw_tile re-sets the font, and draw()'s
+    // save/restore bounds it.
     double measure_tile(cairo_t *cr, const Tile &t, double s) {
         const double pad = px(26 * s, 2);
         const double rail_w = px(30 * s, 4);
         font_value(cr, 46 * s);
-        cairo_text_extents_t ve; cairo_text_extents(cr, t.value.c_str(), &ve);
-        double right = ve.x_advance;
+        cairo_text_extents_t re; cairo_text_extents(cr, t.reserve.c_str(), &re);
+        double right = re.x_advance;
         if (!t.unit.empty()) {
             font_unit(cr, 16 * s);
             cairo_text_extents_t ue; cairo_text_extents(cr, t.unit.c_str(), &ue);
@@ -1749,6 +1769,10 @@ private:
     }
     double arg_d(int idx) {
         return args[idx].isDefined() ? (double)args[idx] : 0.0;
+    }
+    std::string arg_s(int idx) {
+        return (args[idx].isDefined() && args[idx].getType() == Fact::T_STRING)
+                   ? args[idx].getStrValue() : std::string();
     }
     long window_sum(const RunningAverage &ra) {
         return ra.get_stats_over_last_ms_result(1000).sum;
@@ -2320,14 +2344,15 @@ public:
 				// Default tagless matchers, injected when no facts are given.
 				// Order MUST match AIOWidget::Slot (see the Slot enum).
 				if (matchers.empty()) {
-					matchers.push_back(FactMatcher("video.height"));                  // SLOT_VIDEO_H
-					matchers.push_back(FactMatcher("video.displayed_frame"));         // SLOT_VIDEO_FPS
+					matchers.push_back(FactMatcher("air.video.resolution"));          // SLOT_VIDEO_RES
+					matchers.push_back(FactMatcher("air.video.fps"));                 // SLOT_VIDEO_FPS
 					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.freq"));      // SLOT_FREQ
 					matchers.push_back(FactMatcher("wfbcli.rx.packets.all.delta"));   // SLOT_PKT_ALL
 					matchers.push_back(FactMatcher("wfbcli.rx.packets.lost.delta"));  // SLOT_PKT_LOST
 					matchers.push_back(FactMatcher("wfbcli.rx.packets.fec_rec.delta"));// SLOT_PKT_FEC
 					matchers.push_back(FactMatcher("gstreamer.received_bytes"));      // SLOT_BITRATE
 					matchers.push_back(FactMatcher("video.latency.total_ms"));        // SLOT_LATENCY
+					matchers.push_back(FactMatcher("video.displayed_frame"));         // SLOT_FPS_LIVE
 					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.rssi_avg"));  // SLOT_RSSI
 					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.snr_avg"));   // SLOT_SNR
 					matchers.push_back(FactMatcher("dvr.recording"));                 // SLOT_REC

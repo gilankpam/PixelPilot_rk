@@ -1,5 +1,6 @@
 #include "osd_aio_logic.hpp"
 #include <cmath>
+#include <cstdio>
 
 namespace aio {
 
@@ -66,6 +67,16 @@ std::optional<int> freq_to_channel(int f) {
     if (f >= 5150 && f <= 5895 && (f - 5000) % 5 == 0)
         return (f - 5000) / 5;                                 // 5 GHz
     return std::nullopt;
+}
+
+std::string format_timecode(long s) {
+    if (s < 0) s = 0;
+    long h = s / 3600;
+    long m = (s % 3600) / 60;
+    long sec = s % 60;
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "%02ld:%02ld:%02ld", h, m, sec);
+    return std::string(buf);
 }
 
 } // namespace aio

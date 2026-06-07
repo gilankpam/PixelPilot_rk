@@ -88,3 +88,12 @@ TEST_CASE("freq_to_channel", "[aio]") {
     REQUIRE(freq_to_channel(3000) == std::nullopt); // out of band -> caller shows raw MHz
     REQUIRE(freq_to_channel(5183) == std::nullopt); // not on a 5 MHz grid
 }
+
+TEST_CASE("format_timecode", "[aio]") {
+    using aio::format_timecode;
+    REQUIRE(format_timecode(0) == "00:00:00");
+    REQUIRE(format_timecode(8) == "00:00:08");
+    REQUIRE(format_timecode(872) == "00:14:32");   // handoff REC sample
+    REQUIRE(format_timecode(3661) == "01:01:01");
+    REQUIRE(format_timecode(-5) == "00:00:00");     // clamp negatives
+}

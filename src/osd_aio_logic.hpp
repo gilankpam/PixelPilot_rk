@@ -37,4 +37,7 @@ int signal_bar_count(int lq_pct);
 // MHz -> WiFi channel number; nullopt if outside known 2.4/5 GHz grids.
 std::optional<int> freq_to_channel(int freq_mhz);
 
+// Elapsed seconds -> "HH:MM:SS" (zero-padded; negatives clamp to zero).
+std::string format_timecode(long elapsed_s);
+
 } // namespace aio

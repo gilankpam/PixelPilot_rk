@@ -40,6 +40,7 @@ extern "C" {
 #include <utility>
 #include <filesystem>
 #include <cairo.h>
+#include "osd_aio_logic.hpp"
 #include <time.h>
 #include <stdint.h>
 #include <nlohmann/json.hpp>
@@ -1394,6 +1395,109 @@ private:
 	uint64_t peak_ts_ms;
 };
 
+
+class AIOWidget : public Widget {
+public:
+    // Fixed slot order. The factory registers one tagless matcher per slot in
+    // exactly this order, so setFact's idx maps directly to a Slot.
+    enum Slot {
+        SLOT_VIDEO_H = 0,  // video.height            (uint)
+        SLOT_VIDEO_FPS,    // video.displayed_frame   (uint, -> per-second)
+        SLOT_FREQ,         // wfbcli.rx.ant_stats.freq(uint, per-antenna)
+        SLOT_PKT_ALL,      // wfbcli.rx.packets.all.delta   (uint)
+        SLOT_PKT_LOST,     // wfbcli.rx.packets.lost.delta  (uint)
+        SLOT_PKT_FEC,      // wfbcli.rx.packets.fec_rec.delta (uint, reserved)
+        SLOT_BITRATE,      // gstreamer.received_bytes(uint, -> Mb/s)
+        SLOT_LATENCY,      // video.latency.total_ms  (uint)
+        SLOT_RSSI,         // wfbcli.rx.ant_stats.rssi_avg (int, per-antenna)
+        SLOT_SNR,          // wfbcli.rx.ant_stats.snr_avg  (int, per-antenna)
+        SLOT_REC,          // dvr.recording           (bool)
+        SLOT_COUNT
+    };
+
+    AIOWidget(int pos_x, int pos_y, aio::Scheme scheme)
+        : Widget(pos_x, pos_y, SLOT_COUNT), scheme(scheme),
+          fps(2000, 200), bps(2000, 100),
+          pkt_all(2000, 200), pkt_lost(2000, 200) {}
+
+    void setFact(uint idx, Fact fact) override {
+        if (idx >= SLOT_COUNT) return;
+        long now = now_ms();
+        switch (idx) {
+        case SLOT_VIDEO_FPS:
+            fps.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = Fact(FactMeta("aio.fps"),
+                             (ulong)fps.rate_per_second_over_last_ms(1000));
+            break;
+        case SLOT_BITRATE:
+            bps.add(static_cast<long>(fact.getUintValue()));
+            // 125000 = 1e6 / 8  -> megabits
+            args[idx] = Fact(FactMeta("aio.mbps"),
+                             bps.rate_per_second_over_last_ms(1000) / 125000.0);
+            break;
+        case SLOT_PKT_ALL:
+            pkt_all.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = fact;
+            break;
+        case SLOT_PKT_LOST:
+            pkt_lost.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = fact;
+            break;
+        case SLOT_RSSI:
+            if (accept_link(fact)) rssi_agg.update(ant_id_of(fact), (long)fact, now);
+            args[idx] = fact;
+            break;
+        case SLOT_SNR:
+            if (accept_link(fact)) snr_agg.update(ant_id_of(fact), (long)fact, now);
+            args[idx] = fact;
+            break;
+        case SLOT_FREQ:
+            if (accept_link(fact)) last_freq = static_cast<long>(fact.getUintValue());
+            args[idx] = fact;
+            break;
+        case SLOT_REC: {
+            bool rec = fact.isDefined() && fact.getBoolValue();
+            if (rec && !recording) rec_start_ms = now; // false->true transition
+            recording = rec;
+            args[idx] = fact;
+            break;
+        }
+        default: // SLOT_VIDEO_H, SLOT_LATENCY, SLOT_PKT_FEC
+            args[idx] = fact;
+            break;
+        }
+    }
+
+    void draw(cairo_t *cr) override { /* implemented in Task 9 */ }
+
+protected:
+    static long now_ms() {
+        auto t = std::chrono::steady_clock::now().time_since_epoch();
+        return std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
+    }
+    // Aggregate only the video link: accept facts whose "id" tag contains
+    // "video", or that carry no "id" tag at all.
+    static bool accept_link(const Fact& f) {
+        auto tags = f.getTags();
+        auto it = tags.find("id");
+        if (it == tags.end()) return true;
+        return it->second.find("video") != std::string::npos;
+    }
+    static std::string ant_id_of(const Fact& f) {
+        auto tags = f.getTags();
+        auto it = tags.find("ant_id");
+        return it != tags.end() ? it->second : std::string("0");
+    }
+
+    aio::Scheme scheme;
+    RunningAverage fps, bps, pkt_all, pkt_lost;
+    aio::AntennaAggregator rssi_agg{2500}, snr_agg{2500};
+    long last_freq = -1;
+    bool recording = false;
+    long rec_start_ms = 0;
+    long blink_last_ms = 0;
+    bool blink_on = true;
+};
 
 class GPSWidget: public Widget {
 public:

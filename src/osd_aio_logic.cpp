@@ -43,11 +43,11 @@ Rgba resolve_color(Band band, Scheme scheme, bool is_neutral) {
     }
 }
 
-int link_quality_pct(long all, long lost) {
+int link_quality_pct(long all, long lost, long fec_rec) {
     if (all <= 0) return 0;
-    long good = all - lost;
-    if (good < 0) good = 0;
-    long pct = std::lround(100.0 * static_cast<double>(good) / static_cast<double>(all));
+    long clean = all - lost - fec_rec;
+    if (clean < 0) clean = 0;
+    long pct = std::lround(100.0 * static_cast<double>(clean) / static_cast<double>(all));
     if (pct < 0) pct = 0;
     if (pct > 100) pct = 100;
     return static_cast<int>(pct);

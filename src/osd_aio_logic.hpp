@@ -28,8 +28,9 @@ Band resolve_band(Metric m, double value);
 // which are always white. White scheme returns white for every band.
 Rgba resolve_color(Band band, Scheme scheme, bool is_neutral);
 
-// Link quality 0..100 from packet counters over a window.
-int link_quality_pct(long pkt_all, long pkt_lost);
+// Link quality 0..100: fraction of packets received cleanly (no loss, no FEC
+// recovery) over a window. (all - lost - fec_rec) / all, clamped; 0 when all==0.
+int link_quality_pct(long pkt_all, long pkt_lost, long pkt_fec_rec);
 
 
 // MHz -> WiFi channel number; nullopt if outside known 2.4/5 GHz grids.

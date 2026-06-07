@@ -1408,7 +1408,7 @@ public:
         SLOT_FREQ,          // wfbcli.rx.ant_stats.freq(uint, per-antenna)
         SLOT_PKT_ALL,       // wfbcli.rx.packets.all.delta   (uint)
         SLOT_PKT_LOST,      // wfbcli.rx.packets.lost.delta  (uint)
-        SLOT_PKT_FEC,       // wfbcli.rx.packets.fec_rec.delta (uint, reserved)
+        SLOT_PKT_FEC,       // wfbcli.rx.packets.fec_rec.delta (uint, -> LINK quality)
         SLOT_BITRATE,       // gstreamer.received_bytes(uint, -> Mb/s)
         SLOT_LATENCY,       // video.latency.total_ms  (uint)
         SLOT_FPS_LIVE,      // video.displayed_frame   (uint, -> per-second)
@@ -1421,7 +1421,7 @@ public:
     AIOWidget(int pos_x, int pos_y, aio::Scheme scheme)
         : Widget(pos_x, pos_y, SLOT_COUNT), scheme(scheme),
           fps(2000, 200), bps(2000, 100),
-          pkt_all(2000, 200), pkt_lost(2000, 200) {}
+          pkt_all(2000, 200), pkt_lost(2000, 200), pkt_fec(2000, 200) {}
 
     void setFact(uint idx, Fact fact) override {
         if (idx >= SLOT_COUNT) return;
@@ -1465,7 +1465,11 @@ public:
             args[idx] = fact;
             break;
         }
-        default: // SLOT_VIDEO_RES, SLOT_VIDEO_FPS, SLOT_LATENCY, SLOT_PKT_FEC
+        case SLOT_PKT_FEC:
+            if (accept_link(fact)) pkt_fec.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = fact;
+            break;
+        default: // SLOT_VIDEO_RES, SLOT_VIDEO_FPS, SLOT_LATENCY
             args[idx] = fact;
             break;
         }
@@ -1664,7 +1668,7 @@ private:
         x += draw_tile(cr, x, baseline, neutral_tile("WIFI CH", chan, "", "8888"), s);
 
         // ---- Right group (right-anchored, fixed widths) ------------------
-        int lq = aio::link_quality_pct(window_sum(pkt_all), window_sum(pkt_lost));
+        int lq = aio::link_quality_pct(window_sum(pkt_all), window_sum(pkt_lost), window_sum(pkt_fec));
         double br = arg_d(SLOT_BITRATE);
         long lat = (long)arg_u(SLOT_LATENCY);
         auto rssi = rssi_agg.best(now_ms());
@@ -1801,7 +1805,7 @@ protected:
     }
 
     aio::Scheme scheme;
-    RunningAverage fps, bps, pkt_all, pkt_lost;
+    RunningAverage fps, bps, pkt_all, pkt_lost, pkt_fec;
     aio::AntennaAggregator rssi_agg{2500}, snr_agg{2500};
     long last_freq = -1;
     bool recording = false;

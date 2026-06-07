@@ -60,11 +60,14 @@ TEST_CASE("resolve_color schemes", "[aio]") {
 
 TEST_CASE("link_quality_pct", "[aio]") {
     using aio::link_quality_pct;
-    REQUIRE(link_quality_pct(0, 0) == 0);       // no traffic -> 0%
-    REQUIRE(link_quality_pct(100, 0) == 100);   // perfect
-    REQUIRE(link_quality_pct(100, 100) == 0);   // all lost
-    REQUIRE(link_quality_pct(100, 8) == 92);    // nominal sample
-    REQUIRE(link_quality_pct(100, 200) == 0);   // clamp: lost > all
+    REQUIRE(link_quality_pct(0, 0, 0) == 0);        // no traffic
+    REQUIRE(link_quality_pct(100, 0, 0) == 100);    // perfect, no loss/fec
+    REQUIRE(link_quality_pct(100, 100, 0) == 0);    // all lost
+    REQUIRE(link_quality_pct(100, 8, 0) == 92);     // 8 lost, no fec
+    REQUIRE(link_quality_pct(100, 8, 10) == 82);    // 8 lost + 10 fec-recovered
+    REQUIRE(link_quality_pct(100, 0, 100) == 0);    // every packet needed fec
+    REQUIRE(link_quality_pct(100, 200, 0) == 0);    // clamp: lost > all
+    REQUIRE(link_quality_pct(100, 60, 60) == 0);    // clamp: clean negative -> 0
 }
 
 

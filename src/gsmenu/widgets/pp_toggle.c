@@ -87,6 +87,14 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
                      LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_set_size(sw, PP_SCALE(40), PP_SCALE(22));
 
+    /* OFF track: dim white. Knob: bright white (OFF) / dark (ON). */
+    lv_obj_set_style_bg_color(sw, lv_color_hex(PP_C_INK), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sw, 41, LV_PART_MAIN);                       /* ~16% */
+    lv_obj_set_style_bg_color(sw, lv_color_hex(PP_C_INK), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(sw, 235, LV_PART_KNOB);
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0x06231A),
+                              LV_PART_KNOB | LV_STATE_CHECKED);          /* dark knob when ON */
+
     pp_toggle_data_t *d = calloc(1, sizeof(*d));
     d->domain = strdup(domain);
     d->page   = strdup(page);

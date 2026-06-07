@@ -414,6 +414,8 @@ install(FILES ${ICONS}
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}
 )
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/gsmenu/fonts/Geist-Regular.ttf
+              ${CMAKE_CURRENT_SOURCE_DIR}/src/gsmenu/fonts/BarlowCondensed-Medium.ttf
+              ${CMAKE_CURRENT_SOURCE_DIR}/src/gsmenu/fonts/BarlowCondensed-ExtraBold.ttf
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/${PROJECT_NAME}/fonts
 )
 

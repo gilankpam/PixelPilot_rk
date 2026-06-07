@@ -35,6 +35,14 @@ extern lv_style_t style_openipc_lightdark_background;
 
 int style_init(void);
 
+/* Barlow Condensed font accessors (lv_tiny_ttf). Fall back to Montserrat
+ * when the TTF is not found. */
+const lv_font_t *pp_font_med_sm(void);
+const lv_font_t *pp_font_med_md(void);
+const lv_font_t *pp_font_med_lg(void);
+const lv_font_t *pp_font_xb_md(void);
+const lv_font_t *pp_font_xb_lg(void);
+
 /* New widget style tokens (Visual spec in 2026-05-27 design). */
 extern lv_style_t pp_style_panel;        /* main panel bg */
 extern lv_style_t pp_style_panel_alt;    /* alt-state panel bg (day/night seam) */

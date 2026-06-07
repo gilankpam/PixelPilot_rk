@@ -5,40 +5,37 @@
 #include <stdlib.h>   /* getenv: PP_PANEL_FX opt-in for the costly panel effects */
 #include "styles.h"   /* PP_SCALE + style/ font declarations */
 
-/* Geist font instances loaded via lv_tiny_ttf at startup. NULL if the
- * TTF wasn't found at any known prefix — the styles fall back to the
- * built-in Montserrat in that case. */
-static lv_font_t *g_font_geist_14 = NULL;
-static lv_font_t *g_font_geist_16 = NULL;
-static lv_font_t *g_font_geist_22 = NULL;
+/* Barlow Condensed instances (lv_tiny_ttf). NULL if a TTF is missing —
+ * accessors then fall back to Montserrat. Two weights: Medium for labels/
+ * sections/rail/footer, ExtraBold for control values / emphasis / toast. */
+static lv_font_t *g_med_sm  = NULL;  /* section/rail/footer label */
+static lv_font_t *g_med_md  = NULL;  /* row label */
+static lv_font_t *g_med_lg  = NULL;  /* reserved (large medium) */
+static lv_font_t *g_xb_md   = NULL;  /* control value */
+static lv_font_t *g_xb_lg   = NULL;  /* large value / toast */
 
-static lv_font_t *load_geist(int size) {
-    const char *rel = "Geist-Regular.ttf";
-    /* Prefer the search prefixes used by find_resource_file. Tiny TTF
-     * needs a real path with "A:" prefix (LVGL POSIX FS driver). */
+static lv_font_t *load_ttf(const char *file, int size) {
     const char *prefixes[] = {
         "A:/usr/local/share/pixelpilot/fonts",
         "A:/usr/share/pixelpilot/fonts",
         "A:./src/gsmenu/fonts",
     };
-    for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++) {
+    for (size_t i = 0; i < sizeof(prefixes)/sizeof(prefixes[0]); i++) {
         char path[256];
-        snprintf(path, sizeof path, "%s/%s", prefixes[i], rel);
+        snprintf(path, sizeof path, "%s/%s", prefixes[i], file);
         lv_font_t *f = lv_tiny_ttf_create_file(path, size);
         if (f) return f;
     }
     return NULL;
 }
+#define PP_FONT_MED "BarlowCondensed-Medium.ttf"
+#define PP_FONT_XB  "BarlowCondensed-ExtraBold.ttf"
 
-const lv_font_t *pp_font_geist_14(void) {
-    return g_font_geist_14 ? g_font_geist_14 : &lv_font_montserrat_22;
-}
-const lv_font_t *pp_font_geist_16(void) {
-    return g_font_geist_16 ? g_font_geist_16 : &lv_font_montserrat_24;
-}
-const lv_font_t *pp_font_geist_22(void) {
-    return g_font_geist_22 ? g_font_geist_22 : &lv_font_montserrat_32;
-}
+const lv_font_t *pp_font_med_sm(void) { return g_med_sm ? g_med_sm : &lv_font_montserrat_22; }
+const lv_font_t *pp_font_med_md(void) { return g_med_md ? g_med_md : &lv_font_montserrat_24; }
+const lv_font_t *pp_font_med_lg(void) { return g_med_lg ? g_med_lg : &lv_font_montserrat_32; }
+const lv_font_t *pp_font_xb_md(void)  { return g_xb_md  ? g_xb_md  : &lv_font_montserrat_24; }
+const lv_font_t *pp_font_xb_lg(void)  { return g_xb_lg  ? g_xb_lg  : &lv_font_montserrat_32; }
 
 
 lv_style_t style_rootmenu;
@@ -65,28 +62,11 @@ lv_style_t pp_style_switch_on;
 
 
 int style_init(void) {
-    /* Load Geist TTF at the sizes we use. If unavailable, the
-     * pp_font_geist_* accessors return Montserrat as a fallback.
-     *
-     * Geist is a normal text typeface and does not include the
-     * LV_SYMBOL_* private-use glyphs. Chain Montserrat at the same
-     * size as the fallback font so icons keep rendering inline. */
-    /* Sizes are the ~1.5x-scaled values (14/16/22 -> 22/24/32) for goggle
-     * legibility. They land on Montserrat-available sizes so the LV_SYMBOL
-     * icon fallback matches the Geist text size exactly. The pp_font_geist_*
-     * accessor names refer to their original role, not the literal px. */
-    if (!g_font_geist_14) {
-        g_font_geist_14 = load_geist(22);
-        if (g_font_geist_14) g_font_geist_14->fallback = &lv_font_montserrat_22;
-    }
-    if (!g_font_geist_16) {
-        g_font_geist_16 = load_geist(24);
-        if (g_font_geist_16) g_font_geist_16->fallback = &lv_font_montserrat_24;
-    }
-    if (!g_font_geist_22) {
-        g_font_geist_22 = load_geist(32);
-        if (g_font_geist_22) g_font_geist_22->fallback = &lv_font_montserrat_32;
-    }
+    if (!g_med_sm) { g_med_sm = load_ttf(PP_FONT_MED, 22); if (g_med_sm) g_med_sm->fallback = &lv_font_montserrat_22; }
+    if (!g_med_md) { g_med_md = load_ttf(PP_FONT_MED, 24); if (g_med_md) g_med_md->fallback = &lv_font_montserrat_24; }
+    if (!g_med_lg) { g_med_lg = load_ttf(PP_FONT_MED, 32); if (g_med_lg) g_med_lg->fallback = &lv_font_montserrat_32; }
+    if (!g_xb_md)  { g_xb_md  = load_ttf(PP_FONT_XB,  24); if (g_xb_md)  g_xb_md->fallback  = &lv_font_montserrat_24; }
+    if (!g_xb_lg)  { g_xb_lg  = load_ttf(PP_FONT_XB,  32); if (g_xb_lg)  g_xb_lg->fallback  = &lv_font_montserrat_32; }
 
     lv_style_reset(&style_rootmenu);
     lv_style_init(&style_rootmenu);
@@ -194,7 +174,7 @@ int style_init(void) {
     lv_style_set_bg_opa(&pp_style_tab, LV_OPA_TRANSP);
     lv_style_set_text_color(&pp_style_tab, c_text);
     lv_style_set_text_opa(&pp_style_tab, 115);
-    lv_style_set_text_font(&pp_style_tab, pp_font_geist_14());
+    lv_style_set_text_font(&pp_style_tab, pp_font_med_sm());
     lv_style_set_pad_ver(&pp_style_tab, PP_SCALE(12));
     lv_style_set_radius(&pp_style_tab, 0);
     lv_style_set_border_width(&pp_style_tab, 0);
@@ -207,7 +187,7 @@ int style_init(void) {
     lv_style_init(&pp_style_section_hdr);
     lv_style_set_text_color(&pp_style_section_hdr, c_text);
     lv_style_set_text_opa(&pp_style_section_hdr, 102);
-    lv_style_set_text_font(&pp_style_section_hdr, pp_font_geist_14());
+    lv_style_set_text_font(&pp_style_section_hdr, pp_font_med_sm());
     lv_style_set_text_letter_space(&pp_style_section_hdr, PP_SCALE(2));
     lv_style_set_pad_top(&pp_style_section_hdr, PP_SCALE(8));
     lv_style_set_pad_left(&pp_style_section_hdr, PP_SCALE(20));
@@ -218,7 +198,7 @@ int style_init(void) {
     lv_style_set_pad_hor(&pp_style_row, PP_SCALE(20));
     lv_style_set_pad_ver(&pp_style_row, PP_SCALE(8));
     lv_style_set_text_color(&pp_style_row, c_text);
-    lv_style_set_text_font(&pp_style_row, pp_font_geist_16());
+    lv_style_set_text_font(&pp_style_row, pp_font_med_md());
     lv_style_set_border_side(&pp_style_row, LV_BORDER_SIDE_BOTTOM);
     lv_style_set_border_color(&pp_style_row, lv_color_hex(0xFFFFFF));
     lv_style_set_border_opa(&pp_style_row, 33);

@@ -155,6 +155,8 @@ set(LIB_SOURCE_FILES
         src/osd.h
         src/osd.hpp
         src/osd.cpp
+        src/osd_aio_logic.hpp
+        src/osd_aio_logic.cpp
         src/os_mon.hpp
         src/os_mon.cpp
         src/osd_gl.cpp
@@ -265,6 +267,13 @@ if(USE_SIMULATOR)
       ${PP_CJSON_INC})
     target_link_libraries(gs_enum_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    add_executable(aio_logic_tests
+      src/osd_aio_logic.cpp
+      tests/test_aio_logic.cpp)
+    target_include_directories(aio_logic_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(aio_logic_tests Catch2::Catch2WithMain)
 
   endif()
 else()

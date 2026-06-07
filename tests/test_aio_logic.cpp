@@ -77,3 +77,14 @@ TEST_CASE("signal_bar_count", "[aio]") {
     REQUIRE(signal_bar_count(-10) == 0);  // clamp low
     REQUIRE(signal_bar_count(150) == 5);  // clamp high
 }
+
+TEST_CASE("freq_to_channel", "[aio]") {
+    using aio::freq_to_channel;
+    REQUIRE(freq_to_channel(5745) == std::optional<int>(149));
+    REQUIRE(freq_to_channel(5180) == std::optional<int>(36));
+    REQUIRE(freq_to_channel(2412) == std::optional<int>(1));
+    REQUIRE(freq_to_channel(2472) == std::optional<int>(13));
+    REQUIRE(freq_to_channel(2484) == std::optional<int>(14));
+    REQUIRE(freq_to_channel(3000) == std::nullopt); // out of band -> caller shows raw MHz
+    REQUIRE(freq_to_channel(5183) == std::nullopt); // not on a 5 MHz grid
+}

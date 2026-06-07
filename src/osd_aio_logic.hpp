@@ -34,4 +34,7 @@ int link_quality_pct(long pkt_all, long pkt_lost);
 // Filled signal-bar count 0..5 from link quality %.
 int signal_bar_count(int lq_pct);
 
+// MHz -> WiFi channel number; nullopt if outside known 2.4/5 GHz grids.
+std::optional<int> freq_to_channel(int freq_mhz);
+
 } // namespace aio

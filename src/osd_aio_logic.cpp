@@ -59,4 +59,13 @@ int signal_bar_count(int lq_pct) {
     return n;
 }
 
+std::optional<int> freq_to_channel(int f) {
+    if (f == 2484) return 14;                                  // 2.4 GHz ch 14
+    if (f >= 2412 && f <= 2472 && (f - 2407) % 5 == 0)
+        return (f - 2407) / 5;                                 // 2.4 GHz ch 1..13
+    if (f >= 5150 && f <= 5895 && (f - 5000) % 5 == 0)
+        return (f - 5000) / 5;                                 // 5 GHz
+    return std::nullopt;
+}
+
 } // namespace aio

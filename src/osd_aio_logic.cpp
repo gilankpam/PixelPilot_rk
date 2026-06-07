@@ -1,4 +1,5 @@
 #include "osd_aio_logic.hpp"
+#include <cmath>
 
 namespace aio {
 
@@ -39,6 +40,23 @@ Rgba resolve_color(Band band, Scheme scheme, bool is_neutral) {
     case Band::Crit: return Rgba{0xff / 255.0, 0x2e / 255.0, 0x3e / 255.0, 1};
     default:         return white;
     }
+}
+
+int link_quality_pct(long all, long lost) {
+    if (all <= 0) return 0;
+    long good = all - lost;
+    if (good < 0) good = 0;
+    long pct = std::lround(100.0 * static_cast<double>(good) / static_cast<double>(all));
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return static_cast<int>(pct);
+}
+
+int signal_bar_count(int lq_pct) {
+    int n = static_cast<int>(std::lround(lq_pct / 100.0 * 5.0));
+    if (n < 0) n = 0;
+    if (n > 5) n = 5;
+    return n;
 }
 
 } // namespace aio

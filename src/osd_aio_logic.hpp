@@ -28,4 +28,10 @@ Band resolve_band(Metric m, double value);
 // which are always white. White scheme returns white for every band.
 Rgba resolve_color(Band band, Scheme scheme, bool is_neutral);
 
+// Link quality 0..100 from packet counters over a window.
+int link_quality_pct(long pkt_all, long pkt_lost);
+
+// Filled signal-bar count 0..5 from link quality %.
+int signal_bar_count(int lq_pct);
+
 } // namespace aio

@@ -79,4 +79,24 @@ std::string format_timecode(long s) {
     return std::string(buf);
 }
 
+void AntennaAggregator::update(const std::string& ant_id, long value, long now_ms) {
+    entries_[ant_id] = Entry{value, now_ms};
+}
+
+std::optional<long> AntennaAggregator::best(long now_ms) const {
+    std::optional<long> result;
+    for (const auto& [id, e] : entries_) {
+        if (now_ms - e.last_ms > stale_ms_) continue; // stale
+        if (!result || e.value > *result) result = e.value;
+    }
+    return result;
+}
+
+std::size_t AntennaAggregator::live_count(long now_ms) const {
+    std::size_t n = 0;
+    for (const auto& [id, e] : entries_)
+        if (now_ms - e.last_ms <= stale_ms_) ++n;
+    return n;
+}
+
 } // namespace aio

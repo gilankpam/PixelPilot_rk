@@ -97,3 +97,24 @@ TEST_CASE("format_timecode", "[aio]") {
     REQUIRE(format_timecode(3661) == "01:01:01");
     REQUIRE(format_timecode(-5) == "00:00:00");     // clamp negatives
 }
+
+TEST_CASE("AntennaAggregator best + staleness", "[aio]") {
+    aio::AntennaAggregator agg(2500); // 2500 ms stale window
+
+    REQUIRE(agg.best(0) == std::nullopt);          // empty
+    agg.update("0", -70, 1000);
+    agg.update("1", -62, 1000);
+    agg.update("256", -85, 1000);
+    REQUIRE(agg.best(1000) == std::optional<long>(-62)); // max across antennas
+    REQUIRE(agg.live_count(1000) == 3u);
+
+    // Antenna "1" goes stale (no refresh); others refreshed at 4000ms.
+    agg.update("0", -71, 4000);
+    agg.update("256", -88, 4000);
+    REQUIRE(agg.best(4000) == std::optional<long>(-71)); // "1" (-62) evicted as stale
+    REQUIRE(agg.live_count(4000) == 2u);
+
+    // Everything stale -> nullopt.
+    REQUIRE(agg.best(10000) == std::nullopt);
+    REQUIRE(agg.live_count(10000) == 0u);
+}

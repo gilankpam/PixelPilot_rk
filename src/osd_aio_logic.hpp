@@ -40,4 +40,18 @@ std::optional<int> freq_to_channel(int freq_mhz);
 // Elapsed seconds -> "HH:MM:SS" (zero-padded; negatives clamp to zero).
 std::string format_timecode(long elapsed_s);
 
+// Tracks the latest value per antenna id and reports the best (max) across
+// antennas seen within `stale_ms`. Pure: the caller supplies the clock (now_ms).
+class AntennaAggregator {
+public:
+    explicit AntennaAggregator(long stale_ms = 2500) : stale_ms_(stale_ms) {}
+    void update(const std::string& ant_id, long value, long now_ms);
+    std::optional<long> best(long now_ms) const; // max over live antennas
+    std::size_t live_count(long now_ms) const;
+private:
+    struct Entry { long value; long last_ms; };
+    std::map<std::string, Entry> entries_;
+    long stale_ms_;
+};
+
 } // namespace aio

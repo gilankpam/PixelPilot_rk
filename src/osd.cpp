@@ -1438,11 +1438,11 @@ public:
                              bps.rate_per_second_over_last_ms(1000) / 125000.0);
             break;
         case SLOT_PKT_ALL:
-            pkt_all.add(static_cast<long>(fact.getUintValue()));
+            if (accept_link(fact)) pkt_all.add(static_cast<long>(fact.getUintValue()));
             args[idx] = fact;
             break;
         case SLOT_PKT_LOST:
-            pkt_lost.add(static_cast<long>(fact.getUintValue()));
+            if (accept_link(fact)) pkt_lost.add(static_cast<long>(fact.getUintValue()));
             args[idx] = fact;
             break;
         case SLOT_RSSI:

@@ -2139,27 +2139,29 @@ public:
 			}
 			auto name = widget_j.at("name").template get<std::string>();
 			auto type = widget_j.at("type").template get<std::string>();
-			auto x = widget_j.at("x").template get<int>();
-			auto y = widget_j.at("y").template get<int>();
+			int x = widget_j.contains("x") ? widget_j.at("x").template get<int>() : 0;
+			int y = widget_j.contains("y") ? widget_j.at("y").template get<int>() : 0;
 			std::vector<FactMatcher> matchers;
-			for(json matcher_j : widget_j.at("facts")) {
-				auto matcher_name = matcher_j.at("name").template get<std::string>();
-				FactTags tags;
-				if (matcher_j.contains("tags")) {
-					for (auto& [key, value] : matcher_j.at("tags").items()) {
-						tags.insert({key, value});
+			if (widget_j.contains("facts")) {
+				for(json matcher_j : widget_j.at("facts")) {
+					auto matcher_name = matcher_j.at("name").template get<std::string>();
+					FactTags tags;
+					if (matcher_j.contains("tags")) {
+						for (auto& [key, value] : matcher_j.at("tags").items()) {
+							tags.insert({key, value});
+						}
 					}
-				}
-				if (matcher_j.contains("convert")) {
-					auto expression_str = matcher_j.at("convert").template get<std::string>();
-					try {
-						matchers.push_back(FactMatcher(matcher_name, tags, expression_str));
-					} catch (const ExpressionException& e) {
-						spdlog::error("Invalid convert expression {}: {}",
-									  expression_str, e.what());
+					if (matcher_j.contains("convert")) {
+						auto expression_str = matcher_j.at("convert").template get<std::string>();
+						try {
+							matchers.push_back(FactMatcher(matcher_name, tags, expression_str));
+						} catch (const ExpressionException& e) {
+							spdlog::error("Invalid convert expression {}: {}",
+										  expression_str, e.what());
+						}
+					} else {
+						matchers.push_back(FactMatcher(matcher_name, tags));
 					}
-				} else {
-					matchers.push_back(FactMatcher(matcher_name, tags));
 				}
 			}
 			if (type == "TextWidget") {
@@ -2306,6 +2308,35 @@ public:
 						  matchers);
 			} else if (type == "DebugWidget") {
 				addWidget(new DebugWidget(x, y, (uint)matchers.size()), matchers);
+			} else if (type == "AIOWidget") {
+				aio::Scheme scheme = aio::Scheme::Accent;
+				if (widget_j.contains("color_scheme")) {
+					auto cs = widget_j.at("color_scheme").template get<std::string>();
+					if (cs == "white") scheme = aio::Scheme::White;
+					else if (cs != "accent")
+						spdlog::warn("AIOWidget '{}': unknown color_scheme '{}', using accent",
+									 name, cs);
+				}
+				// Default tagless matchers, injected when no facts are given.
+				// Order MUST match AIOWidget::Slot (see the Slot enum).
+				if (matchers.empty()) {
+					matchers.push_back(FactMatcher("video.height"));                  // SLOT_VIDEO_H
+					matchers.push_back(FactMatcher("video.displayed_frame"));         // SLOT_VIDEO_FPS
+					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.freq"));      // SLOT_FREQ
+					matchers.push_back(FactMatcher("wfbcli.rx.packets.all.delta"));   // SLOT_PKT_ALL
+					matchers.push_back(FactMatcher("wfbcli.rx.packets.lost.delta"));  // SLOT_PKT_LOST
+					matchers.push_back(FactMatcher("wfbcli.rx.packets.fec_rec.delta"));// SLOT_PKT_FEC
+					matchers.push_back(FactMatcher("gstreamer.received_bytes"));      // SLOT_BITRATE
+					matchers.push_back(FactMatcher("video.latency.total_ms"));        // SLOT_LATENCY
+					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.rssi_avg"));  // SLOT_RSSI
+					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.snr_avg"));   // SLOT_SNR
+					matchers.push_back(FactMatcher("dvr.recording"));                 // SLOT_REC
+				} else if (matchers.size() != (size_t)AIOWidget::SLOT_COUNT) {
+					spdlog::warn("AIOWidget '{}': {} facts supplied but {} expected; "
+								 "unmapped slots will be blank",
+								 name, matchers.size(), (int)AIOWidget::SLOT_COUNT);
+				}
+				addWidget(new AIOWidget(x, y, scheme), matchers);
 			} else {
 				spdlog::warn("Widget '{}': unknown type: {}", name, type);
 			}

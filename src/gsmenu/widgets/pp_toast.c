@@ -1,5 +1,6 @@
 #include "pp_toast.h"
 #include "lvgl/lvgl.h"
+#include "../styles.h"
 
 /* Singleton state — at most one toast visible at a time. */
 static lv_obj_t  *g_toast = NULL;
@@ -45,10 +46,12 @@ void pp_toast_error(const char *msg) {
     lv_obj_set_height(toast, LV_SIZE_CONTENT);
     lv_obj_align(toast, LV_ALIGN_BOTTOM_MID, 0, -24);
 
-    /* Background: red, opaque, rounded. */
-    lv_obj_set_style_bg_color(toast, lv_color_hex(0xC1392B), 0);
-    lv_obj_set_style_bg_opa(toast, LV_OPA_COVER, 0);
+    /* Background: dark panel, crit border, rounded (design toast). */
+    lv_obj_set_style_bg_color(toast, lv_color_hex(PP_C_MODAL), 0);
+    lv_obj_set_style_bg_opa(toast, 240, 0);
     lv_obj_set_style_radius(toast, 8, 0);
+    lv_obj_set_style_border_width(toast, 1, 0);
+    lv_obj_set_style_border_color(toast, lv_color_hex(PP_C_CRIT), 0);
 
     /* Padding: 12px horizontal, 8px vertical. */
     lv_obj_set_style_pad_hor(toast, 12, 0);
@@ -60,22 +63,27 @@ void pp_toast_error(const char *msg) {
     lv_obj_set_style_drop_shadow_color(toast, lv_color_black(), 0);
     lv_obj_set_style_drop_shadow_offset_y(toast, 4, 0);
 
-    /* No border. */
-    lv_obj_set_style_border_width(toast, 0, 0);
-
     /* Don't intercept touch/click events. */
     lv_obj_add_flag(toast, LV_OBJ_FLAG_IGNORE_LAYOUT);
     lv_obj_clear_flag(toast, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(toast, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Label: white text, Montserrat 16, wrap. */
+    lv_obj_set_flex_flow(toast, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(toast, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *dot = lv_obj_create(toast);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_size(dot, PP_SCALE(8), PP_SCALE(8));
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(PP_C_CRIT), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_set_style_margin_right(dot, PP_SCALE(8), 0);
+
     lv_obj_t *label = lv_label_create(toast);
     lv_label_set_text(label, msg);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(label, LV_PCT(100));
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
-    lv_obj_center(label);
+    lv_obj_set_style_text_color(label, lv_color_hex(PP_C_INK), 0);
+    lv_obj_set_style_text_font(label, pp_font_xb_md(), 0);
+    lv_obj_set_style_text_letter_space(label, PP_SCALE(1), 0);
 
     g_toast = toast;
 

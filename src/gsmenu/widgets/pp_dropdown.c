@@ -6,6 +6,7 @@
 #include "../../input.h"
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 /* Scaled menu-row text font (same accessor pp_style_row uses). Declared
  * extern here per the pp_drilldown.c pattern so the popup option labels
@@ -16,6 +17,7 @@ typedef struct pp_dd_data pp_dd_data_t;
 
 struct pp_dd_data {
     char *domain, *page, *key;
+    char *label;
     lv_obj_t *dd, *value_label, *row;
     lv_obj_t *popup;            /* floating options list while in EDIT */
     uint16_t saved_sel;
@@ -51,7 +53,7 @@ static void on_delete(lv_event_t *e) {
     pp_dd_data_t *d = lv_event_get_user_data(e);
     if (d) {
         popup_close(d);
-        free(d->domain); free(d->page); free(d->key); free(d);
+        free(d->domain); free(d->page); free(d->key); free(d->label); free(d);
     }
 }
 
@@ -61,114 +63,145 @@ static void refresh_label(pp_dd_data_t *d) {
     lv_label_set_text(d->value_label, buf);
 }
 
-/* Build a small floating list of every option, with the currently-selected
- * one highlighted. Anchored to the row's value column on the right side. */
 static void popup_open(pp_dd_data_t *d) {
     if (d->popup) return;
 
-    lv_obj_t *top = lv_layer_top();
-    lv_obj_t *p = lv_obj_create(top);
+    /* Use the active screen so lv_snapshot_take() captures the modal.
+     * Move to foreground so it renders above all other screen children. */
+    lv_obj_t *scr = lv_screen_active();
+
+    /* Parent the modal to the active screen (not lv_layer_top): the headless
+     * screenshot harness snapshots lv_screen_active(), which does NOT include
+     * the top layer, so a top-layer modal would be invisible in design-
+     * verification screenshots. move_foreground keeps it above the panel.
+     * The error toast still uses lv_layer_top(), so it correctly renders above
+     * this modal. Do not move this back to lv_layer_top() without also fixing
+     * the harness to capture the top layer. */
+    /* Dim backdrop behind the modal. */
+    lv_obj_t *back = lv_obj_create(scr);
+    lv_obj_remove_style_all(back);
+    lv_obj_set_size(back, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x060709), 0);
+    lv_obj_set_style_bg_opa(back, 140, 0);             /* ~55% */
+    lv_obj_clear_flag(back, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_move_foreground(back);
+
+    /* Modal box. */
+    lv_obj_t *p = lv_obj_create(back);
     lv_obj_remove_style_all(p);
-    lv_obj_add_style(p, &pp_style_panel, 0);
-    lv_obj_set_style_radius(p, PP_SCALE(6), 0);
-    lv_obj_set_style_pad_all(p, PP_SCALE(4), 0);
-    lv_obj_set_style_shadow_width(p, PP_SCALE(16), 0);
-    lv_obj_set_style_shadow_opa(p, LV_OPA_50, 0);
-    lv_obj_set_style_shadow_color(p, lv_color_hex(0x000000), 0);
-    /* Option labels inherit this; without it they fall back to the 14px
-     * LVGL default and stay unscaled while the rest of the UI is 1.5x. */
+    lv_obj_set_style_bg_color(p, lv_color_hex(PP_C_MODAL), 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(p, 1, 0);
+    lv_obj_set_style_border_color(p, lv_color_hex(PP_C_ACCENT), 0);
+    lv_obj_set_style_radius(p, 12, 0);
+    lv_obj_set_style_pad_all(p, PP_SCALE(6), 0);
     lv_obj_set_style_text_font(p, pp_font_med_md(), 0);
+    lv_obj_set_width(p, PP_SCALE(300));
+    lv_obj_set_style_max_height(p, lv_display_get_vertical_resolution(NULL) - 160, 0);
+    lv_obj_set_height(p, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(p, LV_DIR_VER);
-    lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
-
-    /* Width: comfortable fixed column. Height: clamp to visible page. */
-    lv_obj_set_width(p, PP_SCALE(180));
-    lv_obj_set_style_max_height(p, lv_display_get_vertical_resolution(NULL) - 80, 0);
-    lv_obj_set_height(p, LV_SIZE_CONTENT);
-    lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_scroll_dir(p, LV_DIR_VER);
+    lv_obj_center(p);
 
-    /* Anchor: right-align next to the row. Compute absolute screen coords
-     * of the row's value column, place popup just to the left of that. */
-    lv_area_t coords;
-    lv_obj_get_coords(d->value_label, &coords);
-    int32_t x = coords.x2 + PP_SCALE(8) - PP_SCALE(180);  /* right-align popup to value end (match scaled width) */
-    if (x < 8) x = 8;
-    int32_t y = coords.y1;
-    int32_t bottom_limit = lv_display_get_vertical_resolution(NULL) - 16;
-    int32_t pop_h_estimate = (lv_dropdown_get_option_count(d->dd) * PP_SCALE(28)) + PP_SCALE(8);
-    if (y + pop_h_estimate > bottom_limit) y = bottom_limit - pop_h_estimate;
-    if (y < 8) y = 8;
-    lv_obj_set_pos(p, x, y);
+    /* Header: amber marker + uppercase label. */
+    lv_obj_t *hdr = lv_obj_create(p);
+    lv_obj_remove_style_all(hdr);
+    lv_obj_set_width(hdr, LV_PCT(100));
+    lv_obj_set_height(hdr, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(hdr, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(hdr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(hdr, PP_SCALE(8), 0);
+    lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *mark = lv_obj_create(hdr);
+    lv_obj_remove_style_all(mark);
+    lv_obj_set_size(mark, PP_SCALE(4), PP_SCALE(18));
+    lv_obj_set_style_bg_color(mark, lv_color_hex(PP_C_ACCENT), 0);
+    lv_obj_set_style_bg_opa(mark, LV_OPA_COVER, 0);
+    lv_obj_set_style_margin_right(mark, PP_SCALE(8), 0);
+    lv_obj_t *htxt = lv_label_create(hdr);
+    {
+        char up[64]; size_t n = 0;
+        for (const char *s = d->label ? d->label : ""; *s && n < sizeof(up)-1; ++s, ++n)
+            up[n] = (char)toupper((unsigned char)*s);
+        up[n] = '\0';
+        lv_label_set_text(htxt, up);
+    }
+    lv_obj_set_style_text_font(htxt, pp_font_xb_md(), 0);
+    lv_obj_set_style_text_color(htxt, lv_color_hex(PP_C_INK), 0);
 
-    uint16_t cur = lv_dropdown_get_selected(d->dd);
-    uint16_t n   = lv_dropdown_get_option_count(d->dd);
+    uint16_t cur   = lv_dropdown_get_selected(d->dd);
+    uint16_t saved = d->saved_sel;
+    uint16_t n     = lv_dropdown_get_option_count(d->dd);
     for (uint16_t i = 0; i < n; i++) {
         char buf[64];
-        /* lv_dropdown_get_selected_str only returns the currently selected
-         * string; iterate by temporarily setting selection on each. */
         lv_dropdown_set_selected(d->dd, i);
         lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
 
         lv_obj_t *item = lv_obj_create(p);
         lv_obj_remove_style_all(item);
         lv_obj_set_width(item, LV_PCT(100));
-        lv_obj_set_height(item, PP_SCALE(26));
-        lv_obj_set_style_pad_hor(item, PP_SCALE(10), 0);
-        lv_obj_set_style_pad_ver(item, PP_SCALE(4), 0);
-        lv_obj_set_style_radius(item, PP_SCALE(4), 0);
+        lv_obj_set_height(item, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(item, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_hor(item, PP_SCALE(12), 0);
+        lv_obj_set_style_pad_ver(item, PP_SCALE(6), 0);
         lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
         if (i == cur) {
-            lv_obj_set_style_bg_color(item, lv_color_hex(0x4C60D8), 0);
-            lv_obj_set_style_bg_opa(item, 79, 0);   /* same accent_bg as row focus */
+            lv_obj_set_style_bg_color(item, lv_color_hex(PP_C_ACCENT), 0);
+            lv_obj_set_style_bg_opa(item, 26, 0);                  /* ~10% */
+            lv_obj_set_style_border_side(item, LV_BORDER_SIDE_LEFT, 0);
+            lv_obj_set_style_border_color(item, lv_color_hex(PP_C_ACCENT), 0);
+            lv_obj_set_style_border_opa(item, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(item, PP_SCALE(3), 0);
         }
-
         lv_obj_t *l = lv_label_create(item);
         lv_label_set_text(l, buf);
-        lv_obj_center(l);
+        lv_obj_set_flex_grow(l, 1);
         if (i == cur) {
-            lv_obj_set_style_text_color(l, lv_color_hex(0x6B7FFF), 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(PP_C_ACCENT), 0);
+            lv_obj_set_style_text_font(l, pp_font_xb_md(), 0);
         } else {
-            lv_obj_set_style_text_color(l, lv_color_hex(0xFFFFFF), 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(PP_C_INK), 0);
             lv_obj_set_style_text_opa(l, 200, 0);
         }
+        if (i == saved) {
+            lv_obj_t *tag = lv_label_create(item);
+            lv_label_set_text(tag, "CURRENT");
+            lv_obj_set_style_text_font(tag, pp_font_med_sm(), 0);
+            lv_obj_set_style_text_color(tag, lv_color_hex(PP_C_INK), 0);
+            lv_obj_set_style_text_opa(tag, 102, 0);                /* ~40% */
+            lv_obj_set_style_text_letter_space(tag, PP_SCALE(2), 0);
+        }
     }
-    /* Restore selection (above loop trashed it). */
     lv_dropdown_set_selected(d->dd, cur);
 
-    /* Scroll the highlighted item into view if popup is taller than max. */
-    if (cur < lv_obj_get_child_cnt(p)) {
-        lv_obj_t *cur_item = lv_obj_get_child(p, cur);
+    if (cur + 1 < lv_obj_get_child_cnt(p)) {
+        lv_obj_t *cur_item = lv_obj_get_child(p, cur + 1); /* +1 for header */
         if (cur_item) lv_obj_scroll_to_view(cur_item, LV_ANIM_OFF);
     }
-
-    d->popup = p;
+    d->popup = back;   /* deleting the backdrop closes the whole modal */
 }
 
 static void popup_refresh(pp_dd_data_t *d) {
     if (!d->popup) return;
+    lv_obj_t *box = lv_obj_get_child(d->popup, 0);     /* modal box inside backdrop */
+    if (!box) return;
     uint16_t cur = lv_dropdown_get_selected(d->dd);
-    uint32_t n = lv_obj_get_child_cnt(d->popup);
-    for (uint32_t i = 0; i < n; i++) {
-        lv_obj_t *item = lv_obj_get_child(d->popup, i);
+    uint32_t cnt = lv_obj_get_child_cnt(box);
+    for (uint32_t i = 1; i < cnt; i++) {               /* i=0 is header */
+        lv_obj_t *item = lv_obj_get_child(box, i);
         lv_obj_t *lbl  = lv_obj_get_child(item, 0);
-        if (i == cur) {
-            lv_obj_set_style_bg_color(item, lv_color_hex(0x4C60D8), 0);
-            lv_obj_set_style_bg_opa(item, 79, 0);
-            if (lbl) {
-                lv_obj_set_style_text_color(lbl, lv_color_hex(0x6B7FFF), 0);
-                lv_obj_set_style_text_opa(lbl, LV_OPA_COVER, 0);
-            }
-        } else {
-            lv_obj_set_style_bg_opa(item, LV_OPA_TRANSP, 0);
-            if (lbl) {
-                lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFF), 0);
-                lv_obj_set_style_text_opa(lbl, 200, 0);
-            }
+        bool on = (i - 1) == cur;
+        lv_obj_set_style_bg_opa(item, on ? 26 : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(item, on ? PP_SCALE(3) : 0, 0);
+        if (lbl) {
+            lv_obj_set_style_text_color(lbl,
+                lv_color_hex(on ? PP_C_ACCENT : PP_C_INK), 0);
+            lv_obj_set_style_text_opa(lbl, on ? LV_OPA_COVER : 200, 0);
+            lv_obj_set_style_text_font(lbl, on ? pp_font_xb_md() : pp_font_med_md(), 0);
         }
-        if (i == cur) lv_obj_scroll_to_view(item, LV_ANIM_ON);
+        if (on) lv_obj_scroll_to_view(item, LV_ANIM_ON);
     }
 }
 
@@ -284,6 +317,7 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     d->domain = strdup(domain);
     d->page   = strdup(page);
     d->key    = strdup(key);
+    d->label  = strdup(label);
     d->dd     = dd;
     d->value_label = value_label;
     d->row    = row;

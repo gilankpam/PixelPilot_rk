@@ -120,4 +120,12 @@ int rssi_to_bars(int rssi_dbm) {
     return n;
 }
 
+Band fps_band(int live_fps, int configured_fps) {
+    if (configured_fps <= 0) return Band::Neutral;
+    double ratio = static_cast<double>(live_fps) / static_cast<double>(configured_fps);
+    if (ratio >= 0.90) return Band::Good;
+    if (ratio >= 0.70) return Band::Warn;
+    return Band::Crit;
+}
+
 } // namespace aio

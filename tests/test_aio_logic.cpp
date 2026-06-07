@@ -139,3 +139,13 @@ TEST_CASE("rssi_to_bars", "[aio]") {
     REQUIRE(rssi_to_bars(-70) == 3);
     REQUIRE(rssi_to_bars(-80) == 1);
 }
+
+TEST_CASE("fps_band", "[aio]") {
+    using aio::fps_band; using aio::Band;
+    REQUIRE(fps_band(60, 0) == Band::Neutral);   // no reference
+    REQUIRE(fps_band(60, 60) == Band::Good);
+    REQUIRE(fps_band(54, 60) == Band::Good);      // 0.90
+    REQUIRE(fps_band(53, 60) == Band::Warn);
+    REQUIRE(fps_band(42, 60) == Band::Warn);      // 0.70
+    REQUIRE(fps_band(41, 60) == Band::Crit);
+}

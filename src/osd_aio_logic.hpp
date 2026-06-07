@@ -62,4 +62,8 @@ std::string format_video_mode(const std::string& resolution, int fps);
 // RSSI dBm -> 0..5 bars, linear: -90 dBm -> 0, -55 dBm -> 5, clamped.
 int rssi_to_bars(int rssi_dbm);
 
+// Live vs configured fps -> band. configured <= 0 -> Neutral (no reference).
+// ratio >= 0.90 -> Good; >= 0.70 -> Warn; else Crit.
+Band fps_band(int live_fps, int configured_fps);
+
 } // namespace aio

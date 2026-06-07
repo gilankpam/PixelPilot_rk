@@ -209,8 +209,8 @@ int style_init(void) {
     lv_style_set_radius(&pp_style_row, 0);
 
     lv_style_init(&pp_style_row_focus);
-    lv_style_set_bg_color(&pp_style_row_focus, c_accentd);
-    lv_style_set_bg_opa(&pp_style_row_focus, 79);
+    lv_style_set_bg_color(&pp_style_row_focus, lv_color_hex(PP_C_INK));
+    lv_style_set_bg_opa(&pp_style_row_focus, 18);   /* ~7% white */
     lv_style_set_border_side(&pp_style_row_focus, LV_BORDER_SIDE_LEFT);
     lv_style_set_border_color(&pp_style_row_focus, c_accent);
     lv_style_set_border_opa(&pp_style_row_focus, LV_OPA_COVER);

@@ -262,11 +262,7 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
                           LV_FLEX_ALIGN_CENTER);
     lv_obj_add_flag(row, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
 
-    if (icon_text) {
-        lv_obj_t *icon = lv_label_create(row);
-        lv_label_set_text(icon, icon_text);
-        lv_obj_set_style_pad_right(icon, PP_SCALE(12), 0);
-    }
+    (void)icon_text;   /* OSD reskin: rows are label + value only (no leading icon) */
 
     lv_obj_t *label_obj = lv_label_create(row);
     lv_label_set_text(label_obj, label);

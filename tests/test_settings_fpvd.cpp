@@ -16,7 +16,9 @@ TEST_CASE("keymap: lookup returns the json path for known triples", "[fpvd][keym
     e = fpvd_keymap_lookup("air", "camera", "bitrate");
     REQUIRE(e != nullptr);
     REQUIRE(std::strcmp(e->path, "video.bitrate") == 0);
-    REQUIRE(e->type == FPVD_T_BITRATE_KBPS);
+    /* Raw kbps int: the Mbps slider (camera.c) does the kbps<->Mbps conversion,
+     * so the keymap serializes the plain integer rather than an M-suffix string. */
+    REQUIRE(e->type == FPVD_T_INT);
 
     e = fpvd_keymap_lookup("gs", "wfbng", "bandwidth");
     REQUIRE(e != nullptr);

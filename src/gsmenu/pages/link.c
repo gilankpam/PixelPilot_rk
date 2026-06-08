@@ -13,7 +13,9 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
     pp_section_header(page, "WFB-NG");
     pp_dropdown(page, LV_SYMBOL_WIFI, "Channel",
                 "gs", "wfbng", "gs_channel",
-                "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n36\n40\n44\n48\n149\n153\n157\n161\n165");
+                "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n36\n40\n44\n48\n"
+                "52\n56\n60\n64\n100\n104\n108\n112\n116\n120\n124\n128\n132\n136\n140\n144\n"
+                "149\n153\n157\n161\n165");
     pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",
                 "gs", "wfbng", "bandwidth", "10\n20\n40");
     pp_slider(page, LV_SYMBOL_UP, "TX Power",

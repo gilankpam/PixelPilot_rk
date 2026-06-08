@@ -331,8 +331,7 @@ cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t ty
 
 static const char *LOCKED_PATHS[] = {
     "link.mcs",
-    /* link.txpower intentionally NOT locked: TX Power stays editable while
-     * dynamic link is on (the air unit accepts it). */
+    "link.txpower",
     "link.fec",
     "link.width",
     "video.bitrate",

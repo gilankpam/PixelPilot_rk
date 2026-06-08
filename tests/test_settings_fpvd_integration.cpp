@@ -294,3 +294,34 @@ TEST_CASE("integration: Bandwidth row editable when Dynamic Link is off",
     REQUIRE(pp_settings_is_locked("gs", "wfbng", "bandwidth") == false);
     m.stop();
 }
+
+TEST_CASE("integration: TX Power DL-locked while GS card power stays editable",
+          "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"mcs":2,"width":20,"txpower":1},"video":{"bitrate":8192},)"
+      R"("dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+    // Drone TX Power (gs/wfbng/txpower -> link.txpower, EP_AIR) is pushed to the
+    // drone and rejected by its DL lock, so it must report locked while DL is on.
+    REQUIRE(pp_settings_is_locked("gs", "wfbng", "txpower") == true);
+    // GS card power (gs/link/rx_power -> link.txpower, EP_LINK) is the GS card's
+    // OWN power (apply_to "gs"), not drone-controlled — it must stay editable.
+    REQUIRE(pp_settings_is_locked("gs", "link", "rx_power") == false);
+    m.stop();
+}
+
+TEST_CASE("integration: TX Power editable when Dynamic Link is off",
+          "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"mcs":2,"width":20,"txpower":1},"video":{"bitrate":8192},)"
+      R"("dynamicLink":{"enabled":false}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+    wait_first_poll(m);
+    REQUIRE(pp_settings_is_locked("gs", "wfbng", "txpower") == false);
+    m.stop();
+}

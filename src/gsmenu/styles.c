@@ -18,6 +18,7 @@ static lv_font_t *load_ttf(const char *file, int size) {
     const char *prefixes[] = {
         "A:/usr/local/share/pixelpilot/fonts",
         "A:/usr/share/pixelpilot/fonts",
+        "A:/usr/share/fonts", /* shared with the Cairo OSD via fontconfig */
         "A:./src/gsmenu/fonts",
     };
     for (size_t i = 0; i < sizeof(prefixes)/sizeof(prefixes[0]); i++) {

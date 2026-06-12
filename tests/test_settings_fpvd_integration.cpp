@@ -558,3 +558,27 @@ TEST_CASE("integration: TX Power editable when Dynamic Link is off",
     REQUIRE(pp_settings_is_locked("gs", "wfbng", "txpower") == false);
     m.stop();
 }
+
+TEST_CASE("integration: hidden->visible triggers an immediate refresh", "[fpvd][network]") {
+    GsMockServer srv;
+    srv.air_get_override = 503;            /* drone down at registration */
+    srv.start();
+    install_provider_pointing_at(srv.port);
+    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
+
+    srv.air_get_override = 0;              /* drone comes back up */
+    pp_settings_set_visibility(false);     /* ensure a clean hidden state */
+    pp_settings_set_visibility(true);      /* menu opens -> immediate probe */
+
+    /* Must flip well before the 3s visible tick (and the 60s hidden one). */
+    bool reachable = false;
+    auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+    while (!reachable && std::chrono::steady_clock::now() < end) {
+        reachable = pp_settings_is_reachable("air", "camera", "fps");
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    REQUIRE(reachable == true);
+
+    pp_settings_set_visibility(false);     /* don't leave 3s polling running */
+    srv.stop();
+}

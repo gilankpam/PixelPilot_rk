@@ -36,6 +36,7 @@ typedef struct {
     pthread_cond_t  cv;
     bool     stop;
     bool     visible;
+    bool     refresh_now;         /* hidden→visible: probe now, don't wait a tick */
     bool     gs_connected;        /* fpvd-GS HTTP round-trips succeed */
     bool     drone_reachable;     /* derived from the /air round-trip (2xx=reachable) */
     bool     worker_started;
@@ -783,6 +784,16 @@ static void *worker_main(void *arg) {
     while (1) {
         pthread_mutex_lock(&G.mu);
         while (!G.stop && G.queue_n == 0) {
+            if (G.refresh_now) {
+                G.refresh_now = false;
+                bool notify = refresh_snapshot_unlocked();
+                if (notify) {
+                    pthread_mutex_unlock(&G.mu);
+                    notify_listener();
+                    pthread_mutex_lock(&G.mu);
+                }
+                continue;
+            }
             int wait_ms = G.gs_connected ? (G.visible ? 3000 : 60000) : 2000;
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
@@ -975,6 +986,7 @@ static void prov_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
 
 static void prov_set_visibility(bool v) {
     pthread_mutex_lock(&G.mu);
+    if (v && !G.visible) G.refresh_now = true;
     G.visible = v;
     pthread_cond_signal(&G.cv);
     pthread_mutex_unlock(&G.mu);
@@ -1018,6 +1030,7 @@ void pp_settings_register_fpvd(void) {
     G.base_url[sizeof G.base_url - 1] = '\0';
     G.stop      = false;
     G.visible   = false;
+    G.refresh_now = false;
     G.gs_connected    = false;
     G.drone_reachable = false;
     if (G.air_snapshot)    { cJSON_Delete(G.air_snapshot);    G.air_snapshot    = NULL; }

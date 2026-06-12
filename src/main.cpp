@@ -456,8 +456,10 @@ void *__DISPLAY_THREAD__(void *param)
 				spdlog::error("Display: atomic commit failed rc={} errno={} (count {}, osd_buf_switch={})",
 				              ret, strerror(errno), commit_fail_count, output_list->osd_buf_switch);
 		}
-		ret = pthread_mutex_unlock(&osd_mutex);
-		assert(!ret);
+		if (enable_osd) {
+			ret = pthread_mutex_unlock(&osd_mutex);
+			assert(!ret);
+		}
 		osd_publish_uint_fact("video.displayed_frame", NULL, 0, 1);
 		uint64_t now_ms = get_time_ms();
 		uint64_t decode_and_handover_display_ms = now_ms - decoding_pts;

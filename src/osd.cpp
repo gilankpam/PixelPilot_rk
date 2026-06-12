@@ -2447,7 +2447,10 @@ private:
 std::queue<Fact> fact_queue;
 std::mutex mtx;
 std::condition_variable cv;
-pthread_mutex_t osd_mutex;
+// Statically initialized: the display thread starts before the OSD thread
+// and locks this mutex on its first frame, so a runtime init inside the OSD
+// thread would race with it.
+pthread_mutex_t osd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void modeset_paint_buffer(struct modeset_buf *buf, Osd *osd) {
 	unsigned int j,k,off;
@@ -2595,11 +2598,8 @@ void *__OSD_THREAD__(void *param) {
 	osd->loadConfig(p->config);
 	auto last_display_at = std::chrono::steady_clock::now();
 
-	int ret = pthread_mutex_init(&osd_mutex, NULL);
-	assert(!ret);
-
 	struct modeset_buf *buf = &p->out->osd_bufs[p->out->osd_buf_switch];
-	ret = modeset_perform_modeset(p->fd, p->out, p->out->osd_request, &p->out->osd_plane,
+	int ret = modeset_perform_modeset(p->fd, p->out, p->out->osd_request, &p->out->osd_plane,
 								  buf->fb, buf->width, buf->height, osd_zpos);
 
 	if (!osd_gl.init(p->fd, buf->width, buf->height,

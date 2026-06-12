@@ -83,6 +83,27 @@ const char *pp_page_name(lv_obj_t *page) {
     pp_page_data_t *d = lv_obj_get_user_data(page);
     return d ? d->page : NULL;
 }
+void pp_page_rescue_focus(lv_obj_t *page) {
+    pp_page_data_t *d = lv_obj_get_user_data(page);
+    if (!d || !d->group || !indev_drv) return;
+    if (lv_indev_get_group(indev_drv) != d->group) return;
+
+    lv_obj_t *focused = lv_group_get_focused(d->group);
+    if (focused && !lv_obj_has_state(focused, LV_STATE_DISABLED)) return;
+
+    /* The focused row just got lock-disabled under the user. Move to the
+     * nearest enabled row; if the whole page is locked (all-air page,
+     * drone gone), no row can receive keys anymore — including the HOME
+     * that exits — so take the HOME path for them. */
+    lv_group_focus_next(d->group);
+    lv_obj_t *next = lv_group_get_focused(d->group);
+    if (next && next != focused && !lv_obj_has_state(next, LV_STATE_DISABLED))
+        return;
+
+    if (focused) lv_obj_remove_state(focused, LV_STATE_FOCUS_KEY);
+    if (d->back_group) lv_indev_set_group(indev_drv, d->back_group);
+}
+
 void pp_page_set_back_group(lv_obj_t *page, lv_group_t *back_group) {
     pp_page_data_t *d = lv_obj_get_user_data(page);
     if (!d) return;

@@ -301,6 +301,26 @@ if(USE_SIMULATOR)
       ${PP_CJSON_INC})
     target_link_libraries(widget_focus_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
+    # A page whose rows are all lock-disabled (drone off) must never trap
+    # keyboard focus — see tests/test_page_nav_lock.cpp.
+    add_executable(page_nav_tests
+      src/gsmenu/widgets/pp_page.c
+      src/gsmenu/widgets/pp_tabbar.c
+      src/gsmenu/widgets/pp_toggle.c
+      src/gsmenu/widgets/pp_row.c
+      src/gsmenu/widgets/pp_toast.c
+      src/gsmenu/styles.c
+      src/gsmenu/helper.c
+      src/gsmenu/settings.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_page_nav_lock.cpp)
+    target_include_directories(page_nav_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR}
+      ${PP_CJSON_INC})
+    target_link_libraries(page_nav_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

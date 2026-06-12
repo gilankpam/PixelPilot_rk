@@ -4,6 +4,7 @@
 #include "helper.h"
 #include "settings.h"
 #include "widgets/pp_row.h"
+#include "widgets/pp_page.h"
 
 /* Minimal helper retained after the GSMenu redesign. The simulator uses
  * find_resource_file() to locate icon/background assets via LVGL's FS API.
@@ -46,6 +47,9 @@ void pp_page_reapply_lock_state(lv_obj_t *page) {
             pp_row_set_locked(c, PP_ROW_UNLOCKED);
         }
     }
+    /* Locking may have disabled the row the user is sitting on (or the
+     * whole page); don't leave the indev on a group that can't take keys. */
+    pp_page_rescue_focus(page);
 }
 
 const char *find_resource_file(const char *relative_path) {

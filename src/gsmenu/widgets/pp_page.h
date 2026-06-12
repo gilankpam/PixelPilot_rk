@@ -19,6 +19,12 @@ const char *pp_page_name(lv_obj_t *page);
  * group, wired by menu.c after all pages are built. */
 void pp_page_set_back_group(lv_obj_t *page, lv_group_t *back_group);
 
+/* Called after lock state changes. If the indev currently drives this
+ * page's group and its focused row was disabled, refocus an enabled row,
+ * or — when none is left (all rows locked) — return focus to back_group
+ * so the user is never stuck on a page that swallows every key. */
+void pp_page_rescue_focus(lv_obj_t *page);
+
 #ifdef __cplusplus
 }
 #endif

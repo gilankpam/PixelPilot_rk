@@ -65,19 +65,26 @@ static void on_tab_key(lv_event_t *e) {
 
     lv_group_t *page_group = pp_page_group(t->items[t->active].page);
     if (!page_group || lv_group_get_obj_count(page_group) == 0) return;
+
+    /* The keypad indev delivers keys only to the group's focused object,
+     * and only while that object is enabled — a disabled focused row
+     * swallows everything except NEXT/PREV, including the HOME needed to
+     * leave the page. Lock state may have disabled the group's remembered
+     * focus (or every row, e.g. the all-air Camera page with the drone
+     * off) since the last visit, so never enter without an enabled
+     * focused row. lv_group_focus_next skips disabled/hidden objects. */
+    lv_obj_t *focused = lv_group_get_focused(page_group);
+    if (!focused || lv_obj_has_state(focused, LV_STATE_DISABLED)) {
+        lv_group_focus_next(page_group);
+        focused = lv_group_get_focused(page_group);
+        if (!focused || lv_obj_has_state(focused, LV_STATE_DISABLED)) return;
+    }
     lv_indev_set_group(indev_drv, page_group);
 
-    /* Restore (or initialize) the focus highlight. lv_indev_set_group
-     * doesn't fire LV_EVENT_FOCUSED, and pp_page's HOME handler strips
-     * LV_STATE_FOCUS_KEY on exit, so the group's remembered focused obj
-     * needs its state re-applied. If nothing was ever focused, advance
-     * to the first object. */
-    lv_obj_t *focused = lv_group_get_focused(page_group);
-    if (focused) {
-        lv_obj_add_state(focused, LV_STATE_FOCUS_KEY);
-    } else {
-        lv_group_focus_next(page_group);
-    }
+    /* Restore the focus highlight. lv_indev_set_group doesn't fire
+     * LV_EVENT_FOCUSED, and pp_page's HOME handler strips
+     * LV_STATE_FOCUS_KEY on exit, so re-apply it here. */
+    lv_obj_add_state(focused, LV_STATE_FOCUS_KEY);
 }
 
 pp_tabbar_t *pp_tabbar_create(lv_obj_t *parent,

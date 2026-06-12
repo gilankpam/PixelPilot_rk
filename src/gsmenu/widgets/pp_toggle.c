@@ -38,6 +38,19 @@ static void toggle_done_cb(int rc, const char *err, void *user_data) {
     lv_free(ctx);
 }
 
+/* Re-read the value from the provider — sent (LV_EVENT_REFRESH) when the
+ * row transitions out of an offline/unavailable lock, i.e. when fresh data
+ * first becomes readable for a row that was built without one. */
+static void on_refresh(lv_event_t *e) {
+    pp_toggle_data_t *d = lv_event_get_user_data(e);
+    if (d->in_flight) return;          /* a write is pending — don't clobber */
+    char *v = pp_settings_get(d->domain, d->page, d->key);
+    if (!v) return;
+    if (strcmp(v, "on") == 0) lv_obj_add_state(d->sw, LV_STATE_CHECKED);
+    else                      lv_obj_remove_state(d->sw, LV_STATE_CHECKED);
+    free(v);
+}
+
 static void on_key(lv_event_t *e) {
     if (lv_event_get_key(e) != LV_KEY_ENTER) return;
     pp_toggle_data_t *d = lv_event_get_user_data(e);
@@ -109,6 +122,7 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
     lv_obj_set_user_data(row, d);
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
+    lv_obj_add_event_cb(row, on_refresh, LV_EVENT_REFRESH, d);
 
     char *v = pp_settings_get(domain, page, key);
     if (v && strcmp(v, "on") == 0) lv_obj_add_state(sw, LV_STATE_CHECKED);

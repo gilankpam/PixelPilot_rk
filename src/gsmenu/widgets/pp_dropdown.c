@@ -201,6 +201,30 @@ static void popup_close(pp_dd_data_t *d) {
     d->popup = NULL;
 }
 
+/* Re-read the value from the provider — sent (LV_EVENT_REFRESH) when the
+ * row transitions out of an offline/unavailable lock, i.e. when fresh data
+ * first becomes readable for a row that was built without one. Same
+ * option-index lookup + label refresh as the constructor's initial read. */
+static void on_refresh(lv_event_t *e) {
+    pp_dd_data_t *d = lv_event_get_user_data(e);
+    if (d->in_flight) return;          /* a write is pending — don't clobber */
+    char *v = pp_settings_get(d->domain, d->page, d->key);
+    if (v && *v) {
+        uint16_t prev = lv_dropdown_get_selected(d->dd);
+        uint16_t n = lv_dropdown_get_option_count(d->dd);
+        char buf[64];
+        bool matched = false;
+        for (uint16_t i = 0; i < n; i++) {
+            lv_dropdown_set_selected(d->dd, i);
+            lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
+            if (strcmp(buf, v) == 0) { matched = true; break; }
+        }
+        if (matched) refresh_label(d);
+        else         lv_dropdown_set_selected(d->dd, prev);  /* keep what we had */
+    }
+    free(v);
+}
+
 static void on_key(lv_event_t *e) {
     pp_dd_data_t *d = lv_event_get_user_data(e);
     lv_key_t k = lv_event_get_key(e);
@@ -319,6 +343,7 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     lv_obj_set_user_data(row, d);
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
+    lv_obj_add_event_cb(row, on_refresh, LV_EVENT_REFRESH, d);
 
     char *v = pp_settings_get(domain, page, key);
     if (v && *v) {

@@ -307,6 +307,7 @@ if(USE_SIMULATOR)
       src/gsmenu/widgets/pp_page.c
       src/gsmenu/widgets/pp_tabbar.c
       src/gsmenu/widgets/pp_toggle.c
+      src/gsmenu/widgets/pp_dropdown.c
       src/gsmenu/widgets/pp_row.c
       src/gsmenu/widgets/pp_toast.c
       src/gsmenu/styles.c

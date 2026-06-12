@@ -10,6 +10,13 @@ extern "C" {
 #include "gsmenu/widgets/pp_page.h"
 #include "gsmenu/widgets/pp_tabbar.h"
 #include "gsmenu/widgets/pp_toggle.h"
+#include "gsmenu/widgets/pp_dropdown.h"
+#include "gsmenu/widgets/pp_row.h"
+#include "input.h"
+
+/* Normally defined in src/input.c (not linked here); pp_dropdown.c's key
+ * handler reads it to decide NAV vs EDIT behaviour. */
+gsmenu_control_mode_t control_mode = GSMENU_CONTROL_MODE_NAV;
 
 /* Normally defined in src/menu.c (not linked here). pp_tabbar.c and
  * pp_page.c switch this indev's group on page enter/exit. */
@@ -42,9 +49,13 @@ static void dummy_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
  * the drone is powered off: every "air" row locks PP_ROW_LOCKED_OFFLINE. */
 static bool g_connected = true;
 static bool g_air_reachable = true;
+static const char *g_air_value = NULL;
 
 static void prov_set(const char *, const char *, const char *, const char *) {}
-static char *prov_get(const char *, const char *, const char *) { return NULL; }
+static char *prov_get(const char *, const char *, const char *)
+{
+    return g_air_value ? strdup(g_air_value) : NULL;
+}
 static void prov_set_async(const char *, const char *, const char *,
                            const char *, pp_settings_done_cb on_done,
                            void *user_data)
@@ -92,6 +103,105 @@ static void setup_lvgl()
     }
     g_connected = true;
     g_air_reachable = true;
+    g_air_value = NULL;
+}
+
+/* Rows read their value from the provider once, at build time. If the
+ * drone is offline then, the row builds empty; when the drone comes
+ * online, pp_page_reapply_lock_state() must make the row re-read its
+ * value (LV_EVENT_REFRESH), not just unlock with the stale empty one. */
+
+static lv_obj_t *find_child_of_class(lv_obj_t *parent, const lv_obj_class_t *cls)
+{
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(parent); i++) {
+        lv_obj_t *c = lv_obj_get_child(parent, i);
+        if (lv_obj_check_type(c, cls)) return c;
+    }
+    return NULL;
+}
+
+TEST_CASE("row value refreshes when drone comes online", "[lock]") {
+    setup_lvgl();
+    g_connected = true;
+    g_air_reachable = false;     /* drone off at build time */
+    g_air_value = NULL;
+
+    lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_t *page = pp_page_create(scr, "air", "camera");
+    lv_obj_t *row = pp_toggle(page, NULL, "Mirror", "air", "camera", "mirror");
+    pp_page_reapply_lock_state(page);
+    REQUIRE(pp_row_get_locked(row) == PP_ROW_LOCKED_OFFLINE);
+
+    lv_obj_t *sw = find_child_of_class(row, &lv_switch_class);
+    REQUIRE(sw != NULL);
+    REQUIRE(!lv_obj_has_state(sw, LV_STATE_CHECKED));
+
+    /* drone comes online with mirror=on; lock reapply must re-sync the value */
+    g_air_reachable = true;
+    g_air_value = "on";
+    pp_page_reapply_lock_state(page);
+    REQUIRE(pp_row_get_locked(row) == PP_ROW_UNLOCKED);
+    REQUIRE(lv_obj_has_state(sw, LV_STATE_CHECKED));
+
+    lv_obj_delete(scr);
+}
+
+TEST_CASE("dropdown value label refreshes when drone comes online", "[lock]") {
+    setup_lvgl();
+    g_connected = true;
+    g_air_reachable = false;
+    g_air_value = NULL;
+
+    lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_t *page = pp_page_create(scr, "air", "camera");
+    lv_obj_t *row = pp_dropdown(page, NULL, "FPS", "air", "camera", "fps",
+                                "30\n60\n90\n120");
+    pp_page_reapply_lock_state(page);
+    REQUIRE(pp_row_get_locked(row) == PP_ROW_LOCKED_OFFLINE);
+
+    g_air_reachable = true;
+    g_air_value = "60";
+    pp_page_reapply_lock_state(page);
+    REQUIRE(pp_row_get_locked(row) == PP_ROW_UNLOCKED);
+
+    /* The dropdown row's value text lives in a label child of the row. */
+    bool found = false;
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(row); i++) {
+        lv_obj_t *c = lv_obj_get_child(row, i);
+        if (lv_obj_check_type(c, &lv_label_class) &&
+            strcmp(lv_label_get_text(c), "60") == 0) {
+            found = true;
+        }
+    }
+    REQUIRE(found);
+
+    lv_obj_delete(scr);
+}
+
+TEST_CASE("reapply without an offline transition does not clobber edits",
+          "[lock]") {
+    setup_lvgl();
+    g_connected = true;
+    g_air_reachable = true;
+    g_air_value = "on";          /* drone online at build time */
+
+    lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_t *page = pp_page_create(scr, "air", "camera");
+    lv_obj_t *row = pp_toggle(page, NULL, "Mirror", "air", "camera", "mirror");
+    REQUIRE(pp_row_get_locked(row) == PP_ROW_UNLOCKED);
+
+    lv_obj_t *sw = find_child_of_class(row, &lv_switch_class);
+    REQUIRE(sw != NULL);
+    REQUIRE(lv_obj_has_state(sw, LV_STATE_CHECKED));
+
+    /* No lock transition: a reapply must NOT re-read (could clobber an
+     * in-progress edit), even if the provider now reports a new value. */
+    g_air_value = "off";
+    pp_page_reapply_lock_state(page);
+    REQUIRE(pp_row_get_locked(row) == PP_ROW_UNLOCKED);
+    REQUIRE(lv_obj_has_state(sw, LV_STATE_CHECKED));
+
+    lv_obj_delete(scr);
 }
 
 struct menu_fixture {

@@ -37,14 +37,25 @@ void pp_page_reapply_lock_state(lv_obj_t *page) {
         lv_obj_t *c = lv_obj_get_child(page, i);
         struct dpk_head *h = (struct dpk_head *)lv_obj_get_user_data(c);
         if (!h || !h->d || !h->p || !h->k) continue;
+        pp_row_lock_t prev = pp_row_get_locked(c);
+        pp_row_lock_t state;
         if (!pp_settings_is_available(h->d, h->p, h->k)) {
-            pp_row_set_locked(c, PP_ROW_LOCKED_UNAVAILABLE);
+            state = PP_ROW_LOCKED_UNAVAILABLE;
         } else if (!connected || !pp_settings_is_reachable(h->d, h->p, h->k)) {
-            pp_row_set_locked(c, PP_ROW_LOCKED_OFFLINE);
+            state = PP_ROW_LOCKED_OFFLINE;
         } else if (pp_settings_is_locked(h->d, h->p, h->k)) {
-            pp_row_set_locked(c, PP_ROW_LOCKED_DYNAMIC);
+            state = PP_ROW_LOCKED_DYNAMIC;
         } else {
-            pp_row_set_locked(c, PP_ROW_UNLOCKED);
+            state = PP_ROW_UNLOCKED;
+        }
+        pp_row_set_locked(c, state);
+        /* Rows built while offline/unavailable read no value at build time.
+         * Leaving that state is exactly when fresh data first exists, so ask
+         * the row to re-read it (LV_EVENT_REFRESH). Deliberately NOT sent on
+         * every reapply — that could clobber a row mid-edit. */
+        if ((prev == PP_ROW_LOCKED_OFFLINE || prev == PP_ROW_LOCKED_UNAVAILABLE)
+            && state != prev) {
+            lv_obj_send_event(c, LV_EVENT_REFRESH, NULL);
         }
     }
     /* Locking may have disabled the row the user is sitting on (or the

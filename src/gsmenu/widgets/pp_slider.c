@@ -118,6 +118,21 @@ static void set_edit_state(pp_slider_data_t *d, bool active) {
         active ? lv_color_hex(PP_C_ACCENT) : lv_color_hex(PP_C_INK), 0);
 }
 
+/* Re-read the value from the provider — sent (LV_EVENT_REFRESH) when the
+ * row transitions out of an offline/unavailable lock, i.e. when fresh data
+ * first becomes readable for a row that was built without one. Same
+ * parse + display path as the constructor's initial read. */
+static void on_refresh(lv_event_t *e) {
+    pp_slider_data_t *d = lv_event_get_user_data(e);
+    if (d->in_flight) return;          /* a write is pending — don't clobber */
+    char *v = pp_settings_get(d->domain, d->page, d->key);
+    if (v && *v) {
+        d->value = pp_slider_parse(v, &d->cfg);
+        refresh_num(d);
+    }
+    free(v);
+}
+
 static void on_key(lv_event_t *e) {
     pp_slider_data_t *d = lv_event_get_user_data(e);
     lv_key_t k = lv_event_get_key(e);
@@ -277,6 +292,7 @@ lv_obj_t *pp_slider_ex(lv_obj_t *parent_page,
     d->row = row;
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
+    lv_obj_add_event_cb(row, on_refresh, LV_EVENT_REFRESH, d);
 
     set_edit_state(d, false);
 

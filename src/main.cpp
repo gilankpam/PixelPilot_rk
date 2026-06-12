@@ -446,7 +446,16 @@ void *__DISPLAY_THREAD__(void *param)
 				ret = set_drm_object_property(output_list->video_request, &output_list->osd_plane, "FB_ID", output_list->osd_bufs[output_list->osd_buf_switch].fb);
 			assert(ret>0);
 		}
-		drmModeAtomicCommit(drm_fd, output_list->video_request, flags, NULL);
+		ret = drmModeAtomicCommit(drm_fd, output_list->video_request, flags, NULL);
+		if (ret) {
+			// A rejected commit drops the video frame too (video and OSD
+			// FB_IDs share one request), so surface it — but throttled,
+			// since a persistent failure repeats at frame rate.
+			static uint64_t commit_fail_count = 0;
+			if (commit_fail_count++ % 300 == 0)
+				spdlog::error("Display: atomic commit failed rc={} errno={} (count {}, osd_buf_switch={})",
+				              ret, strerror(errno), commit_fail_count, output_list->osd_buf_switch);
+		}
 		ret = pthread_mutex_unlock(&osd_mutex);
 		assert(!ret);
 		osd_publish_uint_fact("video.displayed_frame", NULL, 0, 1);

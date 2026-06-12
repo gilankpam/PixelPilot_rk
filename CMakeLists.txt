@@ -276,6 +276,12 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(aio_logic_tests Catch2::Catch2WithMain)
 
+    add_executable(osd_buf_tests
+      tests/test_osd_buf.cpp)
+    target_include_directories(osd_buf_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(osd_buf_tests Catch2::Catch2WithMain)
+
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

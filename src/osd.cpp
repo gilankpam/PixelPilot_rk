@@ -23,6 +23,7 @@ extern "C" {
 }
 #include "osd.h"
 #include "osd.hpp"
+#include "osd_buf.hpp"
 
 #include <pthread.h>
 #include <map>
@@ -2646,7 +2647,7 @@ void *__OSD_THREAD__(void *param) {
 
 			if (! menu_active ) {
 				SPDLOG_DEBUG("refresh OSD");
-				int buf_idx = p->out->osd_buf_switch ^ 1;
+				int buf_idx = osd_next_paint_buf(p->out->osd_buf_switch, OSD_BUF_COUNT);
 				struct modeset_buf *buf = &p->out->osd_bufs[buf_idx];
 				modeset_paint_buffer(buf, osd);
 

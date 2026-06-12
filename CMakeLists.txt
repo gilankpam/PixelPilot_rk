@@ -282,6 +282,25 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(osd_buf_tests Catch2::Catch2WithMain)
 
+    # Hidden native widgets (lv_dropdown/lv_switch) must never be
+    # group-focusable — see tests/test_widget_focus.cpp.
+    add_executable(widget_focus_tests
+      src/gsmenu/widgets/pp_dropdown.c
+      src/gsmenu/widgets/pp_toggle.c
+      src/gsmenu/widgets/pp_row.c
+      src/gsmenu/widgets/pp_toast.c
+      src/gsmenu/styles.c
+      src/gsmenu/settings.c
+      src/gsmenu/settings_stub.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_widget_focus.cpp)
+    target_include_directories(widget_focus_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR}
+      ${PP_CJSON_INC})
+    target_link_libraries(widget_focus_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

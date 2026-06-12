@@ -41,8 +41,15 @@ void pp_menu_main(void)
 
     indev_drv = create_virtual_keyboard();
 
+    /* Parking group for the indev until the first menu open switches it to
+     * main_group. Deliberately NOT lv_group_set_default(): with a default
+     * group set, LVGL auto-adds every group_def widget (lv_dropdown,
+     * lv_switch, ...) created during page building, making the hidden
+     * native widgets key-focusable — a stray ENTER before the first menu
+     * open then acts on invisible UI (e.g. opens a dropdown's unstyled
+     * native list, which floats over the menu forever). All gsmenu groups
+     * are populated explicitly by the page/tabbar builders. */
     default_group = lv_group_create();
-    lv_group_set_default(default_group);
     lv_indev_set_group(indev_drv, default_group);
 
     pp_menu_screen = lv_obj_create(NULL);

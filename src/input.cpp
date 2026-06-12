@@ -577,6 +577,17 @@ static void virtual_keyboard_read(lv_indev_t * indev, lv_indev_data_t * data) {
 #endif
 
     if (next_key != LV_KEY_END) {
+        /* ENTER does not open the menu (see below), so with the menu closed
+         * it would be delivered to whatever group the indev points at —
+         * acting on invisible widgets (switching pages, toggling settings,
+         * opening dropdown lists nobody can see). Swallow it instead. */
+        if (!menu_active && next_key == LV_KEY_ENTER) {
+            next_key = LV_KEY_END;
+            next_key_pressed = false;
+            data->state = LV_INDEV_STATE_REL;
+            return;
+        }
+
         data->key = next_key;
         data->state = next_key_pressed ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
 

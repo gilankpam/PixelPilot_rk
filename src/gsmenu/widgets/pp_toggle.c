@@ -83,6 +83,11 @@ lv_obj_t *pp_toggle(lv_obj_t *parent_page,
     lv_obj_set_flex_grow(label_obj, 1);
 
     lv_obj_t *sw = lv_switch_create(row);
+    /* lv_switch is group_def=TRUE: if a default group is set, LVGL
+     * auto-added it there, making it key-focusable. The row's key handler
+     * drives it; a stray ENTER reaching it directly would apply the
+     * setting invisibly. */
+    lv_group_remove_obj(sw);
     lv_obj_add_style(sw, &pp_style_switch_on,
                      LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_set_size(sw, PP_SCALE(40), PP_SCALE(22));

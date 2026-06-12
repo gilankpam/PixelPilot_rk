@@ -303,6 +303,10 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     lv_obj_t *dd = lv_dropdown_create(row);
     lv_dropdown_set_options(dd, options);
     lv_obj_add_flag(dd, LV_OBJ_FLAG_HIDDEN);
+    /* lv_dropdown is group_def=TRUE: if a default group is set, LVGL
+     * auto-added it there, making it key-focusable. A stray ENTER would
+     * then open its unstyled native list over whatever screen is shown. */
+    lv_group_remove_obj(dd);
 
     pp_dd_data_t *d = calloc(1, sizeof(*d));
     d->domain = strdup(domain);

@@ -17,6 +17,7 @@
 #include "main.h"
 #include "lvgl/lvgl.h"
 #include "input.h"
+#include "gsmenu/settings.h"
 
 #ifndef USE_SIMULATOR
 extern YAML::Node config;
@@ -446,6 +447,7 @@ extern "C" void toggle_screen(void) {
         lv_indev_set_group(indev_drv,main_group);
         lv_obj_invalidate(pp_menu_screen);
         menu_active = true;
+        pp_settings_set_visibility(true);
     }
 }
 

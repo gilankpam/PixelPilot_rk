@@ -4,6 +4,7 @@
 #include "lvgl/lvgl.h"
 #include "input.h"
 #include "menu.h"
+#include "gsmenu/settings.h"
 #include "gsmenu/ui.h"
 #include "gsmenu/styles.h"
 #include "gsmenu/widgets/pp_tabbar.h"
@@ -33,6 +34,7 @@ static void on_tabbar_cancel(lv_event_t *e) {
      * menu and return to the OSD screen. */
     lv_screen_load(pp_osd_screen);
     menu_active = false;
+    pp_settings_set_visibility(false);
 }
 
 void pp_menu_main(void)

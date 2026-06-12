@@ -570,7 +570,10 @@ TEST_CASE("integration: hidden->visible triggers an immediate refresh", "[fpvd][
     pp_settings_set_visibility(false);     /* ensure a clean hidden state */
     pp_settings_set_visibility(true);      /* menu opens -> immediate probe */
 
-    /* Must flip well before the 3s visible tick (and the 60s hidden one). */
+    /* Must flip well before the 3s visible tick (and the 60s hidden one).
+     * Discrimination depends on the worker refreshing only on ETIMEDOUT or
+     * refresh_now: the visibility signal merely re-arms a fresh 3s wait, so
+     * without refresh_now the flip lands at ~t+3s, past this 2s deadline. */
     bool reachable = false;
     auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
     while (!reachable && std::chrono::steady_clock::now() < end) {

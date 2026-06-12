@@ -247,7 +247,6 @@ if(USE_SIMULATOR)
     add_executable(fpvd_tests
       src/gsmenu/settings.c
       src/gsmenu/settings_fpvd.c
-      src/gsmenu/settings_gs_rxpower.c
       src/gsmenu/settings_gs_enum.c
       ${PP_CJSON_SOURCES}
       tests/test_settings_fpvd.cpp
@@ -259,14 +258,6 @@ if(USE_SIMULATOR)
     target_link_libraries(fpvd_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES} CURL::libcurl pthread)
     target_compile_definitions(fpvd_tests PRIVATE PP_FPVD_TEST=1)
-
-    add_executable(gs_rxpower_tests
-      src/gsmenu/settings_gs_rxpower.c
-      tests/test_settings_gs_rxpower.cpp)
-    target_include_directories(gs_rxpower_tests PRIVATE
-      ${PROJECT_SOURCE_DIR}/src)
-    target_link_libraries(gs_rxpower_tests
-      Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
     add_executable(gs_enum_tests
       src/gsmenu/settings_gs_enum.c
@@ -315,9 +306,8 @@ else()
       third_party/cjson/cJSON.c
   )
 
-  # GS-side settings backend (enumeration + rx-power mapping helpers)
+  # GS-side settings backend (enumeration helpers)
   list(APPEND SOURCE_FILES
-      src/gsmenu/settings_gs_rxpower.c
       src/gsmenu/settings_gs_enum.c)
 
   add_executable(${PROJECT_NAME} ${SOURCE_FILES})

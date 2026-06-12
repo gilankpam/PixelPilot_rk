@@ -45,6 +45,11 @@ typedef struct {
      * NULL → dispatcher returns true. */
     bool  (*is_connected)(void);
 
+    /* Optional: returns true if the device backing this key is reachable
+     * (e.g. the drone for /air-backed rows). NULL → dispatcher returns true.
+     * Distinct from is_connected, which covers the provider's own backend. */
+    bool  (*is_reachable)(const char *domain, const char *page, const char *key);
+
     /* Optional: register a single listener for snapshot mutations. Passing
      * cb=NULL clears the listener. NULL pointer → dispatcher no-op. */
     void  (*set_snapshot_listener)(pp_settings_snapshot_cb cb, void *user_data);
@@ -89,6 +94,8 @@ void  pp_settings_set_async(const char *domain, const char *page,
 bool  pp_settings_is_locked(const char *domain, const char *page,
                             const char *key);
 bool  pp_settings_is_connected(void);
+bool  pp_settings_is_reachable(const char *domain, const char *page,
+                               const char *key);
 void  pp_settings_set_snapshot_listener(pp_settings_snapshot_cb cb,
                                         void *user_data);
 void  pp_settings_set_visibility(bool visible);

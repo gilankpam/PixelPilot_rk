@@ -29,9 +29,12 @@ static void apply_visibility(lv_obj_t *page) {
     }
 }
 
+extern void pp_page_reapply_lock_state(lv_obj_t *);
+
 static void snapshot_listener_cb(void *user_data) {
     lv_obj_t *page = (lv_obj_t *)user_data;
     apply_visibility(page);
+    pp_page_reapply_lock_state(page);
 }
 
 lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
@@ -100,6 +103,7 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
     }
 
     apply_visibility(page);
+    pp_page_reapply_lock_state(page);
     pp_settings_set_snapshot_listener(snapshot_listener_cb, page);
     return page;
 }

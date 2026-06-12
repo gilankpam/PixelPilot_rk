@@ -152,3 +152,35 @@ TEST_CASE("provider wrappers return safe defaults when methods are absent", "[se
     pp_settings_apply([](int r, const char*, void* ud){ *(int*)ud = r; }, &rc);
     REQUIRE(rc == -1);                            // no apply method → error callback
 }
+
+TEST_CASE("dispatch: is_reachable defaults to true without provider method", "[settings][caps]") {
+    pp_settings_register_stub();
+    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == true);
+}
+
+TEST_CASE("dummy: txpower seeds are dBm and beamforming row exists", "[dummy]") {
+    pp_settings_register_dummy();
+    char *v = pp_settings_get("gs", "wfbng", "txpower");
+    REQUIRE(v != nullptr);
+    REQUIRE(std::string(v) == "20"); free(v);
+    v = pp_settings_get("gs", "link", "rx_power");
+    REQUIRE(v != nullptr);
+    REQUIRE(std::string(v) == "20"); free(v);
+    v = pp_settings_get("gs", "link", "beamforming");
+    REQUIRE(v != nullptr);
+    REQUIRE(std::string(v) == "off"); free(v);
+}
+
+TEST_CASE("dummy: PP_SIM_DRONE_OFFLINE gates air rows and beamforming", "[dummy]") {
+    setenv("PP_SIM_DRONE_OFFLINE", "1", 1);
+    pp_settings_register_dummy();
+    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
+    REQUIRE(pp_settings_is_reachable("gs", "link", "beamforming") == false);
+    REQUIRE(pp_settings_is_reachable("gs", "wfbng", "txpower") == false); /* drone TX power */
+    /* GS rows stay reachable — including shared channel/bandwidth. */
+    REQUIRE(pp_settings_is_reachable("gs", "wfbng", "gs_channel") == true);
+    REQUIRE(pp_settings_is_reachable("gs", "link", "rx_power") == true);
+    unsetenv("PP_SIM_DRONE_OFFLINE");
+    pp_settings_register_dummy();
+    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == true);
+}

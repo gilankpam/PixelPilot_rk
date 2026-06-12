@@ -57,7 +57,7 @@ extern "C" {
 static cJSON *fixture_defaults() {
     /* Subset of /defaults from the API doc, enough for our path tests. */
     const char *src =
-      "{\"link\":{\"channel\":161,\"width\":20,\"txpower\":1,\"mcs\":2,"
+      "{\"link\":{\"channel\":161,\"width\":20,\"txPowerDbm\":20,\"mcs\":2,"
       "\"fec\":{\"k\":8,\"n\":12},\"stbc\":false,\"ldpc\":true},"
       "\"video\":{\"codec\":\"h265\",\"resolution\":\"1920x1080\","
       "\"fps\":60,\"bitrate\":8192,\"rcMode\":\"cbr\",\"gopSize\":1.0,"
@@ -202,10 +202,12 @@ TEST_CASE("patch: enum stored as string", "[fpvd][patch]") {
 
 TEST_CASE("lock: matches exact locked paths", "[fpvd][lock]") {
     REQUIRE(fpvd_is_locked_path("link.mcs") == true);
-    REQUIRE(fpvd_is_locked_path("link.txpower") == true);
+    REQUIRE(fpvd_is_locked_path("link.txPowerDbm") == true);
     REQUIRE(fpvd_is_locked_path("link.width") == true);
     REQUIRE(fpvd_is_locked_path("video.bitrate") == true);
     REQUIRE(fpvd_is_locked_path("video.qpDelta") == true);
+    /* old key no longer exists in the schema */
+    REQUIRE(fpvd_is_locked_path("link.txpower") == false);
 }
 
 TEST_CASE("lock: matches subtrees", "[fpvd][lock]") {
@@ -234,61 +236,65 @@ TEST_CASE("http: GET against impossible host returns transport failure",
     fpvd_http_result_free(&r);
 }
 
-TEST_CASE("endpoint: keymap entries carry the right endpoint + applyTo", "[fpvd][endpoint]") {
+TEST_CASE("endpoint: keymap entries carry endpoint + row kind", "[fpvd][endpoint]") {
     const fpvd_keymap_entry_t *e;
 
     e = fpvd_keymap_lookup("air", "camera", "fps");
     REQUIRE(e->endpoint == FPVD_EP_AIR);
+    REQUIRE(e->kind == FPVD_ROW_PLAIN);
 
+    /* Shared link rows: GS endpoint, drone-first orchestration. */
     e = fpvd_keymap_lookup("gs", "wfbng", "gs_channel");
-    REQUIRE(e->endpoint == FPVD_EP_LINK);
-    REQUIRE(std::strcmp(e->apply_to, "both") == 0);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+    REQUIRE(e->kind == FPVD_ROW_SHARED);
+    REQUIRE(std::strcmp(e->path, "link.channel") == 0);
 
     e = fpvd_keymap_lookup("gs", "wfbng", "bandwidth");
-    REQUIRE(e->endpoint == FPVD_EP_LINK);
-    REQUIRE(std::strcmp(e->apply_to, "both") == 0);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+    REQUIRE(e->kind == FPVD_ROW_SHARED);
+    REQUIRE(std::strcmp(e->path, "link.width") == 0);
 
-    /* GS card power: percent slider -> GS link.txpower, GS-only apply. */
+    /* GS card power: plain dBm int on the GS side. */
     e = fpvd_keymap_lookup("gs", "link", "rx_power");
     REQUIRE(e != nullptr);
-    REQUIRE(std::strcmp(e->path, "link.txpower") == 0);
-    REQUIRE(e->type == FPVD_T_RXPOWER);
-    REQUIRE(e->endpoint == FPVD_EP_LINK);
-    REQUIRE(std::strcmp(e->apply_to, "gs") == 0);
+    REQUIRE(std::strcmp(e->path, "link.txPowerDbm") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+    REQUIRE(e->kind == FPVD_ROW_PLAIN);
 
-    /* Drone TX power (1..63 driver units): air endpoint. */
+    /* Drone TX power: renamed path, dBm. */
     e = fpvd_keymap_lookup("gs", "wfbng", "txpower");
     REQUIRE(e != nullptr);
-    REQUIRE(std::strcmp(e->path, "link.txpower") == 0);
+    REQUIRE(std::strcmp(e->path, "link.txPowerDbm") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
     REQUIRE(e->endpoint == FPVD_EP_AIR);
+    REQUIRE(e->kind == FPVD_ROW_PLAIN);
+
+    /* Beamforming toggle: client-owned handshake. */
+    e = fpvd_keymap_lookup("gs", "link", "beamforming");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "link.beamforming.enabled") == 0);
+    REQUIRE(e->type == FPVD_T_BOOL);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+    REQUIRE(e->kind == FPVD_ROW_BEAMFORM);
 }
 
-TEST_CASE("endpoint: routing helpers pick air vs link paths", "[fpvd][endpoint]") {
-    const fpvd_keymap_entry_t *air = fpvd_keymap_lookup("air", "camera", "fps");
-    REQUIRE(std::strcmp(fpvd_write_path(air->endpoint), "/air/config") == 0);
-    REQUIRE(std::strcmp(fpvd_apply_path(air->endpoint), "/air/apply") == 0);
-    REQUIRE(std::strcmp(fpvd_read_path(air->endpoint),  "/air/config") == 0);
+TEST_CASE("endpoint: routing helpers map AIR and GS trees", "[fpvd][endpoint]") {
+    REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_AIR), "/air/config") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_AIR), "/air/apply") == 0);
+    REQUIRE(std::strcmp(fpvd_read_path(FPVD_EP_AIR),  "/air/config") == 0);
 
-    const fpvd_keymap_entry_t *lnk = fpvd_keymap_lookup("gs", "wfbng", "gs_channel");
-    REQUIRE(std::strcmp(fpvd_write_path(lnk->endpoint), "/link") == 0);
-    REQUIRE(std::strcmp(fpvd_apply_path(lnk->endpoint), "/link/apply") == 0);
-    REQUIRE(std::strcmp(fpvd_read_path(lnk->endpoint),  "/link") == 0);
+    REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_GS), "/gs/config") == 0);
+    REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_GS), "/gs/apply") == 0);
+    REQUIRE(std::strcmp(fpvd_read_path(FPVD_EP_GS),  "/gs/config?pending=true") == 0);
 }
 
-TEST_CASE("path helpers route EP_CONFIG to /config and /apply", "[fpvd][endpoint]") {
-    REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_CONFIG), "/config") == 0);
-    REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_CONFIG), "/apply")  == 0);
-    REQUIRE(std::strcmp(fpvd_read_path (FPVD_EP_CONFIG), "/config") == 0);
-    // existing groups unchanged
-    REQUIRE(std::strcmp(fpvd_write_path(FPVD_EP_LINK), "/link") == 0);
-    REQUIRE(std::strcmp(fpvd_apply_path(FPVD_EP_AIR),  "/air/apply") == 0);
-}
-
-TEST_CASE("keymap: pixelpilot rows route to EP_CONFIG + pixelpilot.* paths", "[fpvd][keymap]") {
+TEST_CASE("keymap: pixelpilot rows route to EP_GS as staged rows", "[fpvd][keymap]") {
     const fpvd_keymap_entry_t *e;
     e = fpvd_keymap_lookup("gs", "display", "video_scale");
     REQUIRE(e != nullptr);
-    REQUIRE(e->endpoint == FPVD_EP_CONFIG);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+    REQUIRE(e->kind == FPVD_ROW_STAGED);
     REQUIRE(std::strcmp(e->path, "pixelpilot.videoScale") == 0);
     REQUIRE(e->type == FPVD_T_PERCENT_TO_FRAC);
 
@@ -303,7 +309,8 @@ TEST_CASE("keymap: pixelpilot rows route to EP_CONFIG + pixelpilot.* paths", "[f
 
     e = fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate");
     REQUIRE(e != nullptr);
-    REQUIRE(e->endpoint == FPVD_EP_CONFIG);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+    REQUIRE(e->kind == FPVD_ROW_STAGED);
     REQUIRE(std::strcmp(e->path, "pixelpilot.dvr.reencBitrate") == 0);
     REQUIRE(e->type == FPVD_T_INT);
 
@@ -314,4 +321,181 @@ TEST_CASE("keymap: pixelpilot rows route to EP_CONFIG + pixelpilot.* paths", "[f
     // color correction stays unmapped (handled by the unavailable rule)
     REQUIRE(fpvd_keymap_lookup("gs", "display", "color_correction") == nullptr);
     REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_enabled") == nullptr);
+}
+
+static int plan(fpvd_row_kind_t kind, fpvd_endpoint_t ep, const char *path,
+                fpvd_type_t type, const char *value, bool reachable,
+                const char *mac, fpvd_step_t *steps, char *err) {
+    return fpvd_plan_steps(kind, ep, path, type, value, reachable, mac,
+                           steps, FPVD_PLAN_MAX, err, 160);
+}
+
+TEST_CASE("plan: plain AIR row is patch+apply on /air", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_PLAIN, FPVD_EP_AIR, "video.fps", FPVD_T_INT, "90",
+                 true, nullptr, s, err);
+    REQUIRE(n == 2);
+    REQUIRE(std::strcmp(s[0].method, "PATCH") == 0);
+    REQUIRE(std::strcmp(s[0].url_path, "/air/config") == 0);
+    REQUIRE(std::string(s[0].body) == R"({"video":{"fps":90}})");
+    REQUIRE(s[0].gs_side == false);
+    REQUIRE(std::strcmp(s[1].method, "POST") == 0);
+    REQUIRE(std::strcmp(s[1].url_path, "/air/apply") == 0);
+    REQUIRE(s[1].body[0] == '\0');
+}
+
+TEST_CASE("plan: plain AIR row rejected when drone unreachable", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_PLAIN, FPVD_EP_AIR, "video.fps", FPVD_T_INT, "90",
+                 false, nullptr, s, err);
+    REQUIRE(n == -1);
+    REQUIRE(std::string(err) == "Drone unreachable");
+}
+
+TEST_CASE("plan: plain GS row is patch+apply on /gs", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_PLAIN, FPVD_EP_GS, "link.txPowerDbm", FPVD_T_INT, "25",
+                 false /* GS rows work regardless */, nullptr, s, err);
+    REQUIRE(n == 2);
+    REQUIRE(std::strcmp(s[0].url_path, "/gs/config") == 0);
+    REQUIRE(std::string(s[0].body) == R"({"link":{"txPowerDbm":25}})");
+    REQUIRE(s[0].gs_side == true);
+    REQUIRE(std::strcmp(s[1].url_path, "/gs/apply") == 0);
+    REQUIRE(s[1].gs_side == true);
+}
+
+TEST_CASE("plan: staged row is a single GS patch", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_STAGED, FPVD_EP_GS, "pixelpilot.dvr.osd", FPVD_T_BOOL,
+                 "on", true, nullptr, s, err);
+    REQUIRE(n == 1);
+    REQUIRE(std::strcmp(s[0].method, "PATCH") == 0);
+    REQUIRE(std::strcmp(s[0].url_path, "/gs/config") == 0);
+    REQUIRE(std::string(s[0].body) == R"({"pixelpilot":{"dvr":{"osd":true}}})");
+}
+
+TEST_CASE("plan: shared row online is drone-first, GS retried", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_SHARED, FPVD_EP_GS, "link.channel", FPVD_T_INT, "100",
+                 true, nullptr, s, err);
+    REQUIRE(n == 4);
+    REQUIRE(std::strcmp(s[0].url_path, "/air/config") == 0);
+    REQUIRE(std::string(s[0].body) == R"({"link":{"channel":100}})");
+    REQUIRE(s[0].retries == 0);
+    REQUIRE(std::strcmp(s[1].url_path, "/air/apply") == 0);
+    REQUIRE(std::strcmp(s[2].url_path, "/gs/config") == 0);
+    REQUIRE(std::string(s[2].body) == R"({"link":{"channel":100}})");
+    REQUIRE(s[2].retries == 3);
+    REQUIRE(s[2].gs_side == true);
+    REQUIRE(std::strcmp(s[3].url_path, "/gs/apply") == 0);
+    REQUIRE(s[3].retries == 3);
+}
+
+TEST_CASE("plan: shared row offline degrades to GS-only", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_SHARED, FPVD_EP_GS, "link.channel", FPVD_T_INT, "100",
+                 false, nullptr, s, err);
+    REQUIRE(n == 2);
+    REQUIRE(std::strcmp(s[0].url_path, "/gs/config") == 0);
+    REQUIRE(std::strcmp(s[1].url_path, "/gs/apply") == 0);
+}
+
+TEST_CASE("plan: beamforming enable carries remoteMac and stbc=false", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_BEAMFORM, FPVD_EP_GS, "link.beamforming.enabled",
+                 FPVD_T_BOOL, "on", true, "84:fc:14:6c:36:e6", s, err);
+    REQUIRE(n == 4);
+    REQUIRE(std::strcmp(s[0].url_path, "/air/config") == 0);
+    REQUIRE(std::string(s[0].body) ==
+        R"({"link":{"beamforming":{"enabled":true,"remoteMac":"84:fc:14:6c:36:e6"},"stbc":false}})");
+    REQUIRE(std::strcmp(s[1].url_path, "/air/apply") == 0);
+    REQUIRE(std::strcmp(s[2].url_path, "/gs/config") == 0);
+    REQUIRE(std::string(s[2].body) == R"({"link":{"beamforming":{"enabled":true}}})");
+    REQUIRE(std::strcmp(s[3].url_path, "/gs/apply") == 0);
+}
+
+TEST_CASE("plan: beamforming disable restores stbc", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_BEAMFORM, FPVD_EP_GS, "link.beamforming.enabled",
+                 FPVD_T_BOOL, "off", true, "84:fc:14:6c:36:e6", s, err);
+    REQUIRE(n == 4);
+    REQUIRE(std::string(s[0].body) ==
+        R"({"link":{"beamforming":{"enabled":false},"stbc":true}})");
+    REQUIRE(std::string(s[2].body) == R"({"link":{"beamforming":{"enabled":false}}})");
+}
+
+TEST_CASE("plan: beamforming rejected offline or without MAC", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    REQUIRE(plan(FPVD_ROW_BEAMFORM, FPVD_EP_GS, "link.beamforming.enabled",
+                 FPVD_T_BOOL, "on", false, "aa:bb:cc:dd:ee:ff", s, err) == -1);
+    REQUIRE(std::string(err) == "Drone unreachable");
+    err[0] = '\0';
+    REQUIRE(plan(FPVD_ROW_BEAMFORM, FPVD_EP_GS, "link.beamforming.enabled",
+                 FPVD_T_BOOL, "on", true, nullptr, s, err) == -1);
+    REQUIRE(std::string(err) == "GS card MAC unknown");
+}
+
+TEST_CASE("plan: bad value yields error not steps", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    REQUIRE(plan(FPVD_ROW_PLAIN, FPVD_EP_AIR, "video.fps", FPVD_T_INT,
+                 "notanint", true, nullptr, s, err) == -1);
+    REQUIRE(err[0] != '\0');
+}
+
+TEST_CASE("plan: oversized value is rejected, not truncated", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    std::string big(300, 'x');
+    int n = fpvd_plan_steps(FPVD_ROW_PLAIN, FPVD_EP_GS, "pixelpilot.screenMode",
+                            FPVD_T_STRING, big.c_str(), true, nullptr,
+                            s, FPVD_PLAN_MAX, err, sizeof err);
+    REQUIRE(n == -1);
+    REQUIRE(err[0] != '\0');
+}
+
+TEST_CASE("plan: dynamicLink enable is drone-first both sides, GS retried", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_DLINK, FPVD_EP_AIR, "dynamicLink.enabled", FPVD_T_BOOL,
+                 "on", true, nullptr, s, err);
+    REQUIRE(n == 4);
+    REQUIRE(std::strcmp(s[0].url_path, "/air/config") == 0);
+    REQUIRE(std::string(s[0].body) == R"({"dynamicLink":{"enabled":true}})");
+    REQUIRE(s[0].retries == 0);
+    REQUIRE(std::strcmp(s[1].url_path, "/air/apply") == 0);
+    REQUIRE(std::strcmp(s[2].url_path, "/gs/config") == 0);
+    REQUIRE(std::string(s[2].body) == R"({"dynamicLink":{"enabled":true}})");
+    REQUIRE(s[2].retries == 3);
+    REQUIRE(s[2].gs_side == true);
+    REQUIRE(std::strcmp(s[3].url_path, "/gs/apply") == 0);
+    REQUIRE(s[3].retries == 3);
+}
+
+TEST_CASE("plan: dynamicLink disable is drone-first both sides", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_DLINK, FPVD_EP_AIR, "dynamicLink.enabled", FPVD_T_BOOL,
+                 "off", true, nullptr, s, err);
+    REQUIRE(n == 4);
+    REQUIRE(std::strcmp(s[0].url_path, "/air/config") == 0);
+    REQUIRE(std::string(s[0].body) == R"({"dynamicLink":{"enabled":false}})");
+    REQUIRE(std::strcmp(s[2].url_path, "/gs/config") == 0);
+    REQUIRE(std::string(s[2].body) == R"({"dynamicLink":{"enabled":false}})");
+}
+
+TEST_CASE("plan: dynamicLink rejected when drone unreachable", "[fpvd][plan]") {
+    fpvd_step_t s[FPVD_PLAN_MAX]; char err[160] = {0};
+    int n = plan(FPVD_ROW_DLINK, FPVD_EP_AIR, "dynamicLink.enabled", FPVD_T_BOOL,
+                 "on", false, nullptr, s, err);
+    REQUIRE(n == -1);
+    REQUIRE(std::string(err) == "Drone unreachable");
+}
+
+TEST_CASE("keymap: dynamicLink enabled is an orchestrated DLINK row", "[fpvd][keymap]") {
+    const fpvd_keymap_entry_t *e = fpvd_keymap_lookup("air", "dlink", "enabled");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.enabled") == 0);
+    REQUIRE(e->type == FPVD_T_BOOL);
+    REQUIRE(e->endpoint == FPVD_EP_AIR);
+    REQUIRE(e->kind == FPVD_ROW_DLINK);
+    /* the other dlink rows stay plain drone-only writes */
+    e = fpvd_keymap_lookup("air", "dlink", "safe_mcs");
+    REQUIRE(e->kind == FPVD_ROW_PLAIN);
 }

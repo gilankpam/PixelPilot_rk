@@ -18,10 +18,17 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
                 "149\n153\n157\n161\n165");
     pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",
                 "gs", "wfbng", "bandwidth", "10\n20\n40");
-    pp_slider(page, LV_SYMBOL_UP, "TX Power",
-              "gs", "wfbng", "txpower", 1, 63);
-    pp_slider(page, LV_SYMBOL_DOWN, "RX Power",
-              "gs", "link", "rx_power", 1, 100);
+    /* dBm sliders: API range -10..30, integer steps, dim unit label. */
+    static const pp_slider_cfg_t DBM_CFG = {
+        .raw_min = -10, .raw_max = 30, .step = 1, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1, .decimals = 0,
+        .unit = "dBm", .serialize = PP_SER_INT,
+    };
+    pp_slider_ex(page, LV_SYMBOL_UP, "TX Power",
+                 "gs", "wfbng", "txpower", &DBM_CFG);
+    pp_slider_ex(page, LV_SYMBOL_DOWN, "RX Power",
+                 "gs", "link", "rx_power", &DBM_CFG);
+    pp_toggle(page, LV_SYMBOL_WIFI, "Beamforming", "gs", "link", "beamforming");
     pp_slider(page, LV_SYMBOL_SETTINGS, "MCS Index",
               "air", "wfbng", "mcs_index", 0, 7);
     pp_toggle(page, LV_SYMBOL_SETTINGS, "STBC", "air", "wfbng", "stbc");

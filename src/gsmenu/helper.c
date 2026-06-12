@@ -38,7 +38,7 @@ void pp_page_reapply_lock_state(lv_obj_t *page) {
         if (!h || !h->d || !h->p || !h->k) continue;
         if (!pp_settings_is_available(h->d, h->p, h->k)) {
             pp_row_set_locked(c, PP_ROW_LOCKED_UNAVAILABLE);
-        } else if (!connected) {
+        } else if (!connected || !pp_settings_is_reachable(h->d, h->p, h->k)) {
             pp_row_set_locked(c, PP_ROW_LOCKED_OFFLINE);
         } else if (pp_settings_is_locked(h->d, h->p, h->k)) {
             pp_row_set_locked(c, PP_ROW_LOCKED_DYNAMIC);

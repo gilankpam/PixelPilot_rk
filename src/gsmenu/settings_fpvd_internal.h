@@ -19,14 +19,20 @@ typedef enum {
     FPVD_T_BITRATE_KBPS,    /* UI string "15M" ↔ JSON int 15000 */
     FPVD_T_SECONDS_FROM_MIN, /* UI int minutes ↔ JSON int seconds */
     FPVD_T_PERCENT_TO_FRAC,  /* UI int 0..100 ↔ JSON float 0.0..1.0 */
-    FPVD_T_RXPOWER,          /* UI pct 1..100 ↔ GS link.txpower mBm (driver curve) */
 } fpvd_type_t;
 
 typedef enum {
-    FPVD_EP_AIR,    /* drone proxy:   /air/config + /air/apply,  GET /air/config */
-    FPVD_EP_LINK,   /* GS link coord: /link       + /link/apply, GET /link       */
-    FPVD_EP_CONFIG, /* GS config:     /config     + /apply,      GET /config (pending) */
+    FPVD_EP_AIR, /* drone proxy: /air/config + /air/apply,  GET /air/config */
+    FPVD_EP_GS,  /* GS tree:     /gs/config  + /gs/apply,   GET /gs/config?pending=true */
 } fpvd_endpoint_t;
+
+typedef enum {
+    FPVD_ROW_PLAIN,    /* PATCH + apply on the row's endpoint */
+    FPVD_ROW_STAGED,   /* PATCH /gs/config only; explicit Apply commits */
+    FPVD_ROW_SHARED,   /* drone-first cross-device orchestration (channel, width) */
+    FPVD_ROW_BEAMFORM, /* beamforming MAC handshake (drone + GS) */
+    FPVD_ROW_DLINK,    /* adaptive-link arm/disarm: drone-first, reject if drone down */
+} fpvd_row_kind_t;
 
 typedef struct {
     const char     *domain;
@@ -35,10 +41,12 @@ typedef struct {
     const char     *path;
     fpvd_type_t     type;
     fpvd_endpoint_t endpoint;
-    const char     *apply_to;  /* LINK: "both"|"gs"; AIR: NULL (ignored) */
+    fpvd_row_kind_t kind;
 } fpvd_keymap_entry_t;
 
-/* Endpoint → URL path. Pure; never NULL. */
+/* Endpoint → URL path. Pure; never NULL.
+ * FPVD_EP_AIR: /air/config, /air/apply, /air/config
+ * FPVD_EP_GS:  /gs/config,  /gs/apply,  /gs/config?pending=true */
 const char *fpvd_write_path(fpvd_endpoint_t ep);
 const char *fpvd_apply_path(fpvd_endpoint_t ep);
 const char *fpvd_read_path (fpvd_endpoint_t ep);
@@ -63,6 +71,25 @@ cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t ty
  * JSON path (i.e. the paths owned by fpvd's dl-applier when dynamicLink is
  * active). */
 bool fpvd_is_locked_path(const char *path);
+
+#define FPVD_PLAN_MAX 6
+
+typedef struct {
+    char method[8];    /* "PATCH" | "POST" */
+    char url_path[28]; /* e.g. "/gs/config" */
+    char body[256];    /* "" => no body */
+    int  retries;      /* extra attempts after first failure (0 = single try) */
+    bool gs_side;      /* step targets the GS tree (for error wording + dirty flag) */
+} fpvd_step_t;
+
+/* Plan the HTTP steps for one settings write. Pure (no HTTP, no globals).
+ * gs_local_mac may be NULL (only needed for FPVD_ROW_BEAMFORM enable).
+ * Returns the number of steps written to out, or -1 with a message in err. */
+int fpvd_plan_steps(fpvd_row_kind_t kind, fpvd_endpoint_t ep,
+                    const char *path, fpvd_type_t type, const char *value,
+                    bool drone_reachable, const char *gs_local_mac,
+                    fpvd_step_t *out, size_t max,
+                    char *err, size_t errn);
 
 typedef struct {
     int   status;          /* 0 = transport failure; else HTTP status */

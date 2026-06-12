@@ -78,6 +78,13 @@ bool pp_settings_is_connected(void) {
     return true;
 }
 
+bool pp_settings_is_reachable(const char *d, const char *p, const char *k) {
+    if (g_provider && g_provider->is_reachable) {
+        return g_provider->is_reachable(d, p, k);
+    }
+    return true;
+}
+
 void pp_settings_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
     if (!cb) {
         /* cb=NULL clears all listeners (rare; mainly for tests). */

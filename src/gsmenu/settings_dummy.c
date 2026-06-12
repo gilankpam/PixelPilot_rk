@@ -55,7 +55,8 @@ static const dummy_entry_t g_seed[] = {
     { "gs_channel",   "149" },
     { "bandwidth",    "40" },
     { "txpower",      "20" },
-    { "rx_power",     "50" },
+    { "rx_power",     "20" },
+    { "beamforming",  "off" },
     { "mcs_index",    "2" },
     { "stbc",         "off" },
     { "ldpc",         "on" },
@@ -178,6 +179,20 @@ static const char *g_dummy_locked_keys[] = {
     "roi_enabled", "roi_qp", "roi_center", "roi_steps",
 };
 
+static bool g_drone_offline = false;   /* set in pp_settings_register_dummy */
+
+/* Mirrors the fpvd provider: drone-backed rows are the air domain plus the
+ * two gs-domain drone rows (drone TX power, beamforming handshake). */
+static bool dummy_is_reachable(const char *d, const char *p, const char *k) {
+    if (!g_drone_offline || !d || !p || !k) return true;
+    if (strcmp(d, "air") == 0) return false;
+    if (strcmp(d, "gs") == 0 && strcmp(p, "wfbng") == 0 && strcmp(k, "txpower") == 0)
+        return false;
+    if (strcmp(d, "gs") == 0 && strcmp(p, "link") == 0 && strcmp(k, "beamforming") == 0)
+        return false;
+    return true;
+}
+
 static bool dummy_is_locked(const char *d, const char *p, const char *k) {
     (void)d; (void)p;
     const char *enabled = find_value("enabled");
@@ -271,6 +286,7 @@ static const pp_settings_provider_t g_dummy = {
     .get       = dummy_get,
     .set_async = dummy_set_async,
     .is_locked = dummy_is_locked,
+    .is_reachable = dummy_is_reachable,
     .set_snapshot_listener = dummy_set_snapshot_listener,
     .is_available = dummy_is_available,
     .apply        = dummy_apply,
@@ -278,5 +294,6 @@ static const pp_settings_provider_t g_dummy = {
 };
 
 void pp_settings_register_dummy(void) {
+    g_drone_offline = getenv("PP_SIM_DRONE_OFFLINE") != NULL;
     pp_settings_register(&g_dummy);
 }

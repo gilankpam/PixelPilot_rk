@@ -1,7 +1,6 @@
-/* fpvd HTTP settings provider — implemented incrementally; see plan. */
+/* fpvd HTTP settings provider — talks to the local fpvd-GS daemon. */
 #include "settings.h"
 #include "settings_fpvd_internal.h"
-#include "settings_gs_rxpower.h"
 
 #include <string.h>
 #include "cJSON.h"
@@ -23,8 +22,8 @@ typedef struct fpvd_job {
     char     path[128];           /* dotted json path */
     char     value[128];          /* UI value string */
     fpvd_type_t type;
-    fpvd_endpoint_t endpoint;     /* AIR, LINK or CONFIG */
-    char     apply_to[8];         /* "both"|"gs" for LINK; "" for AIR */
+    fpvd_endpoint_t endpoint;     /* AIR or GS */
+    fpvd_row_kind_t kind;         /* PLAIN, STAGED, SHARED, BEAMFORM */
     bool     apply_only;          /* true → skip PATCH, just POST /apply */
     pp_settings_done_cb on_done;
     void    *user_data;
@@ -37,13 +36,14 @@ typedef struct {
     pthread_cond_t  cv;
     bool     stop;
     bool     visible;
-    bool     connected;
+    bool     gs_connected;        /* fpvd-GS HTTP round-trips succeed */
+    bool     drone_reachable;     /* derived from the /air round-trip (2xx=reachable) */
     bool     worker_started;
 
     cJSON   *air_snapshot;        /* GET /air/config (drone), protected by mu */
-    cJSON   *gs_snapshot;         /* GET /link wrapped {"link":...}, by mu */
-    cJSON   *config_snapshot;     /* GET /config?pending=true (GS), by mu */
-    bool     config_dirty;        /* staged-but-unapplied /config changes */
+    cJSON   *gs_snapshot;         /* GET /gs/config?pending=true (full GS tree) */
+    cJSON   *status_snapshot;     /* GET /gs/status (radio txpower, beamforming localMac) */
+    bool     config_dirty;        /* staged-but-unapplied /gs/config changes */
 
     fpvd_job_t queue[FPVD_QUEUE_CAP];
     size_t     queue_n;
@@ -56,79 +56,80 @@ static fpvd_state_t G;
 
 static const fpvd_keymap_entry_t KEYMAP[] = {
     /* Camera — Video */
-    { "air", "camera", "size",       "video.resolution",  FPVD_T_STRING,         FPVD_EP_AIR, NULL },
-    { "air", "camera", "fps",        "video.fps",         FPVD_T_INT,            FPVD_EP_AIR, NULL },
-    { "air", "camera", "bitrate",    "video.bitrate",     FPVD_T_INT,            FPVD_EP_AIR, NULL },
-    { "air", "camera", "codec",      "video.codec",       FPVD_T_ENUM,           FPVD_EP_AIR, NULL },
-    { "air", "camera", "gopsize",    "video.gopSize",     FPVD_T_FLOAT,          FPVD_EP_AIR, NULL },
-    { "air", "camera", "rc_mode",    "video.rcMode",      FPVD_T_ENUM,           FPVD_EP_AIR, NULL },
-    { "air", "camera", "qp_delta",   "video.qpDelta",     FPVD_T_INT,            FPVD_EP_AIR, NULL },
+    { "air", "camera", "size",       "video.resolution",  FPVD_T_STRING,         FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "fps",        "video.fps",         FPVD_T_INT,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "bitrate",    "video.bitrate",     FPVD_T_INT,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "codec",      "video.codec",       FPVD_T_ENUM,           FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "gopsize",    "video.gopSize",     FPVD_T_FLOAT,          FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "rc_mode",    "video.rcMode",      FPVD_T_ENUM,           FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "qp_delta",   "video.qpDelta",     FPVD_T_INT,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
     /* Camera — ROI */
-    { "air", "camera", "roi_enabled","video.roi.enabled", FPVD_T_BOOL,           FPVD_EP_AIR, NULL },
-    { "air", "camera", "roi_qp",     "video.roi.qp",      FPVD_T_INT,            FPVD_EP_AIR, NULL },
-    { "air", "camera", "roi_center", "video.roi.center",  FPVD_T_PERCENT_TO_FRAC,FPVD_EP_AIR, NULL },
-    { "air", "camera", "roi_steps",  "video.roi.steps",   FPVD_T_INT,            FPVD_EP_AIR, NULL },
+    { "air", "camera", "roi_enabled","video.roi.enabled", FPVD_T_BOOL,           FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "roi_qp",     "video.roi.qp",      FPVD_T_INT,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "roi_center", "video.roi.center",  FPVD_T_PERCENT_TO_FRAC,FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "roi_steps",  "video.roi.steps",   FPVD_T_INT,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
     /* Camera — Image */
-    { "air", "camera", "mirror",     "image.mirror",      FPVD_T_BOOL,           FPVD_EP_AIR, NULL },
-    { "air", "camera", "flip",       "image.flip",        FPVD_T_BOOL,           FPVD_EP_AIR, NULL },
-    { "air", "camera", "rotate",     "image.rotate",      FPVD_T_INT,            FPVD_EP_AIR, NULL },
+    { "air", "camera", "mirror",     "image.mirror",      FPVD_T_BOOL,           FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "flip",       "image.flip",        FPVD_T_BOOL,           FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "rotate",     "image.rotate",      FPVD_T_INT,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
     /* Camera — Recording */
-    { "air", "camera", "rec_enable", "recording.enabled",    FPVD_T_BOOL,            FPVD_EP_AIR, NULL },
-    { "air", "camera", "rec_split",  "recording.maxSeconds", FPVD_T_SECONDS_FROM_MIN,FPVD_EP_AIR, NULL },
-    { "air", "camera", "rec_maxmb",  "recording.maxMB",      FPVD_T_INT,             FPVD_EP_AIR, NULL },
+    { "air", "camera", "rec_enable", "recording.enabled",    FPVD_T_BOOL,            FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "rec_split",  "recording.maxSeconds", FPVD_T_SECONDS_FROM_MIN,FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "camera", "rec_maxmb",  "recording.maxMB",      FPVD_T_INT,             FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
-    /* Link — shared radio (GS-local-first, pushed to drone server-side) */
-    { "gs",  "wfbng", "gs_channel", "link.channel",  FPVD_T_INT,     FPVD_EP_LINK, "both" },
-    { "gs",  "wfbng", "bandwidth",  "link.width",    FPVD_T_INT,     FPVD_EP_LINK, "both" },
+    /* Link — shared radio (client-orchestrated: drone first, then GS) */
+    { "gs",  "wfbng", "gs_channel", "link.channel",  FPVD_T_INT, FPVD_EP_GS, FPVD_ROW_SHARED },
+    { "gs",  "wfbng", "bandwidth",  "link.width",    FPVD_T_INT, FPVD_EP_GS, FPVD_ROW_SHARED },
 
-    /* Link — GS card power (percent slider → GS link.txpower mBm, GS-only) */
-    { "gs",  "link",  "rx_power",   "link.txpower",  FPVD_T_RXPOWER, FPVD_EP_LINK, "gs" },
+    /* Link — GS card power (dBm) and beamforming (client-owned handshake) */
+    { "gs",  "link",  "rx_power",    "link.txPowerDbm",          FPVD_T_INT,  FPVD_EP_GS, FPVD_ROW_PLAIN },
+    { "gs",  "link",  "beamforming", "link.beamforming.enabled", FPVD_T_BOOL, FPVD_EP_GS, FPVD_ROW_BEAMFORM },
 
-    /* Link — drone TX power + modulation (drone-owned) */
-    { "gs",  "wfbng", "txpower",    "link.txpower",  FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "wfbng", "mcs_index",  "link.mcs",      FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "wfbng", "stbc",       "link.stbc",     FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "wfbng", "ldpc",       "link.ldpc",     FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "wfbng", "fec_k",      "link.fec.k",    FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "wfbng", "fec_n",      "link.fec.n",    FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    /* Link — drone TX power (dBm) + modulation (drone-owned) */
+    { "gs",  "wfbng", "txpower",    "link.txPowerDbm", FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "mcs_index",  "link.mcs",        FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "stbc",       "link.stbc",       FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "ldpc",       "link.ldpc",       FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "fec_k",      "link.fec.k",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "fec_n",      "link.fec.n",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
     /* Dynamic Link */
-    { "air", "dlink", "enabled",              "dynamicLink.enabled",              FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "dlink", "interleaving",         "dynamicLink.interleavingSupported",FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "dlink", "mavlink_enable",       "dynamicLink.mavlinkEnable",        FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "dlink", "osd_enabled",          "dynamicLink.osd.enabled",          FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "dlink", "osd_debug_latency",    "dynamicLink.osd.debugLatency",     FPVD_T_BOOL, FPVD_EP_AIR, NULL },
-    { "air", "dlink", "health_timeout_ms",    "dynamicLink.healthTimeoutMs",      FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "min_idr_interval_ms",  "dynamicLink.minIdrIntervalMs",     FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "apply_stagger_ms",     "dynamicLink.applyStaggerMs",       FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "apply_subpace_ms",     "dynamicLink.applySubPaceMs",       FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "roiqp_threshold_kbps", "dynamicLink.roiQp.thresholdKbps",  FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "roiqp_low_anchor_kbps","dynamicLink.roiQp.lowAnchorKbps",  FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "roiqp_floor",          "dynamicLink.roiQp.floor",          FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "roiqp_step",           "dynamicLink.roiQp.step",           FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_mcs",             "dynamicLink.safe.mcs",             FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_k",               "dynamicLink.safe.k",               FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_depth",           "dynamicLink.safe.depth",           FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_bandwidth",       "dynamicLink.safe.bandwidth",       FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_txpower_dbm",     "dynamicLink.safe.txPowerDbm",      FPVD_T_INT,  FPVD_EP_AIR, NULL },
-    { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, NULL },
+    { "air", "dlink", "enabled",              "dynamicLink.enabled",              FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_DLINK },
+    { "air", "dlink", "interleaving",         "dynamicLink.interleavingSupported",FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "mavlink_enable",       "dynamicLink.mavlinkEnable",        FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "osd_enabled",          "dynamicLink.osd.enabled",          FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "osd_debug_latency",    "dynamicLink.osd.debugLatency",     FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "health_timeout_ms",    "dynamicLink.healthTimeoutMs",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "min_idr_interval_ms",  "dynamicLink.minIdrIntervalMs",     FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "apply_stagger_ms",     "dynamicLink.applyStaggerMs",       FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "apply_subpace_ms",     "dynamicLink.applySubPaceMs",       FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "roiqp_threshold_kbps", "dynamicLink.roiQp.thresholdKbps",  FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "roiqp_low_anchor_kbps","dynamicLink.roiQp.lowAnchorKbps",  FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "roiqp_floor",          "dynamicLink.roiQp.floor",          FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "roiqp_step",           "dynamicLink.roiQp.step",           FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_mcs",             "dynamicLink.safe.mcs",             FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_k",               "dynamicLink.safe.k",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_depth",           "dynamicLink.safe.depth",           FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_bandwidth",       "dynamicLink.safe.bandwidth",       FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_txpower_dbm",     "dynamicLink.safe.txPowerDbm",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
-    /* PixelPilot launch config → fpvd /config (pixelpilot.*); staged, applied on demand */
-    { "gs",  "display", "screen_mode",      "pixelpilot.screenMode",          FPVD_T_STRING,          FPVD_EP_CONFIG, NULL },
-    { "gs",  "display", "video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_CONFIG, NULL },
-    { "gs",  "display", "rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_mode",         "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "rec_fps",          "pixelpilot.dvr.framerate",       FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_max_size",     "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_reenc_codec",  "pixelpilot.dvr.reencCodec",      FPVD_T_ENUM,            FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_reenc_resolution", "pixelpilot.dvr.reencResolution", FPVD_T_ENUM,        FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_reenc_fps",    "pixelpilot.dvr.reencFps",        FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_reenc_bitrate","pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_CONFIG, NULL },
-    { "gs",  "dvr",     "dvr_osd",          "pixelpilot.dvr.osd",             FPVD_T_BOOL,            FPVD_EP_CONFIG, NULL },
+    /* PixelPilot launch config → fpvd /gs/config (pixelpilot.*); staged, applied on demand */
+    { "gs",  "display", "screen_mode",      "pixelpilot.screenMode",          FPVD_T_STRING,          FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "display", "video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "display", "rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_mode",         "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "rec_fps",          "pixelpilot.dvr.framerate",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_max_size",     "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_reenc_codec",  "pixelpilot.dvr.reencCodec",      FPVD_T_ENUM,            FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_reenc_resolution", "pixelpilot.dvr.reencResolution", FPVD_T_ENUM,        FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_reenc_fps",    "pixelpilot.dvr.reencFps",        FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_reenc_bitrate","pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
+    { "gs",  "dvr",     "dvr_osd",          "pixelpilot.dvr.osd",             FPVD_T_BOOL,            FPVD_EP_GS, FPVD_ROW_STAGED },
 };
 
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);
@@ -153,25 +154,13 @@ const fpvd_keymap_entry_t *fpvd_keymap_at(size_t i) {
 }
 
 const char *fpvd_write_path(fpvd_endpoint_t ep) {
-    switch (ep) {
-    case FPVD_EP_LINK:   return "/link";
-    case FPVD_EP_CONFIG: return "/config";
-    default:             return "/air/config";
-    }
+    return ep == FPVD_EP_GS ? "/gs/config" : "/air/config";
 }
 const char *fpvd_apply_path(fpvd_endpoint_t ep) {
-    switch (ep) {
-    case FPVD_EP_LINK:   return "/link/apply";
-    case FPVD_EP_CONFIG: return "/apply";
-    default:             return "/air/apply";
-    }
+    return ep == FPVD_EP_GS ? "/gs/apply" : "/air/apply";
 }
 const char *fpvd_read_path(fpvd_endpoint_t ep) {
-    switch (ep) {
-    case FPVD_EP_LINK:   return "/link";
-    case FPVD_EP_CONFIG: return "/config";
-    default:             return "/air/config";
-    }
+    return ep == FPVD_EP_GS ? "/gs/config?pending=true" : "/air/config";
 }
 
 static cJSON *walk_path(cJSON *root, const char *path) {
@@ -237,13 +226,6 @@ char *fpvd_snapshot_read_string(cJSON *root, const char *path, fpvd_type_t type)
             return strdup(buf);
         }
         break;
-    case FPVD_T_RXPOWER:
-        /* Read-back treated as raw int (mBm) for now; rendered as percent by caller. */
-        if (cJSON_IsNumber(node)) {
-            snprintf(buf, sizeof buf, "%d", (int)node->valuedouble);
-            return strdup(buf);
-        }
-        break;
     }
     return strdup("");
 }
@@ -289,14 +271,6 @@ static cJSON *value_to_cjson(const char *value, fpvd_type_t type) {
         if (end == value) return NULL;
         return cJSON_CreateNumber((double)v / 100.0);
     }
-    case FPVD_T_RXPOWER: {
-        /* Unreachable in normal flow: run_job converts rx-power percent->mBm
-         * and builds the body as FPVD_T_INT. Kept as a defensive int passthrough. */
-        char *end;
-        long v = strtol(value, &end, 10);
-        if (end == value) return NULL;
-        return cJSON_CreateNumber((double)v);
-    }
     }
     return NULL;
 }
@@ -331,7 +305,7 @@ cJSON *fpvd_build_patch_body(const char *path, const char *value, fpvd_type_t ty
 
 static const char *LOCKED_PATHS[] = {
     "link.mcs",
-    "link.txpower",
+    "link.txPowerDbm",
     "link.fec",
     "link.width",
     "video.bitrate",
@@ -348,6 +322,123 @@ bool fpvd_is_locked_path(const char *path) {
         if (path[lp_len] == '\0' || path[lp_len] == '.') return true;
     }
     return false;
+}
+
+#define FPVD_GS_APPLY_RETRIES 3
+
+static void step_init(fpvd_step_t *s, const char *method, const char *url,
+                      const char *body, int retries, bool gs_side) {
+    memset(s, 0, sizeof *s);
+    snprintf(s->method, sizeof s->method, "%s", method);
+    snprintf(s->url_path, sizeof s->url_path, "%s", url);
+    if (body) snprintf(s->body, sizeof s->body, "%s", body);
+    s->retries = retries;
+    s->gs_side = gs_side;
+}
+
+/* Serialize a one-field patch body for `path`=`value` into buf. */
+static bool patch_body_str(const char *path, const char *value,
+                           fpvd_type_t type, char *buf, size_t n) {
+    cJSON *body = fpvd_build_patch_body(path, value, type);
+    if (!body) return false;
+    char *s = cJSON_PrintUnformatted(body);
+    cJSON_Delete(body);
+    if (!s) return false;
+    int w = snprintf(buf, n, "%s", s);
+    free(s);
+    return w >= 0 && (size_t)w < n;
+}
+
+int fpvd_plan_steps(fpvd_row_kind_t kind, fpvd_endpoint_t ep,
+                    const char *path, fpvd_type_t type, const char *value,
+                    bool drone_reachable, const char *gs_local_mac,
+                    fpvd_step_t *out, size_t max,
+                    char *err, size_t errn) {
+    char body[256];
+    if (max < 4) { snprintf(err, errn, "Plan buffer too small"); return -1; }
+
+    switch (kind) {
+    case FPVD_ROW_PLAIN: {
+        if (ep == FPVD_EP_AIR && !drone_reachable) {
+            snprintf(err, errn, "Drone unreachable"); return -1;
+        }
+        if (!patch_body_str(path, value, type, body, sizeof body)) {
+            snprintf(err, errn, "Invalid value"); return -1;
+        }
+        bool gs = (ep == FPVD_EP_GS);
+        step_init(&out[0], "PATCH", fpvd_write_path(ep), body, 0, gs);
+        step_init(&out[1], "POST",  fpvd_apply_path(ep), NULL, 0, gs);
+        return 2;
+    }
+    case FPVD_ROW_STAGED: {
+        if (!patch_body_str(path, value, type, body, sizeof body)) {
+            snprintf(err, errn, "Invalid value"); return -1;
+        }
+        step_init(&out[0], "PATCH", "/gs/config", body, 0, true);
+        return 1;
+    }
+    case FPVD_ROW_SHARED: {
+        if (!patch_body_str(path, value, type, body, sizeof body)) {
+            snprintf(err, errn, "Invalid value"); return -1;
+        }
+        size_t n = 0;
+        if (drone_reachable) {
+            /* Drone first: the GS then retunes onto the link the drone has
+             * already moved to (api.md, client orchestration). */
+            step_init(&out[n++], "PATCH", "/air/config", body, 0, false);
+            step_init(&out[n++], "POST",  "/air/apply",  NULL, 0, false);
+        }
+        step_init(&out[n++], "PATCH", "/gs/config", body, FPVD_GS_APPLY_RETRIES, true);
+        step_init(&out[n++], "POST",  "/gs/apply",  NULL, FPVD_GS_APPLY_RETRIES, true);
+        return (int)n;
+    }
+    case FPVD_ROW_DLINK: {
+        /* Adaptive-link arm/disarm. Drone-first both ways: on enable the GS
+         * controller HELLO-handshakes the drone applier, so the applier must
+         * come up first; disable mirrors it for symmetry. Same body on both
+         * sides ({"dynamicLink":{"enabled":X}}). Unlike SHARED there is no
+         * GS-only degradation — without the drone applier there is no link to
+         * arm, so the drone must be reachable. */
+        if (!drone_reachable) { snprintf(err, errn, "Drone unreachable"); return -1; }
+        if (!patch_body_str(path, value, type, body, sizeof body)) {
+            snprintf(err, errn, "Invalid value"); return -1;
+        }
+        step_init(&out[0], "PATCH", "/air/config", body, 0, false);
+        step_init(&out[1], "POST",  "/air/apply",  NULL, 0, false);
+        step_init(&out[2], "PATCH", "/gs/config", body, FPVD_GS_APPLY_RETRIES, true);
+        step_init(&out[3], "POST",  "/gs/apply",  NULL, FPVD_GS_APPLY_RETRIES, true);
+        return 4;
+    }
+    case FPVD_ROW_BEAMFORM: {
+        if (!drone_reachable) { snprintf(err, errn, "Drone unreachable"); return -1; }
+        bool enable = (strcmp(value, "on") == 0 || strcmp(value, "true") == 0);
+        if (enable && (!gs_local_mac || !gs_local_mac[0])) {
+            snprintf(err, errn, "GS card MAC unknown"); return -1;
+        }
+        /* STBC and TX-beamforming are mutually exclusive on the drone:
+         * disable stbc when enabling BF, restore it when disabling. */
+        if (enable) {
+            int w = snprintf(body, sizeof body,
+                "{\"link\":{\"beamforming\":{\"enabled\":true,\"remoteMac\":\"%s\"},"
+                "\"stbc\":false}}", gs_local_mac);
+            if (w < 0 || (size_t)w >= sizeof body) {
+                snprintf(err, errn, "Invalid value"); return -1;
+            }
+        } else {
+            snprintf(body, sizeof body,
+                "{\"link\":{\"beamforming\":{\"enabled\":false},\"stbc\":true}}");
+        }
+        step_init(&out[0], "PATCH", "/air/config", body, 0, false);
+        step_init(&out[1], "POST",  "/air/apply",  NULL, 0, false);
+        snprintf(body, sizeof body,
+            "{\"link\":{\"beamforming\":{\"enabled\":%s}}}", enable ? "true" : "false");
+        step_init(&out[2], "PATCH", "/gs/config", body, FPVD_GS_APPLY_RETRIES, true);
+        step_init(&out[3], "POST",  "/gs/apply",  NULL, FPVD_GS_APPLY_RETRIES, true);
+        return 4;
+    }
+    }
+    snprintf(err, errn, "Unknown row kind");
+    return -1;
 }
 
 static size_t curl_write_cb(void *ptr, size_t sz, size_t nm, void *ud) {
@@ -477,55 +568,64 @@ static char *url_join(const char *base, const char *path) {
     return u;
 }
 
-/* Called with G.mu HELD. Releases and re-acquires mutex around the HTTP calls.
- * Reachability tracks the GS daemon's own /link; /air/config is proxied to the
- * drone and may 502 while the GS is up — that leaves air_snapshot stale, not
- * a disconnect. */
-static void refresh_snapshot_unlocked(void) {
-    char *link_url   = url_join(G.base_url, "/link");
-    char *air_url    = url_join(G.base_url, "/air/config");
-    char *config_url = url_join(G.base_url, "/config?pending=true");
-    if (!link_url || !air_url || !config_url) {
-        free(link_url); free(air_url); free(config_url);
-        G.connected = false; return;
+/* Called with G.mu HELD. Releases and re-acquires the mutex around HTTP.
+ * gs_connected tracks the GS daemon itself; drone_reachable comes solely from
+ * the /air/config result (2xx → true, else → false), leaving air_snapshot
+ * stale rather than cleared when the drone is unreachable.
+ *
+ * NEVER notifies the listener itself: returns true when the caller should
+ * call notify_listener() AFTER releasing G.mu (notify_listener takes the
+ * LVGL lock; calling it under G.mu inverts the UI thread's lock order). */
+static bool refresh_snapshot_unlocked(void) {
+    char *gs_url     = url_join(G.base_url, fpvd_read_path(FPVD_EP_GS));
+    char *status_url = url_join(G.base_url, "/gs/status");
+    char *air_url    = url_join(G.base_url, fpvd_read_path(FPVD_EP_AIR));
+    if (!gs_url || !status_url || !air_url) {
+        free(gs_url); free(status_url); free(air_url);
+        bool was_gs = G.gs_connected;
+        G.gs_connected = false;
+        return was_gs;   /* notify only on the connected→down flip */
     }
     pthread_mutex_unlock(&G.mu);
-    fpvd_http_result_t lr = fpvd_http_get(link_url);
+    fpvd_http_result_t gr = fpvd_http_get(gs_url);
+    fpvd_http_result_t sr = fpvd_http_get(status_url);
     fpvd_http_result_t ar = fpvd_http_get(air_url);
-    fpvd_http_result_t cr = fpvd_http_get(config_url);
     pthread_mutex_lock(&G.mu);
-    free(link_url); free(air_url); free(config_url);
+    free(gs_url); free(status_url); free(air_url);
 
-    bool was_connected = G.connected;
-    if (lr.status == 200 && lr.body) {
-        cJSON *flat = cJSON_Parse(lr.body);
-        if (flat) {
-            cJSON *wrap = cJSON_CreateObject();
-            if (wrap) {
-                cJSON_AddItemToObject(wrap, "link", flat);   /* wrap so paths resolve */
-                if (G.gs_snapshot) cJSON_Delete(G.gs_snapshot);
-                G.gs_snapshot = wrap;
-                G.connected = true;
-            } else {
-                cJSON_Delete(flat);   /* OOM: don't orphan the parsed body */
-            }
-        }
+    bool was_gs = G.gs_connected, was_drone = G.drone_reachable;
+
+    if (gr.status == 200 && gr.body) {
+        cJSON *g = cJSON_Parse(gr.body);
+        if (g) { if (G.gs_snapshot) cJSON_Delete(G.gs_snapshot); G.gs_snapshot = g; }
+        G.gs_connected = true;
     } else {
-        G.connected = false;
+        G.gs_connected = false;
     }
-    if (ar.status == 200 && ar.body) {
-        cJSON *a = cJSON_Parse(ar.body);
-        if (a) { if (G.air_snapshot) cJSON_Delete(G.air_snapshot); G.air_snapshot = a; }
+    if (sr.status == 200 && sr.body) {
+        cJSON *s = cJSON_Parse(sr.body);
+        if (s) {
+            if (G.status_snapshot) cJSON_Delete(G.status_snapshot);
+            G.status_snapshot = s;
+        }
     }
-    if (cr.status == 200 && cr.body) {
-        cJSON *c = cJSON_Parse(cr.body);
-        if (c) { if (G.config_snapshot) cJSON_Delete(G.config_snapshot); G.config_snapshot = c; }
+    /* Drone reachability comes solely from the /air proxy round-trip: a 2xx
+     * means the GS reached the drone and relayed its config; anything else —
+     * 502 (GS can't reach the drone), 0 (can't reach the GS), or a relayed
+     * drone error — marks it unreachable. /gs/status is not consulted. */
+    if (ar.status >= 200 && ar.status < 300) {
+        if (ar.body) {
+            cJSON *a = cJSON_Parse(ar.body);
+            if (a) { if (G.air_snapshot) cJSON_Delete(G.air_snapshot); G.air_snapshot = a; }
+        }
+        G.drone_reachable = true;
+    } else {
+        G.drone_reachable = false;
     }
-    fpvd_http_result_free(&lr);
+    fpvd_http_result_free(&gr);
+    fpvd_http_result_free(&sr);
     fpvd_http_result_free(&ar);
-    fpvd_http_result_free(&cr);
-    if (was_connected != G.connected) notify_listener();
-    else if (G.connected) notify_listener();
+    return was_gs != G.gs_connected || was_drone != G.drone_reachable || G.gs_connected;
 }
 
 /* -------------------------------------------------------------------------
@@ -556,119 +656,122 @@ static const char *parse_error_message(const char *body) {
             snprintf(buf, sizeof buf, "Validation failed");
         }
     } else {
+        /* GS error shape is {"error":"<human text>"} with no message field —
+         * surface the error string itself when no message exists. */
         cJSON *m = cJSON_GetObjectItemCaseSensitive(r, "message");
-        snprintf(buf, sizeof buf, "%s",
-            (m && cJSON_IsString(m)) ? m->valuestring : "Request rejected");
+        if (m && cJSON_IsString(m)) snprintf(buf, sizeof buf, "%s", m->valuestring);
+        else if (err && cJSON_IsString(err) && err->valuestring[0])
+            snprintf(buf, sizeof buf, "%s", err->valuestring);
+        else snprintf(buf, sizeof buf, "Request rejected");
     }
     cJSON_Delete(r);
     return buf[0] ? buf : NULL;
 }
 
-/* Mutex must be RELEASED on entry. */
+/* Plan executor. Mutex must be RELEASED on entry. */
 static void run_job_unlocked(fpvd_job_t job) {
-    char *patch_url = NULL, *apply_url = NULL, *body_s = NULL;
     int rc = 0;
     char err[160] = {0};
+    fpvd_step_t steps[FPVD_PLAN_MAX];
+    int nsteps;
+    bool air_committed = false, gs_applied = false;
 
-    /* PATCH phase — skipped entirely for apply-only jobs (explicit Apply). */
-    if (!job.apply_only) {
-        /* Build the PATCH body. rx-power converts percent -> driver mBm first. */
-        cJSON *body = NULL;
-        if (job.type == FPVD_T_RXPOWER) {
-            pp_nic_driver_t drv = pp_rxpower_primary_driver();
-            int mbm = 0;
-            if (!pp_rxpower_pct_to_driver_value(drv, atoi(job.value), &mbm)) {
-                rc = -1; snprintf(err, sizeof err, "No supported NIC driver");
-                goto done;   /* nothing allocated yet; frees only NULLs */
-            }
-            char mbm_s[16]; snprintf(mbm_s, sizeof mbm_s, "%d", mbm);
-            body = fpvd_build_patch_body(job.path, mbm_s, FPVD_T_INT);
-        } else {
-            body = fpvd_build_patch_body(job.path, job.value, job.type);
-        }
-        body_s = body ? cJSON_PrintUnformatted(body) : NULL;
-        if (body) cJSON_Delete(body);
+    /* Snapshot base_url under the lock; G.base_url may be rewritten by
+     * pp_settings_register_fpvd on another thread. */
+    char base[128];
+    pthread_mutex_lock(&G.mu);
+    snprintf(base, sizeof base, "%s", G.base_url);
+    pthread_mutex_unlock(&G.mu);
 
-        patch_url = url_join(G.base_url, fpvd_write_path(job.endpoint));
-        if (!patch_url) {
-            rc = -1; snprintf(err, sizeof err, "Out of memory");
-            goto done;
-        }
+    if (job.apply_only) {
+        step_init(&steps[0], "POST", "/gs/apply", NULL, 0, true);
+        nsteps = 1;
+    } else {
+        pthread_mutex_lock(&G.mu);
+        bool reachable = G.drone_reachable;
+        char mac[24] = {0};
+        cJSON *bf = G.status_snapshot ?
+            cJSON_GetObjectItemCaseSensitive(G.status_snapshot, "beamforming") : NULL;
+        cJSON *lm = bf ? cJSON_GetObjectItemCaseSensitive(bf, "localMac") : NULL;
+        if (lm && cJSON_IsString(lm))
+            snprintf(mac, sizeof mac, "%s", lm->valuestring);
+        pthread_mutex_unlock(&G.mu);
 
-        fpvd_http_result_t r = fpvd_http_patch_json(patch_url, body_s ? body_s : "{}");
-        if (r.status == 0) {
-            rc = -1; snprintf(err, sizeof err, "GS unreachable");
-            pthread_mutex_lock(&G.mu);
-            bool was = G.connected; G.connected = false;
-            pthread_mutex_unlock(&G.mu);
-            if (was) notify_listener();
-        } else if (r.status >= 400) {
-            rc = -1;
-            const char *m = parse_error_message(r.body);
-            snprintf(err, sizeof err, "%s", m ? m : "Request rejected");
-        }
-        fpvd_http_result_free(&r);
-
-        /* EP_CONFIG rows stage only: a successful PATCH marks pending dirty and
-         * stops here (no apply). AIR/LINK fall through to apply immediately.
-         * rc==0 and err is empty here, so done: reports success with NULL. */
-        if (rc == 0 && job.endpoint == FPVD_EP_CONFIG) {
-            pthread_mutex_lock(&G.mu);
-            G.config_dirty = true;
-            refresh_snapshot_unlocked();
-            pthread_mutex_unlock(&G.mu);
-            goto done;
-        }
+        nsteps = fpvd_plan_steps(job.kind, job.endpoint, job.path, job.type,
+                                 job.value, reachable, mac[0] ? mac : NULL,
+                                 steps, FPVD_PLAN_MAX, err, sizeof err);
+        if (nsteps < 0) { rc = -1; goto done; }
+        if (job.kind == FPVD_ROW_SHARED && !reachable)
+            fprintf(stderr, "fpvd: %s applied to GS only (drone unreachable)\n", job.path);
     }
 
-    /* Apply phase — AIR/LINK after PATCH, or apply-only CONFIG (explicit Apply). */
-    if (rc == 0) {
-        apply_url = url_join(G.base_url, fpvd_apply_path(job.endpoint));
-        if (!apply_url) {
-            rc = -1; snprintf(err, sizeof err, "Out of memory");
-            goto done;
+    for (int i = 0; i < nsteps && rc == 0; i++) {
+        char *url = url_join(base, steps[i].url_path);
+        if (!url) { rc = -1; snprintf(err, sizeof err, "Out of memory"); break; }
+        fpvd_http_result_t r = { 0, NULL, 0 };
+        for (int a = 0; a <= steps[i].retries; a++) {
+            if (a > 0) {
+                struct timespec b = { 0, 500 * 1000 * 1000 };
+                nanosleep(&b, NULL);
+            }
+            fpvd_http_result_free(&r);
+            if (strcmp(steps[i].method, "PATCH") == 0)
+                r = fpvd_http_patch_json(url, steps[i].body);
+            else if (steps[i].body[0])
+                r = fpvd_http_post_json(url, steps[i].body);
+            else
+                r = fpvd_http_post(url);
+            if (r.status >= 200 && r.status < 300) break;
+            /* Retry only transport failures and server-side errors; a 4xx
+             * (validation, locked, …) is deterministic — fail immediately. */
+            if (!(r.status == 0 || r.status >= 500)) break;
         }
-        fpvd_http_result_t r;
-        if (job.endpoint == FPVD_EP_LINK) {
-            char apply_body[40];
-            snprintf(apply_body, sizeof apply_body, "{\"applyTo\":\"%s\"}",
-                     job.apply_to[0] ? job.apply_to : "both");
-            r = fpvd_http_post_json(apply_url, apply_body);
+        free(url);
+
+        if (r.status >= 200 && r.status < 300) {
+            if (strcmp(steps[i].url_path, "/air/apply") == 0) air_committed = true;
+            if (strcmp(steps[i].url_path, "/gs/apply")  == 0) gs_applied = true;
         } else {
-            r = fpvd_http_post(apply_url);
-        }
-        if (r.status == 0) {
-            rc = -1; snprintf(err, sizeof err, "GS unreachable");
-            pthread_mutex_lock(&G.mu);
-            bool was = G.connected; G.connected = false;
-            pthread_mutex_unlock(&G.mu);
-            if (was) notify_listener();
-        } else if (r.status >= 400) {
             rc = -1;
-            const char *m = parse_error_message(r.body);
-            snprintf(err, sizeof err, "%s", m ? m : "Apply failed");
+            const char *m = NULL;
+            if (r.status == 0) {
+                m = "GS unreachable";
+                pthread_mutex_lock(&G.mu);
+                bool was = G.gs_connected; G.gs_connected = false;
+                pthread_mutex_unlock(&G.mu);
+                if (was) notify_listener();
+            } else {
+                m = parse_error_message(r.body);
+                /* A 502 only signals "drone unreachable" when it came from the
+                 * /air/* proxy; /gs/* 502s are GS-side errors. */
+                if (r.status == 502 && !steps[i].gs_side) {
+                    pthread_mutex_lock(&G.mu);
+                    bool was = G.drone_reachable; G.drone_reachable = false;
+                    pthread_mutex_unlock(&G.mu);
+                    if (was) notify_listener();
+                    if (!m) m = "Drone unreachable";
+                }
+            }
+            if (air_committed && steps[i].gs_side)
+                snprintf(err, sizeof err, "Drone updated; GS apply failed: %s",
+                         m ? m : "error");
+            else
+                snprintf(err, sizeof err, "%s", m ? m : "Request failed");
         }
         fpvd_http_result_free(&r);
-        if (rc == 0 && job.apply_only) {
-            pthread_mutex_lock(&G.mu);
-            G.config_dirty = false;
-            pthread_mutex_unlock(&G.mu);
-        }
     }
 
     if (rc == 0) {
         pthread_mutex_lock(&G.mu);
-        refresh_snapshot_unlocked();
+        if (job.kind == FPVD_ROW_STAGED && !job.apply_only) G.config_dirty = true;
+        if (gs_applied) G.config_dirty = false;   /* any /gs/apply commits staged changes */
+        bool notify = refresh_snapshot_unlocked();
         pthread_mutex_unlock(&G.mu);
+        if (notify) notify_listener();
     }
 
 done:
-    /* Single exit: every path lands here with rc/err set. The three URL/body
-     * pointers are NULL-initialised, so free(NULL) is safe on early returns. */
     schedule_done(job.on_done, job.user_data, rc, err[0] ? err : NULL);
-    free(patch_url);
-    free(apply_url);
-    free(body_s);
 }
 
 /* -------------------------------------------------------------------------
@@ -680,7 +783,7 @@ static void *worker_main(void *arg) {
     while (1) {
         pthread_mutex_lock(&G.mu);
         while (!G.stop && G.queue_n == 0) {
-            int wait_ms = G.connected ? (G.visible ? 3000 : 60000) : 2000;
+            int wait_ms = G.gs_connected ? (G.visible ? 3000 : 60000) : 2000;
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_sec  += wait_ms / 1000;
@@ -688,7 +791,12 @@ static void *worker_main(void *arg) {
             if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
             int wr = pthread_cond_timedwait(&G.cv, &G.mu, &ts);
             if (wr == ETIMEDOUT) {
-                refresh_snapshot_unlocked();
+                bool notify = refresh_snapshot_unlocked();
+                if (notify) {
+                    pthread_mutex_unlock(&G.mu);
+                    notify_listener();
+                    pthread_mutex_lock(&G.mu);
+                }
             }
         }
         if (G.stop) { pthread_mutex_unlock(&G.mu); break; }
@@ -714,7 +822,7 @@ static void *worker_main(void *arg) {
 static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
                            pp_settings_done_cb cb, void *ud) {
     for (size_t i = 0; i < G.queue_n; i++) {
-        /* Two rows share path "link.txpower" on different endpoints (drone TX
+        /* Two rows share path "link.txPowerDbm" on different endpoints (drone TX
          * power vs GS card power) — coalesce only within the same endpoint. */
         if (strcmp(G.queue[i].path, e->path) == 0 &&
             G.queue[i].endpoint == e->endpoint) {
@@ -731,14 +839,14 @@ static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
     }
     fpvd_job_t *j = &G.queue[G.queue_n++];
     /* Zero the slot first: it may be reused from a prior apply-only job, so any
-     * field not explicitly written below (notably apply_only and apply_to) must
+     * field not explicitly written below (notably apply_only and kind) must
      * not inherit stale values. New job fields then auto-zero by default. */
     memset(j, 0, sizeof *j);
     strncpy(j->path,  e->path, sizeof j->path  - 1); j->path [sizeof j->path -1] = '\0';
     strncpy(j->value, value,   sizeof j->value - 1); j->value[sizeof j->value-1] = '\0';
     j->type       = e->type;
     j->endpoint   = e->endpoint;
-    if (e->apply_to) { strncpy(j->apply_to, e->apply_to, sizeof j->apply_to - 1); j->apply_to[sizeof j->apply_to - 1] = '\0'; }
+    j->kind       = e->kind;
     j->on_done   = cb;
     j->user_data = ud;
 }
@@ -747,26 +855,20 @@ static char *prov_get(const char *d, const char *p, const char *k) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return strdup("");
     pthread_mutex_lock(&G.mu);
-    cJSON *snap;
-    switch (e->endpoint) {
-    case FPVD_EP_LINK:   snap = G.gs_snapshot;     break;
-    case FPVD_EP_CONFIG: snap = G.config_snapshot; break;
-    default:             snap = G.air_snapshot;    break;
-    }
-    char *out;
-    if (e->type == FPVD_T_RXPOWER) {
-        char *raw = snap ? fpvd_snapshot_read_string(snap, e->path, FPVD_T_INT) : strdup("");
-        out = strdup("");
-        if (raw && raw[0]) {
-            int pct = 0;
-            if (pp_rxpower_driver_value_to_pct(pp_rxpower_primary_driver(), atoi(raw), &pct)) {
-                char buf[16]; snprintf(buf, sizeof buf, "%d", pct);
-                free(out); out = strdup(buf);
-            }
+    cJSON *snap = (e->endpoint == FPVD_EP_GS) ? G.gs_snapshot : G.air_snapshot;
+    char *out = snap ? fpvd_snapshot_read_string(snap, e->path, e->type) : strdup("");
+    /* GS txPowerDbm may be null (driver default): fall back to the live
+     * radio power reported by /gs/status. */
+    if (out && out[0] == '\0' && e->endpoint == FPVD_EP_GS &&
+        strcmp(e->path, "link.txPowerDbm") == 0 && G.status_snapshot) {
+        cJSON *radio = cJSON_GetObjectItemCaseSensitive(G.status_snapshot, "radio");
+        cJSON *first = (radio && cJSON_IsArray(radio)) ? cJSON_GetArrayItem(radio, 0) : NULL;
+        cJSON *tx    = first ? cJSON_GetObjectItemCaseSensitive(first, "txpowerDbm") : NULL;
+        if (tx && cJSON_IsNumber(tx)) {
+            char buf[16];
+            snprintf(buf, sizeof buf, "%d", (int)(tx->valuedouble + 0.5));
+            free(out); out = strdup(buf);
         }
-        free(raw);
-    } else {
-        out = snap ? fpvd_snapshot_read_string(snap, e->path, e->type) : strdup("");
     }
     pthread_mutex_unlock(&G.mu);
     return out;
@@ -806,7 +908,8 @@ static void prov_apply(pp_settings_done_cb cb, void *ud) {
     }
     fpvd_job_t *j = &G.queue[G.queue_n++];
     memset(j, 0, sizeof *j);
-    j->endpoint   = FPVD_EP_CONFIG;
+    j->endpoint   = FPVD_EP_GS;
+    j->kind       = FPVD_ROW_STAGED;
     j->apply_only = true;
     j->on_done    = cb;
     j->user_data  = ud;
@@ -828,10 +931,10 @@ static bool prov_has_pending(void) {
 static bool prov_is_locked(const char *d, const char *p, const char *k) {
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return false;
-    /* DL governs drone-owned (AIR) fields. The Bandwidth row is the one LINK
-     * exception: gs/wfbng/bandwidth -> link.width is pushed to the drone and
-     * rejected by its dynamic-link lock, so disable it too. Other LINK rows
-     * (e.g. rx_power = the GS card's own power) stay editable. */
+    /* DL governs drone-owned (AIR) fields. The Bandwidth row is the one
+     * GS-row exception: gs/wfbng/bandwidth -> link.width is pushed to the
+     * drone and rejected by its dynamic-link lock, so disable it too. Other
+     * GS rows (e.g. rx_power = the GS card's own power) stay editable. */
     bool is_bandwidth = (!strcmp(d, "gs") && !strcmp(p, "wfbng") &&
                          !strcmp(k, "bandwidth"));
     if (e->endpoint != FPVD_EP_AIR && !is_bandwidth) return false;
@@ -846,9 +949,21 @@ static bool prov_is_locked(const char *d, const char *p, const char *k) {
 
 static bool prov_is_connected(void) {
     pthread_mutex_lock(&G.mu);
-    bool c = G.connected;
+    bool c = G.gs_connected;
     pthread_mutex_unlock(&G.mu);
     return c;
+}
+
+static bool prov_is_reachable(const char *d, const char *p, const char *k) {
+    const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
+    if (!e) return true;
+    /* AIR rows and the beamforming handshake need the drone; GS rows —
+     * including SHARED channel/width (the offline recovery path) — do not. */
+    if (e->endpoint != FPVD_EP_AIR && e->kind != FPVD_ROW_BEAMFORM) return true;
+    pthread_mutex_lock(&G.mu);
+    bool r = G.drone_reachable;
+    pthread_mutex_unlock(&G.mu);
+    return r;
 }
 
 static void prov_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
@@ -875,6 +990,7 @@ static const pp_settings_provider_t G_PROVIDER = {
     .set_async              = prov_set_async,
     .is_locked              = prov_is_locked,
     .is_connected           = prov_is_connected,
+    .is_reachable           = prov_is_reachable,
     .set_snapshot_listener  = prov_set_snapshot_listener,
     .set_visibility         = prov_set_visibility,
     .is_available           = prov_is_available,
@@ -902,10 +1018,11 @@ void pp_settings_register_fpvd(void) {
     G.base_url[sizeof G.base_url - 1] = '\0';
     G.stop      = false;
     G.visible   = false;
-    G.connected = false;
+    G.gs_connected    = false;
+    G.drone_reachable = false;
     if (G.air_snapshot)    { cJSON_Delete(G.air_snapshot);    G.air_snapshot    = NULL; }
     if (G.gs_snapshot)     { cJSON_Delete(G.gs_snapshot);     G.gs_snapshot     = NULL; }
-    if (G.config_snapshot) { cJSON_Delete(G.config_snapshot); G.config_snapshot = NULL; }
+    if (G.status_snapshot) { cJSON_Delete(G.status_snapshot); G.status_snapshot = NULL; }
     G.config_dirty = false;
     G.queue_n   = 0;
     G.listener_cb = NULL;
@@ -915,8 +1032,9 @@ void pp_settings_register_fpvd(void) {
 
     /* Prime snapshot synchronously (best-effort). */
     pthread_mutex_lock(&G.mu);
-    refresh_snapshot_unlocked();
+    bool notify = refresh_snapshot_unlocked();
     pthread_mutex_unlock(&G.mu);
+    if (notify) notify_listener();
 
     if (!G.worker_started) {
         pthread_create(&G.worker, NULL, worker_main, NULL);

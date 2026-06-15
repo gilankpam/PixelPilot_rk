@@ -7,10 +7,40 @@
 #include "../widgets/pp_slider_scale.h"
 #include "../widgets/pp_dropdown.h"
 #include "../settings.h"
+#include <string.h>
+#include <stdlib.h>
 
 /* Keys mirror those in the old src/gsmenu/air_camera.c. Dropdown option
  * strings are sensible defaults — a real backend will query the air unit
  * for valid choices and substitute them. */
+
+extern void pp_page_reapply_lock_state(lv_obj_t *);
+
+/* The drone ignores video.gopSize when video.resilience != "off"; grey out the
+ * GOP size row (plain disabled + dimmed, no lock icon) to signal it's inactive.
+ * The GOP row is tagged LV_OBJ_FLAG_USER_1 by the builder. Runs after the lock
+ * pass so the lock pass cannot overwrite the disable. */
+static void apply_resilience_gate(lv_obj_t *page) {
+    char *v = pp_settings_get("air", "camera", "resilience");
+    bool gated = v && strcmp(v, "off") != 0;
+    free(v);
+    if (!gated) return;
+    uint32_t n = lv_obj_get_child_cnt(page);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *c = lv_obj_get_child(page, i);
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_USER_1)) {
+            lv_obj_add_state(c, LV_STATE_DISABLED);
+            lv_obj_set_style_opa(c, LV_OPA_60, 0);
+        }
+    }
+    pp_page_rescue_focus(page);
+}
+
+static void snapshot_listener_cb(void *user_data) {
+    lv_obj_t *page = (lv_obj_t *)user_data;
+    pp_page_reapply_lock_state(page);
+    apply_resilience_gate(page);
+}
 
 lv_obj_t *build_camera_tab(lv_obj_t *parent) {
     lv_obj_t *page = pp_page_create(parent, "air", "camera");
@@ -37,13 +67,21 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
         .fine_step = 1, .fine_threshold = 10,
         .disp_div = 10, .decimals = 1, .unit = NULL, .serialize = PP_SER_FLOAT_DIV,
     };
-    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "GOP size",
-                 "air", "camera", "gopsize", &gop_cfg);
+    lv_obj_t *gop = pp_slider_ex(page, LV_SYMBOL_SETTINGS, "GOP size",
+                                 "air", "camera", "gopsize", &gop_cfg);
+    lv_obj_add_flag(gop, LV_OBJ_FLAG_USER_1);   /* greyed out when resilience != off */
+    pp_dropdown(page, LV_SYMBOL_SETTINGS, "Resilience",
+                "air", "camera", "resilience",
+                "off\nrescue\nquality\nsprint\nracing\nendurance\npatrol\nrally\nrange\nfpv");
     pp_dropdown(page, LV_SYMBOL_SETTINGS, "RC Mode",
                 "air", "camera", "rc_mode",
                 "cbr\nvbr");
     pp_slider(page, LV_SYMBOL_SETTINGS, "QP Delta",
               "air", "camera", "qp_delta", -32, 0);
+
+    pp_section_header(page, "OSD");
+    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "OSD Enabled",
+              "air", "camera", "osd_enabled");
 
     pp_section_header(page, "ROI");
     pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Enabled",
@@ -79,11 +117,10 @@ lv_obj_t *build_camera_tab(lv_obj_t *parent) {
         }
     }
 
-    extern void pp_page_reapply_lock_state(lv_obj_t *);
     /* The dispatcher supports multiple listeners via fanout, so this
      * registration coexists with the Dynamic Link tab's own listener. */
-    pp_settings_set_snapshot_listener(
-        (pp_settings_snapshot_cb)pp_page_reapply_lock_state, page);
     pp_page_reapply_lock_state(page);
+    apply_resilience_gate(page);
+    pp_settings_set_snapshot_listener(snapshot_listener_cb, page);
     return page;
 }

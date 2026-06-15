@@ -135,8 +135,8 @@ Only the existing **drone-side** `enabled` toggle is kept. The GS-side controlle
 General:   Enabled (toggle)              KEPT  air/dlink/enabled  (FPVD_ROW_DLINK)
 Compute:   Base Redundancy Ratio  float 0.1–2.0 step 0.1  def 0.5   -> dynamicLink.compute.baseRedundancyRatio [air FLOAT]
            Blocks / Frame         float 0.5–8.0 step 0.5  def 2.0   -> dynamicLink.compute.blocksPerFrame       [air FLOAT]
-           Min Bitrate (kbps)     int 500–30000 step 500  def 1000  -> dynamicLink.compute.minBitrateKbps       [air INT]
-           Max Bitrate (kbps)     int 500–30000 step 500  def 24000 -> dynamicLink.compute.maxBitrateKbps       [air INT]
+           Min Bitrate (Mbps)     Mbps 0.5–26.0 step 0.5  def 1.0   -> dynamicLink.compute.minBitrateKbps       [air INT]
+           Max Bitrate (Mbps)     Mbps 0.5–26.0 step 0.5  def 24.0  -> dynamicLink.compute.maxBitrateKbps       [air INT]
            Max MCS                int 0–7                  def 5     -> dynamicLink.maxMcs                        [GS  INT]
 Failsafe:  MCS, FEC K, FEC N, Block Depth, Bandwidth, TX Power, Bitrate   KEPT verbatim
 ```
@@ -151,8 +151,14 @@ Removed sections/rows: General's *Interleaving* and *MAVLink Enable*; the entire
     (displays 0.1–2.0, serializes 0.1–2.0).
   - Blocks/Frame: `raw_min=1, raw_max=16, step=1, disp_div=2, decimals=1`
     (displays 0.5–8.0 in 0.5 steps, serializes the float).
-- Min/Max Bitrate are plain `pp_slider` ints, 500–30000. Enforce min ≤ max−500 with
-  `pp_slider_set_relation`, mirroring the FEC K/N relation:
+- Min/Max Bitrate mirror the **camera Bitrate** slider UI exactly — `pp_slider_ex`
+  with a `pp_slider_cfg_t` matching `bitrate_cfg` in `camera.c`:
+  `{ .raw_min=500, .raw_max=26000, .step=500, .fine_step=0, .fine_threshold=0,
+     .disp_div=1000, .decimals=1, .unit="Mbps", .serialize=PP_SER_INT }`
+  (displays Mbps, stores raw kbps as INT). A single shared `static const`
+  config can serve both rows.
+- Enforce min ≤ max−500 (raw kbps units) with `pp_slider_set_relation`, mirroring
+  the FEC K/N relation:
   `pp_slider_set_relation(min_row, "air","dlink","compute_max_bitrate_kbps", -500, /*is_max*/ true)`
   and
   `pp_slider_set_relation(max_row, "air","dlink","compute_min_bitrate_kbps",  500, /*is_max*/ false)`.

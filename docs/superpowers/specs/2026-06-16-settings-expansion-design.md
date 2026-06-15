@@ -64,13 +64,18 @@ UI/page changes. `fpvd_tests` covers the keymap.
   `pp_slider_ex(... "gopsize" ...)` is unused) and tag it with
   `LV_OBJ_FLAG_USER_1` so the gate can find it.
 - Add `apply_resilience_gate(lv_obj_t *page)`: read
-  `pp_settings_get("air","camera","resilience")`, free it; if the value is non-NULL
-  and not `"off"`, disable the tagged GOP row via
-  `lv_obj_add_state(row, LV_STATE_DISABLED)` + `lv_obj_set_style_opa(row, LV_OPA_60, 0)`
-  (no lock icon — this distinguishes "inactive due to preset" from a Dynamic-Link
-  lock). Otherwise do nothing (the lock-state pass already restored the row).
-  Finish with `pp_page_rescue_focus(page)` in case the newly disabled row was
-  focused.
+  `pp_settings_get("air","camera","resilience")`, free it. Iterate the tagged GOP
+  row (`LV_OBJ_FLAG_USER_1`). If the value is non-NULL and not `"off"`, disable it
+  via `lv_obj_add_state(row, LV_STATE_DISABLED)` + `lv_obj_set_style_opa(row,
+  LV_OPA_60, 0)` (no lock icon — distinguishes "inactive due to preset" from a
+  Dynamic-Link lock). Otherwise **restore** it
+  (`lv_obj_remove_state(row, LV_STATE_DISABLED)` + `LV_OPA_COVER`) **only when its
+  lock state is `PP_ROW_UNLOCKED`** — the gate must be reversible, and the
+  preceding lock pass does NOT restore it for us (`pp_row_set_locked` early-returns
+  on an unchanged `UNLOCKED` state and never clears the gate's raw
+  `LV_STATE_DISABLED`/opacity). Guarding on `pp_row_get_locked(row) ==
+  PP_ROW_UNLOCKED` avoids clobbering a row the lock pass legitimately disabled
+  (drone offline/unavailable/dynamic). Finish with `pp_page_rescue_focus(page)`.
 - Replace the current snapshot-listener registration (which only calls
   `pp_page_reapply_lock_state`) with a combined `snapshot_listener_cb(void *ud)`
   that runs `pp_page_reapply_lock_state(page)` **then** `apply_resilience_gate(page)`

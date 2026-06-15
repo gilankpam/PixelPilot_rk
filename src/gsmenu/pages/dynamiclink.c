@@ -44,36 +44,37 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
     lv_obj_t *enabled = pp_toggle(page, LV_SYMBOL_POWER, "Enabled",
                                   "air", "dlink", "enabled");
     lv_obj_add_flag(enabled, LV_OBJ_FLAG_USER_3);   /* visibility anchor */
-    pp_toggle(page, LV_SYMBOL_SETTINGS, "Interleaving Supported",
-              "air", "dlink", "interleaving");
-    pp_toggle(page, LV_SYMBOL_SETTINGS, "MAVLink Enable",
-              "air", "dlink", "mavlink_enable");
 
-    pp_section_header(page, "OSD");
-    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "OSD Enabled",
-              "air", "dlink", "osd_enabled");
-    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Debug Latency",
-              "air", "dlink", "osd_debug_latency");
-
-    pp_section_header(page, "Timing");
-    pp_slider(page, LV_SYMBOL_REFRESH, "Health Timeout (ms)",
-              "air", "dlink", "health_timeout_ms", 1000, 30000);
-    pp_slider(page, LV_SYMBOL_REFRESH, "Min IDR Interval (ms)",
-              "air", "dlink", "min_idr_interval_ms", 16, 2000);
-    pp_slider(page, LV_SYMBOL_REFRESH, "Apply Stagger (ms)",
-              "air", "dlink", "apply_stagger_ms", 0, 500);
-    pp_slider(page, LV_SYMBOL_REFRESH, "Apply Sub-pace (ms)",
-              "air", "dlink", "apply_subpace_ms", 0, 50);
-
-    pp_section_header(page, "ROI QP");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Threshold (kbps)",
-              "air", "dlink", "roiqp_threshold_kbps", 1000, 20000);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Low Anchor (kbps)",
-              "air", "dlink", "roiqp_low_anchor_kbps", 500, 10000);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Floor",
-              "air", "dlink", "roiqp_floor", -48, 0);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Step",
-              "air", "dlink", "roiqp_step", 1, 10);
+    pp_section_header(page, "Compute");
+    static const pp_slider_cfg_t redundancy_cfg = {
+        .raw_min = 1, .raw_max = 20, .step = 1, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 10, .decimals = 1,
+        .unit = NULL, .serialize = PP_SER_FLOAT_DIV,
+    };
+    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Base Redundancy Ratio",
+                 "air", "dlink", "compute_base_redundancy", &redundancy_cfg);
+    static const pp_slider_cfg_t blocks_cfg = {
+        .raw_min = 1, .raw_max = 16, .step = 1, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 2, .decimals = 1,
+        .unit = NULL, .serialize = PP_SER_FLOAT_DIV,
+    };
+    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Blocks / Frame",
+                 "air", "dlink", "compute_blocks_per_frame", &blocks_cfg);
+    /* Mirrors the camera Bitrate slider: displays Mbps, stores raw kbps int. */
+    static const pp_slider_cfg_t bitrate_cfg = {
+        .raw_min = 500, .raw_max = 26000, .step = 500, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1000, .decimals = 1,
+        .unit = "Mbps", .serialize = PP_SER_INT,
+    };
+    lv_obj_t *min_br = pp_slider_ex(page, LV_SYMBOL_AUDIO, "Min Bitrate",
+                                    "air", "dlink", "compute_min_bitrate_kbps", &bitrate_cfg);
+    lv_obj_t *max_br = pp_slider_ex(page, LV_SYMBOL_AUDIO, "Max Bitrate",
+                                    "air", "dlink", "compute_max_bitrate_kbps", &bitrate_cfg);
+    /* Enforce min <= max - 500 kbps from both sides. */
+    pp_slider_set_relation(min_br, "air", "dlink", "compute_max_bitrate_kbps", -500, /*is_max*/ true);
+    pp_slider_set_relation(max_br, "air", "dlink", "compute_min_bitrate_kbps",  500, /*is_max*/ false);
+    pp_slider(page, LV_SYMBOL_SETTINGS, "Max MCS",
+              "gs", "dlink", "max_mcs", 0, 7);
 
     pp_section_header(page, "Failsafe");
     pp_slider(page, LV_SYMBOL_SETTINGS, "MCS",

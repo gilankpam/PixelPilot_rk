@@ -38,6 +38,61 @@ TEST_CASE("keymap: lookup returns null for unknown triples", "[fpvd][keymap]") {
     REQUIRE(fpvd_keymap_lookup("nope", "nope", "nope") == nullptr);
 }
 
+TEST_CASE("keymap: camera resilience/osd + dlink compute/maxMcs", "[fpvd][keymap]") {
+    const fpvd_keymap_entry_t *e;
+
+    e = fpvd_keymap_lookup("air", "camera", "resilience");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "video.resilience") == 0);
+    REQUIRE(e->type == FPVD_T_ENUM);
+
+    e = fpvd_keymap_lookup("air", "camera", "osd_enabled");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "osd.enabled") == 0);
+    REQUIRE(e->type == FPVD_T_BOOL);
+
+    e = fpvd_keymap_lookup("air", "dlink", "compute_base_redundancy");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.compute.baseRedundancyRatio") == 0);
+    REQUIRE(e->type == FPVD_T_FLOAT);
+
+    e = fpvd_keymap_lookup("air", "dlink", "compute_blocks_per_frame");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.compute.blocksPerFrame") == 0);
+    REQUIRE(e->type == FPVD_T_FLOAT);
+
+    e = fpvd_keymap_lookup("air", "dlink", "compute_min_bitrate_kbps");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.compute.minBitrateKbps") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+
+    e = fpvd_keymap_lookup("air", "dlink", "compute_max_bitrate_kbps");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.compute.maxBitrateKbps") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+
+    e = fpvd_keymap_lookup("gs", "dlink", "max_mcs");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.maxMcs") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+}
+
+TEST_CASE("keymap: removed dynamic-link rows no longer resolve", "[fpvd][keymap]") {
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "interleaving") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "mavlink_enable") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "osd_enabled") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "osd_debug_latency") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "health_timeout_ms") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "min_idr_interval_ms") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "apply_stagger_ms") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "apply_subpace_ms") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "roiqp_threshold_kbps") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "roiqp_low_anchor_kbps") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "roiqp_floor") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("air", "dlink", "roiqp_step") == nullptr);
+}
+
 TEST_CASE("keymap: FEC mode/deadline/overhead map to link.fec.*", "[fpvd][keymap]") {
     const fpvd_keymap_entry_t *e;
 
@@ -244,6 +299,10 @@ TEST_CASE("lock: does not match unrelated", "[fpvd][lock]") {
     REQUIRE(fpvd_is_locked_path("video.fps") == false);
     REQUIRE(fpvd_is_locked_path("video.codec") == false);
     REQUIRE(fpvd_is_locked_path("image.mirror") == false);
+    REQUIRE(fpvd_is_locked_path("video.resilience") == false);
+    REQUIRE(fpvd_is_locked_path("osd.enabled") == false);
+    REQUIRE(fpvd_is_locked_path("dynamicLink.compute") == false);
+    REQUIRE(fpvd_is_locked_path("dynamicLink.maxMcs") == false);
 }
 
 TEST_CASE("lock: prefix overshoot is not a match", "[fpvd][lock]") {

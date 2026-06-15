@@ -6,6 +6,39 @@
 #include "../widgets/pp_slider.h"
 #include "../widgets/pp_dropdown.h"
 #include "../settings.h"
+#include <string.h>
+#include <stdlib.h>
+
+extern void pp_page_reapply_lock_state(lv_obj_t *);
+
+/* Show exactly one FEC parameter group based on link.fec.mode.
+ * rs    -> FEC_K / FEC_N      (rows tagged LV_OBJ_FLAG_USER_1)
+ * swfec -> Deadline / Overhead (rows tagged LV_OBJ_FLAG_USER_2)
+ * An unknown/empty mode hides both groups until the snapshot arrives. */
+static void apply_fec_visibility(lv_obj_t *page) {
+    char *v = pp_settings_get("air", "wfbng", "fec_mode");
+    bool is_rs    = v && strcmp(v, "rs") == 0;
+    bool is_swfec = v && strcmp(v, "swfec") == 0;
+    free(v);
+
+    uint32_t n = lv_obj_get_child_cnt(page);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *c = lv_obj_get_child(page, i);
+        if (lv_obj_has_flag(c, LV_OBJ_FLAG_USER_1)) {
+            if (is_rs) lv_obj_clear_flag(c, LV_OBJ_FLAG_HIDDEN);
+            else       lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+        } else if (lv_obj_has_flag(c, LV_OBJ_FLAG_USER_2)) {
+            if (is_swfec) lv_obj_clear_flag(c, LV_OBJ_FLAG_HIDDEN);
+            else          lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+static void snapshot_listener_cb(void *user_data) {
+    lv_obj_t *page = (lv_obj_t *)user_data;
+    apply_fec_visibility(page);
+    pp_page_reapply_lock_state(page);
+}
 
 lv_obj_t *build_link_tab(lv_obj_t *parent) {
     lv_obj_t *page = pp_page_create(parent, "gs", "link");
@@ -33,6 +66,9 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
               "air", "wfbng", "mcs_index", 0, 7);
     pp_toggle(page, LV_SYMBOL_SETTINGS, "STBC", "air", "wfbng", "stbc");
     pp_toggle(page, LV_SYMBOL_SETTINGS, "LDPC", "air", "wfbng", "ldpc");
+    pp_dropdown(page, LV_SYMBOL_SETTINGS, "FEC Mode",
+                "air", "wfbng", "fec_mode", "rs\nswfec");
+
     lv_obj_t *fec_k = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_K",
                                 "air", "wfbng", "fec_k", 1, 31);
     lv_obj_t *fec_n = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC_N",
@@ -40,6 +76,17 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
     /* Enforce k <= n - 2 from both sides. */
     pp_slider_set_relation(fec_k, "air", "wfbng", "fec_n", -2, /*is_max*/ true);
     pp_slider_set_relation(fec_n, "air", "wfbng", "fec_k",  2, /*is_max*/ false);
+
+    lv_obj_t *fec_deadline = pp_slider(page, LV_SYMBOL_SETTINGS, "Deadline (ms)",
+                                       "air", "wfbng", "fec_deadline_ms", 10, 50);
+    lv_obj_t *fec_overhead = pp_slider(page, LV_SYMBOL_SETTINGS, "Overhead (%)",
+                                       "air", "wfbng", "fec_overhead_pct", 0, 100);
+
+    /* Conditional groups: rs -> k/n, swfec -> deadline/overhead. */
+    lv_obj_add_flag(fec_k,        LV_OBJ_FLAG_USER_1);
+    lv_obj_add_flag(fec_n,        LV_OBJ_FLAG_USER_1);
+    lv_obj_add_flag(fec_deadline, LV_OBJ_FLAG_USER_2);
+    lv_obj_add_flag(fec_overhead, LV_OBJ_FLAG_USER_2);
 
     lv_group_t *grp = pp_page_group(page);
     uint32_t n = lv_obj_get_child_cnt(page);
@@ -50,11 +97,10 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
         }
     }
 
-    extern void pp_page_reapply_lock_state(lv_obj_t *);
     /* The dispatcher supports multiple listeners via fanout, so this
      * registration coexists with the Dynamic Link tab's own listener. */
-    pp_settings_set_snapshot_listener(
-        (pp_settings_snapshot_cb)pp_page_reapply_lock_state, page);
+    apply_fec_visibility(page);
     pp_page_reapply_lock_state(page);
+    pp_settings_set_snapshot_listener(snapshot_listener_cb, page);
     return page;
 }

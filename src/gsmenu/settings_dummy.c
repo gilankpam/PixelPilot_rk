@@ -51,6 +51,10 @@ static const dummy_entry_t g_seed[] = {
     { "rec_split",    "5" },
     { "rec_maxmb",    "500" },
 
+    /* Camera — Resilience + OSD */
+    { "resilience",   "off" },
+    { "osd_enabled",  "off" },
+
     /* Link — WFB-NG */
     { "gs_channel",   "149" },
     { "bandwidth",    "40" },
@@ -68,21 +72,12 @@ static const dummy_entry_t g_seed[] = {
 
     /* Dynamic Link — General */
     { "enabled",            "off" },
-    { "interleaving",       "on" },
-    { "mavlink_enable",     "on" },
-    /* Dynamic Link — OSD */
-    { "osd_enabled",        "on" },
-    { "osd_debug_latency",  "off" },
-    /* Dynamic Link — Timing */
-    { "health_timeout_ms",  "10000" },
-    { "min_idr_interval_ms","500" },
-    { "apply_stagger_ms",   "50" },
-    { "apply_subpace_ms",   "5" },
-    /* Dynamic Link — ROI QP */
-    { "roiqp_threshold_kbps", "6000" },
-    { "roiqp_low_anchor_kbps","2000" },
-    { "roiqp_floor",          "-24" },
-    { "roiqp_step",           "3" },
+    /* Dynamic Link — Compute */
+    { "compute_base_redundancy",  "0.5" },
+    { "compute_blocks_per_frame", "2.0" },
+    { "compute_min_bitrate_kbps", "1000" },
+    { "compute_max_bitrate_kbps", "24000" },
+    { "max_mcs",                  "5" },
     /* Dynamic Link — Safe Ceilings */
     { "safe_mcs",         "1" },
     { "safe_k",           "8" },

@@ -96,6 +96,9 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "air", "wfbng", "ldpc",       "link.ldpc",       FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "wfbng", "fec_k",      "link.fec.k",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "wfbng", "fec_n",      "link.fec.n",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "fec_mode",         "link.fec.mode",        FPVD_T_ENUM, FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "fec_deadline_ms",  "link.fec.deadlineMs",  FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "air", "wfbng", "fec_overhead_pct", "link.fec.overheadPct", FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
     /* Dynamic Link */
     { "air", "dlink", "enabled",              "dynamicLink.enabled",              FPVD_T_BOOL, FPVD_EP_AIR, FPVD_ROW_DLINK },

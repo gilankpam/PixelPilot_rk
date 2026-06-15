@@ -38,6 +38,25 @@ TEST_CASE("keymap: lookup returns null for unknown triples", "[fpvd][keymap]") {
     REQUIRE(fpvd_keymap_lookup("nope", "nope", "nope") == nullptr);
 }
 
+TEST_CASE("keymap: FEC mode/deadline/overhead map to link.fec.*", "[fpvd][keymap]") {
+    const fpvd_keymap_entry_t *e;
+
+    e = fpvd_keymap_lookup("air", "wfbng", "fec_mode");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "link.fec.mode") == 0);
+    REQUIRE(e->type == FPVD_T_ENUM);
+
+    e = fpvd_keymap_lookup("air", "wfbng", "fec_deadline_ms");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "link.fec.deadlineMs") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+
+    e = fpvd_keymap_lookup("air", "wfbng", "fec_overhead_pct");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "link.fec.overheadPct") == 0);
+    REQUIRE(e->type == FPVD_T_INT);
+}
+
 TEST_CASE("keymap: NULL args are safe (no deref) — pp_row_text reads with NULL domain/page",
           "[fpvd][keymap]") {
     /* pp_row_text() calls pp_settings_get(NULL, NULL, key) for rows whose
@@ -213,6 +232,9 @@ TEST_CASE("lock: matches exact locked paths", "[fpvd][lock]") {
 TEST_CASE("lock: matches subtrees", "[fpvd][lock]") {
     REQUIRE(fpvd_is_locked_path("link.fec.k") == true);
     REQUIRE(fpvd_is_locked_path("link.fec.n") == true);
+    REQUIRE(fpvd_is_locked_path("link.fec.mode") == true);
+    REQUIRE(fpvd_is_locked_path("link.fec.deadlineMs") == true);
+    REQUIRE(fpvd_is_locked_path("link.fec.overheadPct") == true);
     REQUIRE(fpvd_is_locked_path("video.roi.enabled") == true);
     REQUIRE(fpvd_is_locked_path("video.roi.center") == true);
 }

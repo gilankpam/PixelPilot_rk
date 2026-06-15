@@ -24,13 +24,19 @@ static void apply_resilience_gate(lv_obj_t *page) {
     char *v = pp_settings_get("air", "camera", "resilience");
     bool gated = v && strcmp(v, "off") != 0;
     free(v);
-    if (!gated) return;
+
     uint32_t n = lv_obj_get_child_cnt(page);
     for (uint32_t i = 0; i < n; i++) {
         lv_obj_t *c = lv_obj_get_child(page, i);
-        if (lv_obj_has_flag(c, LV_OBJ_FLAG_USER_1)) {
+        if (!lv_obj_has_flag(c, LV_OBJ_FLAG_USER_1)) continue;
+        if (gated) {
             lv_obj_add_state(c, LV_STATE_DISABLED);
             lv_obj_set_style_opa(c, LV_OPA_60, 0);
+        } else if (pp_row_get_locked(c) == PP_ROW_UNLOCKED) {
+            /* Not gated and not lock-disabled: restore. (When the row IS
+             * lock-disabled, leave the lock pass's styling intact.) */
+            lv_obj_remove_state(c, LV_STATE_DISABLED);
+            lv_obj_set_style_opa(c, LV_OPA_COVER, 0);
         }
     }
     pp_page_rescue_focus(page);

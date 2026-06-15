@@ -62,6 +62,9 @@ static const dummy_entry_t g_seed[] = {
     { "ldpc",         "on" },
     { "fec_k",        "8" },
     { "fec_n",        "12" },
+    { "fec_mode",          "swfec" },
+    { "fec_deadline_ms",   "30" },
+    { "fec_overhead_pct",  "50" },
 
     /* Dynamic Link — General */
     { "enabled",            "off" },
@@ -173,6 +176,7 @@ static void dummy_fire_listener(void) {
  * Mirrors the LOCKED_PATHS list in settings_fpvd.c at the UI-key level. */
 static const char *g_dummy_locked_keys[] = {
     "mcs_index", "txpower", "fec_k", "fec_n",
+    "fec_mode", "fec_deadline_ms", "fec_overhead_pct",
     "bandwidth", /* link.width */
     "bitrate",
     "qp_delta",

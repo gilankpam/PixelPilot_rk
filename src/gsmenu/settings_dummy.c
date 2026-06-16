@@ -82,9 +82,6 @@ static const dummy_entry_t g_seed[] = {
     { "safe_mcs",         "1" },
     { "safe_k",           "8" },
     { "safe_n",           "12" },
-    { "safe_depth",       "1" },
-    { "safe_bandwidth",   "20" },
-    { "safe_txpower_dbm", "20" },
     { "safe_bitrate_kbps","2000" },
 
     /* Display */

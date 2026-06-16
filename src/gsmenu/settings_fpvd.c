@@ -112,9 +112,6 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "air", "dlink", "safe_mcs",             "dynamicLink.safe.mcs",             FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "dlink", "safe_k",               "dynamicLink.safe.k",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_depth",           "dynamicLink.safe.depth",           FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_bandwidth",       "dynamicLink.safe.bandwidth",       FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_txpower_dbm",     "dynamicLink.safe.txPowerDbm",      FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
     /* PixelPilot launch config → fpvd /gs/config (pixelpilot.*); staged, applied on demand */

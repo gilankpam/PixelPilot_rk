@@ -3,7 +3,6 @@
 #include "../widgets/pp_section_header.h"
 #include "../widgets/pp_toggle.h"
 #include "../widgets/pp_slider.h"
-#include "../widgets/pp_dropdown.h"
 #include "../settings.h"
 
 #include <string.h>
@@ -85,12 +84,6 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
                                  "air", "dlink", "safe_n", 2, 32);
     pp_slider_set_relation(safe_k, "air", "dlink", "safe_n", -2, /*is_max*/ true);
     pp_slider_set_relation(safe_n, "air", "dlink", "safe_k",  2, /*is_max*/ false);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Block Depth",
-              "air", "dlink", "safe_depth", 1, 8);
-    pp_dropdown(page, LV_SYMBOL_WIFI, "Bandwidth",
-                "air", "dlink", "safe_bandwidth", "10\n20\n40");
-    pp_slider(page, LV_SYMBOL_UP, "TX Power (dBm)",
-              "air", "dlink", "safe_txpower_dbm", -10, 30);
     pp_slider(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",
               "air", "dlink", "safe_bitrate_kbps", 500, 30000);
 

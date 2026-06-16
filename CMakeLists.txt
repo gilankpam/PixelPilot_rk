@@ -322,6 +322,33 @@ if(USE_SIMULATOR)
       ${PP_CJSON_INC})
     target_link_libraries(page_nav_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
+    # The Dynamic Link page must not build deprecated Failsafe rows
+    # (Block Depth / Bandwidth / TX Power) — see tests/test_dynamiclink_page.cpp.
+    add_executable(dynamiclink_page_tests
+      src/gsmenu/pages/dynamiclink.c
+      src/gsmenu/widgets/pp_page.c
+      src/gsmenu/widgets/pp_section_header.c
+      src/gsmenu/widgets/pp_toggle.c
+      src/gsmenu/widgets/pp_slider.c
+      src/gsmenu/widgets/pp_slider_bounds.c
+      src/gsmenu/widgets/pp_slider_accel.c
+      src/gsmenu/widgets/pp_slider_scale.c
+      src/gsmenu/widgets/pp_dropdown.c
+      src/gsmenu/widgets/pp_row.c
+      src/gsmenu/widgets/pp_toast.c
+      src/gsmenu/styles.c
+      src/gsmenu/helper.c
+      src/gsmenu/settings.c
+      src/gsmenu/settings_stub.c
+      src/gsmenu/settings_gs_enum.c
+      ${PP_CJSON_SOURCES}
+      tests/test_dynamiclink_page.cpp)
+    target_include_directories(dynamiclink_page_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR}
+      ${PP_CJSON_INC})
+    target_link_libraries(dynamiclink_page_tests Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
   endif()
 else()
   find_package(nlohmann_json 3 REQUIRED)

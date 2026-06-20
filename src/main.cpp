@@ -122,7 +122,6 @@ Dvr *dvr_reenc_inst = NULL;
 MppEncoder *reencoder = NULL;
 MppEncoderParams reenc_params;
 DvrMode dvr_mode = DVR_MODE_RAW;
-static int video_framerate = -1;
 static bool dvr_filenames_with_sequence = false;
 static int mp4_fragmentation_mode = 0;
 static int64_t dvr_max_file_size = 4000000000LL;  // 4 GB (decimal), safe margin for VFAT 4 GiB limit
@@ -669,7 +668,6 @@ extern "C" {
             args.filename_template = tpl;
             args.mp4_fragmentation_mode = mp4_fragmentation_mode;
             args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-            args.video_framerate = video_framerate;
             args.max_file_size = dvr_max_file_size;
             args.video_p.video_frm_width = output_list ? output_list->video_frm_width : 0;
             args.video_p.video_frm_height = output_list ? output_list->video_frm_height : 0;
@@ -1022,8 +1020,6 @@ void printHelp() {
     "\n"
     "    --dvr-start            - Start DVR immediately\n"
     "\n"
-    "    --dvr-framerate <rate> - Force the dvr framerate for smoother dvr, ex: 60\n"
-    "\n"
     "    --dvr-max-size <MB>    - Split DVR files at <MB> megabytes (Default: 4000, for VFAT)\n"
     "\n"
     "    --dvr-fmp4             - Save the video feed as a fragmented mp4\n"
@@ -1133,7 +1129,8 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-framerate") {
-		video_framerate = atoi(__ArgValue);
+		(void)__ArgValue;
+		spdlog::warn("--dvr-framerate is deprecated and ignored (raw DVR times from RTP timestamps)");
 		continue;
 	}
 
@@ -1322,12 +1319,6 @@ int main(int argc, char **argv)
 	// Re-encode codec is always h265 regardless of any (now-deprecated) --dvr-reenc-codec flag.
 	reenc_params.codec = VideoCodec::H265;
 
-	if (dvr_template != NULL && (dvr_mode == DVR_MODE_RAW || dvr_mode == DVR_MODE_BOTH) && video_framerate < 0) {
-		printf("--dvr-framerate must be provided when raw DVR is enabled.\n"
-		       "Use --dvr-mode reencode for hardware re-encoding only.\n");
-		return 0;
-	}
-
 	printf("PixelPilot Rockchip %d.%d\n", APP_VERSION_MAJOR, APP_VERSION_MINOR);
 
 	// Load yaml config
@@ -1483,7 +1474,6 @@ int main(int argc, char **argv)
 			args.filename_template = tpl;
 			args.mp4_fragmentation_mode = mp4_fragmentation_mode;
 			args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-			args.video_framerate = video_framerate;
 			args.max_file_size = dvr_max_file_size;
 			args.video_p.video_frm_width = output_list->video_frm_width;
 			args.video_p.video_frm_height = output_list->video_frm_height;

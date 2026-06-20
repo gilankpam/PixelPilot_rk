@@ -119,7 +119,6 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "gs",  "display", "video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "display", "rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "dvr",     "dvr_mode",         "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "rec_fps",          "pixelpilot.dvr.framerate",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "dvr",     "dvr_max_size",     "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "dvr",     "dvr_reenc_bitrate","pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
 };

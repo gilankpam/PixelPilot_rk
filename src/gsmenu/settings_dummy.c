@@ -95,7 +95,6 @@ static const dummy_entry_t g_seed[] = {
     /* DVR (kept) */
     { "rec_enabled",          "on" },
     { "dvr_mode",             "reencode" },
-    { "rec_fps",              "60" },
     { "dvr_max_size",         "4000" },
     { "dvr_reenc_bitrate",    "8000" },
 

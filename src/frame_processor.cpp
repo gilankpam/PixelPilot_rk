@@ -229,30 +229,47 @@ void FrameProcessor::process_loop() {
                 osd_snap = osd_info_;
             }
             if (osd_snap.prime_fd >= 0 && osd_snap.width > 0 && osd_snap.height > 0) {
-                size_t bgra_sz = (size_t)proc_meta_.hor_stride * proc_meta_.ver_stride * 4;
-                if (!blend_rgba_ || mpp_buffer_get_size(blend_rgba_) < bgra_sz) {
-                    if (blend_rgba_) { mpp_buffer_put(blend_rgba_); blend_rgba_ = nullptr; }
-                    mpp_buffer_get(hold_grp, &blend_rgba_, bgra_sz);
-                }
-                if (blend_rgba_) {
-                    rga_buffer_t nv12 = wrapbuffer_fd_t(
-                        mpp_buffer_get_fd(proc_copy_),
-                        proc_meta_.width, proc_meta_.height,
-                        proc_meta_.hor_stride, proc_meta_.ver_stride,
-                        RK_FORMAT_YCbCr_420_SP);
-                    rga_buffer_t bgra = wrapbuffer_fd_t(
-                        mpp_buffer_get_fd(blend_rgba_),
-                        proc_meta_.width, proc_meta_.height,
-                        proc_meta_.hor_stride, proc_meta_.ver_stride,
-                        RK_FORMAT_BGRA_8888);
-                    rga_buffer_t osd = wrapbuffer_fd_t(
-                        osd_snap.prime_fd,
-                        osd_snap.width, osd_snap.height,
-                        osd_snap.stride_px, osd_snap.height,
-                        RK_FORMAT_BGRA_8888);
-                    imcvtcolor(nv12, bgra, RK_FORMAT_YCbCr_420_SP, RK_FORMAT_BGRA_8888);
-                    imblend(osd, bgra, IM_ALPHA_BLEND_SRC_OVER);
-                    imcvtcolor(bgra, nv12, RK_FORMAT_BGRA_8888, RK_FORMAT_YCbCr_420_SP);
+                rga_buffer_t nv12 = wrapbuffer_fd_t(
+                    mpp_buffer_get_fd(proc_copy_),
+                    proc_meta_.width, proc_meta_.height,
+                    proc_meta_.hor_stride, proc_meta_.ver_stride,
+                    RK_FORMAT_YCbCr_420_SP);
+                rga_buffer_t osd = wrapbuffer_fd_t(
+                    osd_snap.prime_fd,
+                    osd_snap.width, osd_snap.height,
+                    osd_snap.stride_px, osd_snap.height,
+                    RK_FORMAT_BGRA_8888);
+
+                // Single-pass composite: the RGA blends the premultiplied BGRA
+                // OSD straight over the NV12 frame, doing YUV->RGB->YUV inside the
+                // pipeline (src channel = YUV background, src1 = RGB foreground,
+                // dst = YUV). DST_OVER puts the OSD (srcB) over the video (srcA).
+                // Replaces a 3-pass NV12<->BGRA round-trip (~3x cheaper on RGA).
+                IM_STATUS st = imcomposite(nv12, osd, nv12, IM_ALPHA_BLEND_DST_OVER);
+                if (st != IM_STATUS_SUCCESS) {
+                    // Fallback for RGAs without RGB-over-YUV compose: convert the
+                    // frame to BGRA, alpha-blend the OSD, convert back.
+                    static bool warned = false;
+                    if (!warned) {
+                        warned = true;
+                        spdlog::warn("FrameProcessor: imcomposite OSD failed ({}), 3-pass fallback",
+                                     imStrError(st));
+                    }
+                    size_t bgra_sz = (size_t)proc_meta_.hor_stride * proc_meta_.ver_stride * 4;
+                    if (!blend_rgba_ || mpp_buffer_get_size(blend_rgba_) < bgra_sz) {
+                        if (blend_rgba_) { mpp_buffer_put(blend_rgba_); blend_rgba_ = nullptr; }
+                        mpp_buffer_get(hold_grp, &blend_rgba_, bgra_sz);
+                    }
+                    if (blend_rgba_) {
+                        rga_buffer_t bgra = wrapbuffer_fd_t(
+                            mpp_buffer_get_fd(blend_rgba_),
+                            proc_meta_.width, proc_meta_.height,
+                            proc_meta_.hor_stride, proc_meta_.ver_stride,
+                            RK_FORMAT_BGRA_8888);
+                        imcvtcolor(nv12, bgra, RK_FORMAT_YCbCr_420_SP, RK_FORMAT_BGRA_8888);
+                        imblend(osd, bgra, IM_ALPHA_BLEND_SRC_OVER);
+                        imcvtcolor(bgra, nv12, RK_FORMAT_BGRA_8888, RK_FORMAT_YCbCr_420_SP);
+                    }
                 }
             }
         }

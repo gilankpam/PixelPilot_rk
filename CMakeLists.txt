@@ -282,6 +282,14 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(osd_buf_tests Catch2::Catch2WithMain)
 
+    add_executable(rtp_depay_tests
+      src/hevc_depayloader.cpp
+      tests/test_hevc_depayloader.cpp)
+    target_include_directories(rtp_depay_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR})
+    target_link_libraries(rtp_depay_tests Catch2::Catch2WithMain)
+
     # Hidden native widgets (lv_dropdown/lv_switch) must never be
     # group-focusable — see tests/test_widget_focus.cpp.
     add_executable(widget_focus_tests

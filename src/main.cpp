@@ -122,7 +122,6 @@ Dvr *dvr_reenc_inst = NULL;
 MppEncoder *reencoder = NULL;
 MppEncoderParams reenc_params;
 DvrMode dvr_mode = DVR_MODE_RAW;
-bool dvr_osd   = false;
 static int video_framerate = -1;
 static bool dvr_filenames_with_sequence = false;
 static int mp4_fragmentation_mode = 0;
@@ -564,12 +563,6 @@ static void *dvr_shutdown_worker(void *arg) {
 
 // C-compatible interface for gsmenu live control of the DVR.
 extern "C" {
-    void dvr_reenc_set_osd(int enabled) {
-        dvr_osd = (bool)enabled;
-        if (!enabled && frame_proc)
-            frame_proc->set_osd_blend(-1, 0, 0, 0);
-    }
-
     void dvr_reenc_notify_colortrans(int enabled) {
         if (!frame_proc) return;
         if (enabled)
@@ -578,7 +571,6 @@ extern "C" {
             frame_proc->set_color_correction_enabled(false);
     }
     int dvr_reenc_get_bitrate(void) { return reenc_params.bitrate_kbps; }
-    int dvr_reenc_get_osd(void)     { return (int)dvr_osd; }
 
     int  dvr_get_mode(void)  { return (int)dvr_mode; }
     // Deprecated — use dvr_get_mode() instead
@@ -1039,8 +1031,6 @@ void printHelp() {
     "\n"
     "    --dvr-reenc-bitrate <k>- Re-encode bitrate in kbps       (Default: 8000)\n"
     "\n"
-    "    --dvr-osd              - Blend the OSD into the DVR recording\n"
-    "\n"
     "    --screen-mode <mode>   - Override default screen mode. <width>x<heigth>@<fps> ex: 1920x1080@120\n"
     "\n"
     "    --video-plane-id       - Override default drm plane used for video by plane-id\n"
@@ -1197,7 +1187,7 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-osd") {
-		dvr_osd = true;
+		spdlog::warn("--dvr-osd is deprecated and ignored (re-encode always burns in the OSD)");
 		continue;
 	}
 

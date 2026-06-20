@@ -19,7 +19,24 @@ void HevcDepayloader::append_nal_with_startcode(const uint8_t* nal, size_t len) 
 
 void HevcDepayloader::flush_au() {
     if (au_has_data_ && !au_corrupt_) {
-        cb_(au_.data(), au_.size());
+        const bool need_ps = au_has_irap_ &&
+            !(au_has_vps_ && au_has_sps_ && au_has_pps_) &&
+            !vps_.empty() && !sps_.empty() && !pps_.empty();
+        if (need_ps) {
+            static const uint8_t sc[4] = {0, 0, 0, 1};
+            std::vector<uint8_t> out;
+            out.reserve(au_.size() + vps_.size() + sps_.size() + pps_.size() + 12);
+            auto add = [&](const std::vector<uint8_t>& n) {
+                out.insert(out.end(), sc, sc + 4);
+                out.insert(out.end(), n.begin(), n.end());
+            };
+            add(vps_); add(sps_); add(pps_);
+            out.insert(out.end(), au_.begin(), au_.end());
+            cb_(out.data(), out.size());
+            stats_.param_sets_reinserted++;
+        } else {
+            cb_(au_.data(), au_.size());
+        }
         stats_.aus_emitted++;
     }
     au_.clear();

@@ -149,3 +149,43 @@ TEST_CASE("on_discontinuity mid-FU drops the partial NAL", "[depay][fu]") {
     REQUIRE(d.stats().fu_drops >= 1);
     REQUIRE(sink.aus.empty());
 }
+
+TEST_CASE("timestamp change flushes a frame whose marker was lost", "[depay][emit]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    auto a = single_nal(1, {0x01});
+    d.on_payload(a.data(), a.size(), /*marker=*/false, /*ts=*/5000);  // marker lost
+    REQUIRE(sink.aus.empty());
+    auto b = single_nal(1, {0x02});
+    d.on_payload(b.data(), b.size(), /*marker=*/false, /*ts=*/5500);  // new frame
+    REQUIRE(sink.aus.size() == 1);                                    // prior AU flushed
+    REQUIRE(split_nals(sink.aus[0])[0] == a);
+}
+
+TEST_CASE("IRAP without param sets gets cached VPS/SPS/PPS prepended", "[depay][paramset]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    // Frame 1: VPS+SPS+PPS+IDR together — caches the param sets, emits as-is.
+    auto vps = single_nal(32, {0x01});
+    auto sps = single_nal(33, {0x02});
+    auto pps = single_nal(34, {0x03});
+    auto idr = single_nal(/*IDR_W_RADL=*/19, {0x04});
+    d.on_payload(vps.data(), vps.size(), false, 6000);
+    d.on_payload(sps.data(), sps.size(), false, 6000);
+    d.on_payload(pps.data(), pps.size(), false, 6000);
+    d.on_payload(idr.data(), idr.size(), true,  6000);
+    REQUIRE(sink.aus.size() == 1);
+    REQUIRE(d.stats().param_sets_reinserted == 0);   // already present
+
+    // Frame 2: bare IDR, no param sets — depayloader prepends cached set.
+    auto idr2 = single_nal(20, {0x05});
+    d.on_payload(idr2.data(), idr2.size(), true, 6500);
+    REQUIRE(sink.aus.size() == 2);
+    REQUIRE(d.stats().param_sets_reinserted == 1);
+    auto nals = split_nals(sink.aus[1]);
+    REQUIRE(nals.size() == 4);                        // VPS, SPS, PPS, IDR
+    REQUIRE(((nals[0][0] >> 1) & 0x3F) == 32);
+    REQUIRE(((nals[1][0] >> 1) & 0x3F) == 33);
+    REQUIRE(((nals[2][0] >> 1) & 0x3F) == 34);
+    REQUIRE(((nals[3][0] >> 1) & 0x3F) == 20);
+}

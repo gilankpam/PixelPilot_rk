@@ -186,7 +186,9 @@ set(LIB_SOURCE_FILES
         src/latency_probe.hpp
         src/latency_probe.cpp
         src/gstrtpreceiver.cpp
-        src/gstrtpreceiver.h)
+        src/gstrtpreceiver.h
+        src/hevc_depayloader.cpp
+        src/hevc_depayloader.h)
 set(SOURCE_FILES
   ${LIB_SOURCE_FILES}
   src/main.cpp

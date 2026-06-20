@@ -185,8 +185,12 @@ set(LIB_SOURCE_FILES
         src/scheduling_helper.hpp
         src/latency_probe.hpp
         src/latency_probe.cpp
-        src/gstrtpreceiver.cpp
-        src/gstrtpreceiver.h)
+        src/gst_file_player.cpp
+        src/gst_file_player.h
+        src/rtp_video_receiver.cpp
+        src/rtp_video_receiver.h
+        src/hevc_depayloader.cpp
+        src/hevc_depayloader.h)
 set(SOURCE_FILES
   ${LIB_SOURCE_FILES}
   src/main.cpp
@@ -282,6 +286,25 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(osd_buf_tests Catch2::Catch2WithMain)
 
+    add_executable(rtp_depay_tests
+      src/hevc_depayloader.cpp
+      tests/test_hevc_depayloader.cpp)
+    target_include_directories(rtp_depay_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR})
+    target_link_libraries(rtp_depay_tests Catch2::Catch2WithMain)
+
+    option(BUILD_FUZZERS "Build libFuzzer targets" OFF)
+    if(BUILD_FUZZERS)
+      add_executable(rtp_depay_fuzz
+        src/hevc_depayloader.cpp
+        tests/fuzz_hevc_depayloader.cpp)
+      target_include_directories(rtp_depay_fuzz PRIVATE
+        ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR})
+      target_compile_options(rtp_depay_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+      target_link_options(rtp_depay_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+    endif()
+
     # Hidden native widgets (lv_dropdown/lv_switch) must never be
     # group-focusable — see tests/test_widget_focus.cpp.
     add_executable(widget_focus_tests
@@ -368,8 +391,6 @@ else()
   )
   pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.4)
   pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.4)
-  pkg_search_module(gstnet REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.4)
-  pkg_search_module(gio REQUIRED IMPORTED_TARGET gio-2.0)
 
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
@@ -410,8 +431,6 @@ else()
       ${PNG_LIBRARIES}
       PkgConfig::gstreamer
       PkgConfig::gstreamer-app
-      PkgConfig::gstnet
-      PkgConfig::gio
       ${RGA_LIBRARIES}
       EGL GLESv2 gbm
       CURL::libcurl
@@ -463,9 +482,7 @@ if(BUILD_TESTS)
     )
     pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.4)
     pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.4)
-    pkg_search_module(gstnet REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.4)
-    pkg_search_module(gio REQUIRED IMPORTED_TARGET gio-2.0)
-    target_link_libraries(pixelpilot_tests PkgConfig::gstreamer PkgConfig::gstreamer-app PkgConfig::gstnet PkgConfig::gio ${RGA_LIBRARIES} EGL GLESv2 gbm)
+    target_link_libraries(pixelpilot_tests PkgConfig::gstreamer PkgConfig::gstreamer-app ${RGA_LIBRARIES} EGL GLESv2 gbm)
 
     target_link_options(pixelpilot_tests
       BEFORE PUBLIC -fsanitize=undefined PUBLIC -fsanitize=address

@@ -9,7 +9,7 @@
 #include <condition_variable>
 #include <functional>
 
-#include "gstrtpreceiver.h"
+#include "video_codec.h"
 
 enum DvrMode { DVR_MODE_RAW = 0, DVR_MODE_REENCODE = 1, DVR_MODE_BOTH = 2 };
 

@@ -58,9 +58,7 @@ cmake_install.cmake
 pixelpilot_config.h
 
 .vscode/
-build/
-build_sim/
-build-test/
+build*
 .apt_cache/
 output/
 debian-*-generic-arm64.tar.xz

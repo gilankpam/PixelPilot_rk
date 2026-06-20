@@ -11,7 +11,7 @@
 
 #include <rockchip/rk_mpi.h>
 
-#include "gstrtpreceiver.h"
+#include "video_codec.h"
 
 enum class EncResolution { Res720p = 0, Res1080p = 1 };
 

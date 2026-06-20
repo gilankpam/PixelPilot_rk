@@ -10,7 +10,7 @@
 #include "dvr.h"
 #include "minimp4.h"
 
-#include "gstrtpreceiver.h"
+#include "rtp_video_receiver.h"
 extern "C" {
 #include "osd.h"
 }

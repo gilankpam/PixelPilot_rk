@@ -756,7 +756,7 @@ void switch_pipeline_source(const char * source_type, const char * source_path) 
     if (strcmp(source_type, "file") == 0) {
         if (receiver) receiver->stop();
         file_player = std::make_unique<GstFilePlayer>();
-        file_player->start(source_path, g_video_frame_cb);
+        file_player->start(source_path, [](std::shared_ptr<std::vector<uint8_t>> frame){ g_video_frame_cb(frame, 0); });
     } else if (strcmp(source_type, "stream") == 0) {
         if (file_player) { file_player->stop(); file_player.reset(); }
         if (receiver) receiver->start(g_video_frame_cb);
@@ -910,7 +910,7 @@ void read_gstreamerpipe_stream(MppPacket *packet, int gst_udp_port, const char *
     if (sock) receiver = std::make_unique<RtpVideoReceiver>(sock);
     else      receiver = std::make_unique<RtpVideoReceiver>(gst_udp_port);
 
-    g_video_frame_cb = [](std::shared_ptr<std::vector<uint8_t>> frame){
+    g_video_frame_cb = [](std::shared_ptr<std::vector<uint8_t>> frame, uint32_t rtp_ts){
         osd_publish_uint_fact("gstreamer.received_bytes", NULL, 0, frame->size());
         const bool fed_ok = feed_packet_to_decoder(g_decode_packet, frame->data(), frame->size());
         static int stall_count = 0;
@@ -922,7 +922,7 @@ void read_gstreamerpipe_stream(MppPacket *packet, int gst_udp_port, const char *
                 idr_request_decoder_issue("decoder-feed-stall");
             }
         } else stall_count = 0;
-        if (dvr_enabled && dvr_raw != NULL) dvr_raw->frame(frame);
+        if (dvr_enabled && dvr_raw != NULL) dvr_raw->frame_rtp(frame, rtp_ts);
     };
 
     receiver->start(g_video_frame_cb);

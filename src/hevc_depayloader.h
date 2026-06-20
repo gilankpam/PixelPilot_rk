@@ -12,7 +12,7 @@
 // callback (4-byte start codes, parameter sets ensured before each IRAP).
 class HevcDepayloader {
 public:
-    using FrameCallback = std::function<void(const uint8_t* au, size_t len)>;
+    using FrameCallback = std::function<void(const uint8_t* au, size_t len, uint32_t rtp_ts)>;
     explicit HevcDepayloader(FrameCallback on_access_unit);
 
     // Returns false if this payload was malformed (dropped); true otherwise.

@@ -81,6 +81,12 @@ void Dvr::frame(std::shared_ptr<std::vector<uint8_t>> frame, int64_t pts_ms) {
 	enqueue_dvr_command(rpc);
 }
 
+void Dvr::frame_rtp(std::shared_ptr<std::vector<uint8_t>> frame, uint32_t rtp_ts) {
+	dvr_rpc rpc = { .command = dvr_rpc::RPC_FRAME, .frame = frame,
+	                .rtp_ts = rtp_ts, .use_rtp_timing = true };
+	enqueue_dvr_command(rpc);
+}
+
 void Dvr::set_video_params(uint32_t video_frm_w,
 						   uint32_t video_frm_h,
 						   VideoCodec new_codec) {
@@ -216,14 +222,26 @@ void Dvr::loop() {
 					// Cache parameter sets as they arrive (they don't change)
 					if (!params_complete)
 						cache_parameter_sets(frame->data(), frame->size());
-					// Frame duration (90 kHz). Re-encode frames carry a real
-					// capture timestamp (rpc.pts_ms >= 0): derive the duration
-					// from the inter-frame delta so the file matches wall-clock
-					// despite pacer jitter. Parameter-set-only buffers emit no
-					// sample (duration ignored) and must not advance the timeline.
-					// The raw path has no pts and keeps the nominal 1/fps.
+					// Frame duration (90 kHz). Three cases:
+					//
+					// 1. Raw path (use_rtp_timing=true): derive duration from the
+					//    wrap-safe RTP-timestamp delta (90 kHz). On the first frame
+					//    of a segment, or when the delta indicates a duplicate ts or
+					//    a gap > 1 s, dvr_rtp_duration_90k() falls back to the
+					//    nominal 1/fps value.
+					//
+					// 2. Re-encode path (pts_ms >= 0): derive duration from the
+					//    inter-frame capture-timestamp delta so the file matches
+					//    wall-clock despite pacer jitter. Parameter-set-only buffers
+					//    emit no sample (dur=0) and must not advance the timeline.
+					//
+					// 3. Legacy raw path (no pts, no rtp timing): keep nominal 1/fps.
 					int dur;
-					if (rpc.pts_ms >= 0) {
+					if (rpc.use_rtp_timing) {
+						dur = dvr_rtp_duration_90k(rpc.rtp_ts, last_rtp_ts_, have_rtp_ts_, 60);
+						last_rtp_ts_ = rpc.rtp_ts;
+						have_rtp_ts_ = true;
+					} else if (rpc.pts_ms >= 0) {
 						if (dvr_buffer_has_vcl(frame->data(), frame->size(),
 						                       codec == VideoCodec::H265)) {
 							dur = (int)dvr_frame_duration_90k(rpc.pts_ms, last_pts_ms,
@@ -353,6 +371,7 @@ int Dvr::start() {
 	}
 	write_ctx.file_size = 0;
 	last_pts_ms = -1;  // new recording session: first frame uses nominal duration
+	have_rtp_ts_ = false;  // new segment: first raw frame uses nominal fallback
 	mux = MP4E_open(0 /*sequential_mode*/, mp4_fragmentation_mode, &write_ctx, write_callback);
 	if (max_file_size > 0)
 		spdlog::info("DVR file splitting enabled at {} MB", max_file_size / (1024*1024));
@@ -455,6 +474,7 @@ void Dvr::split() {
 	fclose(write_ctx.f);
 	write_ctx.f = NULL;
 	write_ctx.file_size = 0;
+	have_rtp_ts_ = false;  // new segment: first raw frame uses nominal fallback
 
 	// Open next part
 	split_part++;

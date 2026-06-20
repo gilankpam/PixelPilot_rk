@@ -67,6 +67,7 @@ bool HevcDepayloader::handle_ap(const uint8_t* p, size_t len) {
     }
     return true;
 }
+
 bool HevcDepayloader::handle_fu(const uint8_t* p, size_t len) {
     if (len < 3) { stats_.malformed++; return false; }  // 2-byte hdr + 1-byte FU hdr
     const uint8_t fuh = p[2];

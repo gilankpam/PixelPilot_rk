@@ -44,7 +44,6 @@ namespace {
     static constexpr uint64_t kDecodeStallMs = 700;
     static constexpr uint64_t kDecodeStallCooldownMs = 700;
     static constexpr uint64_t kDecodeStallPktWindowMs = 500;
-    static constexpr uint64_t kRtpSeqResetMs = 1000;
 
     // -------------------------------------------------------------------------
     // Globals (verbatim from gstrtpreceiver.cpp, except restream valve replaced)
@@ -73,9 +72,6 @@ namespace {
     static std::atomic<uint64_t> g_last_rtp_gap_idr_ms{0};
     static std::atomic<uint64_t> g_last_decode_stall_idr_ms{0};
     static std::atomic<uint64_t> g_last_decoded_ms{0};
-    static std::atomic<uint64_t> g_last_rtp_seq_ms{0};
-    static std::atomic<uint16_t> g_last_rtp_seq{0};
-    static std::atomic<bool> g_last_rtp_seq_valid{false};
     static std::atomic<bool> g_idr_enabled{true};
     static std::atomic<bool> g_stream_idr_pending{false};
     static std::atomic<bool> g_record_idr_pending{false};
@@ -171,27 +167,36 @@ namespace {
         if (!force && (now - last_probe_ms) < 1000) return;
         last_probe_ms = now;
 
-        std::lock_guard<std::mutex> lock(g_restream_mutex);
-        if (!g_restream_enabled.load(std::memory_order_relaxed)) { set_restream_open_locked(false); return; }
-        const std::string next_ip = !g_restream_manual_ip.empty()
-            ? g_restream_manual_ip : find_first_hotspot_client_ip();
-        if (next_ip.empty()) {
-            if (!g_restream_target_ip.empty()) {
-                spdlog::info("[RESTREAM] No target client; stopping unicast restream");
-                g_restream_target_ip.clear();
+        bool new_target = false;
+        {
+            std::lock_guard<std::mutex> lock(g_restream_mutex);
+            if (!g_restream_enabled.load(std::memory_order_relaxed)) { set_restream_open_locked(false); return; }
+            const std::string next_ip = !g_restream_manual_ip.empty()
+                ? g_restream_manual_ip : find_first_hotspot_client_ip();
+            if (next_ip.empty()) {
+                if (!g_restream_target_ip.empty()) {
+                    spdlog::info("[RESTREAM] No target client; stopping unicast restream");
+                    g_restream_target_ip.clear();
+                }
+                set_restream_open_locked(false);
+                return;
             }
-            set_restream_open_locked(false);
-            return;
+            if (next_ip != g_restream_target_ip) {
+                g_restream_target_ip = next_ip;
+                std::memset(&g_restream_dst, 0, sizeof(g_restream_dst));
+                g_restream_dst.sin_family = AF_INET;
+                g_restream_dst.sin_port = htons(5600);
+                inet_pton(AF_INET, g_restream_target_ip.c_str(), &g_restream_dst.sin_addr);
+                spdlog::info("[RESTREAM] Streaming to {}:{}", g_restream_target_ip, 5600);
+                new_target = true;
+            }
+            set_restream_open_locked(true);
         }
-        if (next_ip != g_restream_target_ip) {
-            g_restream_target_ip = next_ip;
-            std::memset(&g_restream_dst, 0, sizeof(g_restream_dst));
-            g_restream_dst.sin_family = AF_INET;
-            g_restream_dst.sin_port = htons(5600);
-            inet_pton(AF_INET, g_restream_target_ip.c_str(), &g_restream_dst.sin_addr);
-            spdlog::info("[RESTREAM] Streaming to {}:{}", g_restream_target_ip, 5600);
+        // Request an IDR outside the lock so a freshly-connected restream viewer
+        // gets an immediate keyframe. Mirrors the original gst code behaviour.
+        if (new_target) {
+            request_idr_bursts("restream-start", kIdrRepeatCount, false);
         }
-        set_restream_open_locked(true);
     }
 
     // Called from the recv loop for every datagram.
@@ -475,8 +480,6 @@ namespace {
         if (last && now > last && (now - last) > kStreamDownMs) {
             if (g_stream_up.exchange(false)) {
                 spdlog::info("[NET] Stream DOWN (no packets for {} ms)", now - last);
-                g_last_rtp_seq_valid.store(false, std::memory_order_relaxed);
-                g_last_rtp_seq_ms.store(0, std::memory_order_relaxed);
             }
         }
 
@@ -487,8 +490,6 @@ namespace {
         g_stream_up.store(false, std::memory_order_relaxed);
         g_last_pkt_ms.store(0, std::memory_order_relaxed);
         g_last_decoded_ms.store(0, std::memory_order_relaxed);
-        g_last_rtp_seq_valid.store(false, std::memory_order_relaxed);
-        g_last_rtp_seq_ms.store(0, std::memory_order_relaxed);
         g_stream_idr_pending.store(false, std::memory_order_relaxed);
         std::lock_guard<std::mutex> lock(g_last_hop_mutex);
         g_last_hop_ip.clear();
@@ -523,6 +524,7 @@ namespace {
     // Per-packet hook (replaces gst buffer version — per brief Step 4)
     // -------------------------------------------------------------------------
     static void update_last_hop_ip(const sockaddr_in& from) {
+        if (from.sin_family != AF_INET) return;
         if (!g_idr_enabled.load(std::memory_order_relaxed)) return;
         char ip[INET_ADDRSTRLEN] = {0};
         if (!inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip))) return;
@@ -569,6 +571,8 @@ namespace {
     }
 
     // RTP seq is bytes 2-3 of the datagram. Returns true if a gap was detected.
+    // Note: RTP wrap-around and reorder are intentionally not specially handled;
+    // this is an in-order passthrough design (per-instance state, not global).
     static bool track_rtp_sequence(const uint8_t* rtp, size_t len, uint16_t& last_seq, bool& have_seq) {
         if (!g_idr_enabled.load(std::memory_order_relaxed) || len < 4) return false;
         const uint16_t seq = uint16_t((rtp[2] << 8) | rtp[3]);
@@ -729,6 +733,7 @@ void RtpVideoReceiver::open_socket() {
     setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     m_restream_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (m_restream_sock < 0) spdlog::warn("[RESTREAM] restream socket() failed: {}", strerror(errno));
     restream_set_fd(m_restream_sock);
 }
 

@@ -14,22 +14,22 @@ CAP = "tests/files/hevc_capture.bin"
 GOLD = "tests/files/hevc_golden.bin"
 
 def capture(frames):
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("0.0.0.0", 5600))
-    s.settimeout(5.0)
-    pkts, markers = [], 0
-    while markers < frames:
-        try:
-            d = s.recv(65535)
-        except socket.timeout:
-            print("timeout on udp/5600 (air unit streaming? fpvd stopped?)", file=sys.stderr)
-            break
-        if len(d) < 12 or (d[0] >> 6) != 2:
-            continue
-        pkts.append(d)
-        if d[1] & 0x80:
-            markers += 1
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("0.0.0.0", 5600))
+        s.settimeout(5.0)
+        pkts, markers = [], 0
+        while markers < frames:
+            try:
+                d = s.recv(65535)
+            except socket.timeout:
+                print("timeout on udp/5600 (air unit streaming? fpvd stopped?)", file=sys.stderr)
+                break
+            if len(d) < 12 or (d[0] >> 6) != 2:
+                continue
+            pkts.append(d)
+            if d[1] & 0x80:
+                markers += 1
     os.makedirs(os.path.dirname(CAP), exist_ok=True)
     with open(CAP, "wb") as f:
         for p in pkts:
@@ -37,6 +37,7 @@ def capture(frames):
     print(f"wrote {CAP}: {len(pkts)} packets, {markers} frames")
 
 def build_golden():
+    os.makedirs(os.path.dirname(GOLD), exist_ok=True)
     import gi
     gi.require_version("Gst", "1.0")
     from gi.repository import Gst
@@ -56,21 +57,23 @@ def build_golden():
         (n,) = struct.unpack_from("<I", data, off); off += 4
         pkt = data[off:off+n]; off += n
         buf = Gst.Buffer.new_allocate(None, len(pkt), None)
-        buf.fill(0, pkt); buf.pts = ts
         if len(pkt) >= 2 and (pkt[1] & 0x80):
             ts += Gst.SECOND // 60
+        buf.fill(0, pkt); buf.pts = ts
         src.emit("push-buffer", buf)
     src.emit("end-of-stream")
     aus = []
-    while True:
-        sample = sink.try_pull_sample(Gst.SECOND)
-        if sample is None:
-            break
-        b = sample.get_buffer()
-        ok, info = b.map(Gst.MapFlags.READ)
-        if ok:
-            aus.append(bytes(info.data)); b.unmap(info)
-    pipe.set_state(Gst.State.NULL)
+    try:
+        while True:
+            sample = sink.try_pull_sample(Gst.SECOND)
+            if sample is None:
+                break
+            b = sample.get_buffer()
+            ok, info = b.map(Gst.MapFlags.READ)
+            if ok:
+                aus.append(bytes(info.data)); b.unmap(info)
+    finally:
+        pipe.set_state(Gst.State.NULL)
     with open(GOLD, "wb") as f:
         for au in aus:
             f.write(struct.pack("<I", len(au))); f.write(au)

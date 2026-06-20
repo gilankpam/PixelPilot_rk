@@ -11,9 +11,6 @@
 #include <functional>
 #include "video_codec.h"
 
-#define MAX_PACKET_SIZE 4096
-#define RTP_HEADER_LEN 12
-
 // GStreamer-backed DVR mp4 file player (H265). Decodes filesrc->qtdemux->h265parse
 // ->appsink, emitting Annex-B access units via the callback, with transport controls.
 class GstFilePlayer {

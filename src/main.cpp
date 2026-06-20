@@ -76,7 +76,7 @@ YAML::Node config;
 
 // RTP jitter buffer latency in ms. 0 disables the jitterbuffer element entirely
 // (pipeline is identical to pre-feature). Small values (1-20) absorb WiFi reordering.
-static int video_rtp_jitter_ms = 1;
+static int video_rtp_jitter_ms = 0;
 
 #define MSG_FIFO_NAME "/run/pixelpilot.msg"
 

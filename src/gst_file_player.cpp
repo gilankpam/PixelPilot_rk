@@ -17,37 +17,6 @@
 #include <thread>
 #include <chrono>
 
-static VideoCodec detect_mp4_codec(const char* file_path) {
-    auto scan = [](const uint8_t* buf, size_t n) -> VideoCodec {
-        for (size_t i = 0; i + 3 < n; i++) {
-            if (buf[i]=='h' && buf[i+1]=='v' && buf[i+2]=='c' && buf[i+3]=='1')
-                return VideoCodec::H265;
-            if (buf[i]=='h' && buf[i+1]=='e' && buf[i+2]=='v' && buf[i+3]=='1')
-                return VideoCodec::H265;
-        }
-        return VideoCodec::UNKNOWN;
-    };
-
-    FILE* f = fopen(file_path, "rb");
-    if (!f) return VideoCodec::UNKNOWN;
-
-    uint8_t buf[16384];
-    size_t n = fread(buf, 1, sizeof(buf), f);
-    VideoCodec result = scan(buf, n);
-
-    if (result == VideoCodec::UNKNOWN) {
-        fseek(f, 0, SEEK_END);
-        long fsize = ftell(f);
-        long tail_offset = (fsize > (long)sizeof(buf)) ? fsize - (long)sizeof(buf) : 0;
-        fseek(f, tail_offset, SEEK_SET);
-        n = fread(buf, 1, sizeof(buf), f);
-        result = scan(buf, n);
-    }
-
-    fclose(f);
-    return result;
-}
-
 static void initGstreamerOrThrow() {
     GError* error = nullptr;
     if (!gst_init_check(nullptr, nullptr, &error)) {

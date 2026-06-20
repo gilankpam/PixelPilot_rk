@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
-#include <vector>
 
 #include "../src/dvr_fps_cap.h"
 
@@ -50,6 +49,7 @@ TEST_CASE("the decimator never sustains above the cap", "[fps_cap]") {
 
 TEST_CASE("cap_fps <= 0 means no cap (emit everything)", "[fps_cap]") {
     REQUIRE(emitted(0, 11111, 50) == 50);
+    REQUIRE(emitted(-1, 11111, 50) == 50);
 }
 
 TEST_CASE("a long gap resyncs instead of bursting", "[fps_cap]") {

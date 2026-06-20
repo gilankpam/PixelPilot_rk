@@ -192,7 +192,7 @@ void FrameProcessor::process_loop() {
         }
         if (!proc_copy_) continue;
 
-        // ── Composite OSD (single-pass imcomposite; KEEP the current block) ──
+        // ── Composite OSD over the frame (single-pass imcomposite, RGB-over-YUV) ──
         {
             OsdInfo osd_snap;
             {

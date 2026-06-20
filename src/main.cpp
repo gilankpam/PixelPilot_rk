@@ -686,7 +686,6 @@ extern "C" {
             args.filename_template = tpl;
             args.mp4_fragmentation_mode = mp4_fragmentation_mode;
             args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-            args.video_framerate = reenc_params.fps;
             args.max_file_size = dvr_max_file_size;
             uint32_t rw, rh; reenc_target_dims(rw, rh);
             args.video_p.video_frm_width = rw;
@@ -695,6 +694,8 @@ extern "C" {
             dvr_reenc_inst = new Dvr(args);
             pthread_create(&g_tid_dvr_reenc, NULL, &Dvr::__THREAD__, dvr_reenc_inst);
 
+            reenc_params.fps = output_list ? (int)output_list->mode.vrefresh : 60;
+            args.video_framerate = reenc_params.fps;
             reencoder = new MppEncoder(reenc_params,
                              [](std::shared_ptr<std::vector<uint8_t>> nal, uint64_t pts_ms) {
                                  if (dvr_enabled && dvr_reenc_inst) dvr_reenc_inst->frame(nal, (int64_t)pts_ms);
@@ -1323,7 +1324,7 @@ int main(int argc, char **argv)
 
 	if (dvr_template != NULL && (dvr_mode == DVR_MODE_RAW || dvr_mode == DVR_MODE_BOTH) && video_framerate < 0) {
 		printf("--dvr-framerate must be provided when raw DVR is enabled.\n"
-		       "Use --dvr-mode reencode with --dvr-reenc-fps for hardware re-encoding only.\n");
+		       "Use --dvr-mode reencode for hardware re-encoding only.\n");
 		return 0;
 	}
 
@@ -1498,7 +1499,6 @@ int main(int argc, char **argv)
 			args.filename_template = tpl;
 			args.mp4_fragmentation_mode = mp4_fragmentation_mode;
 			args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-			args.video_framerate = reenc_params.fps;
 			args.max_file_size = dvr_max_file_size;
 			uint32_t rw, rh; reenc_target_dims(rw, rh);
 			args.video_p.video_frm_width = rw;
@@ -1508,6 +1508,8 @@ int main(int argc, char **argv)
 			ret = pthread_create(&g_tid_dvr_reenc, NULL, &Dvr::__THREAD__, dvr_reenc_inst);
 			assert(!ret);
 
+			reenc_params.fps = output_list ? (int)output_list->mode.vrefresh : 60;
+			args.video_framerate = reenc_params.fps;
 			reencoder = new MppEncoder(reenc_params, [](std::shared_ptr<std::vector<uint8_t>> nal, uint64_t pts_ms) {
 				if (dvr_enabled && dvr_reenc_inst != NULL) {
 					dvr_reenc_inst->frame(nal, (int64_t)pts_ms);

@@ -16,25 +16,10 @@
 #include <memory>
 #include <vector>
 #include <functional>
+#include "video_codec.h"
 
 #define MAX_PACKET_SIZE 4096
 #define RTP_HEADER_LEN 12
-
-enum class VideoCodec {
-    UNKNOWN=0,
-    H264,
-    H265
-};
-
-static VideoCodec video_codec(const char * str) {
-    if (!strcmp(str, "h264")) {
-        return VideoCodec::H264;
-    }
-    if (!strcmp(str, "h265")) {
-        return VideoCodec::H265;
-    }
-    return VideoCodec::UNKNOWN;
-}
 
 /**
  * @brief Uses gstreamer and appsink to expose the functionality of receiving and parsing

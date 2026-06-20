@@ -185,8 +185,10 @@ set(LIB_SOURCE_FILES
         src/scheduling_helper.hpp
         src/latency_probe.hpp
         src/latency_probe.cpp
-        src/gstrtpreceiver.cpp
-        src/gstrtpreceiver.h
+        src/gst_file_player.cpp
+        src/gst_file_player.h
+        src/rtp_video_receiver.cpp
+        src/rtp_video_receiver.h
         src/hevc_depayloader.cpp
         src/hevc_depayloader.h)
 set(SOURCE_FILES
@@ -389,8 +391,6 @@ else()
   )
   pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.4)
   pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.4)
-  pkg_search_module(gstnet REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.4)
-  pkg_search_module(gio REQUIRED IMPORTED_TARGET gio-2.0)
 
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
@@ -431,8 +431,6 @@ else()
       ${PNG_LIBRARIES}
       PkgConfig::gstreamer
       PkgConfig::gstreamer-app
-      PkgConfig::gstnet
-      PkgConfig::gio
       ${RGA_LIBRARIES}
       EGL GLESv2 gbm
       CURL::libcurl
@@ -484,9 +482,7 @@ if(BUILD_TESTS)
     )
     pkg_search_module(gstreamer REQUIRED IMPORTED_TARGET gstreamer-1.0>=1.4)
     pkg_search_module(gstreamer-app REQUIRED IMPORTED_TARGET gstreamer-app-1.0>=1.4)
-    pkg_search_module(gstnet REQUIRED IMPORTED_TARGET gstreamer-net-1.0>=1.4)
-    pkg_search_module(gio REQUIRED IMPORTED_TARGET gio-2.0)
-    target_link_libraries(pixelpilot_tests PkgConfig::gstreamer PkgConfig::gstreamer-app PkgConfig::gstnet PkgConfig::gio ${RGA_LIBRARIES} EGL GLESv2 gbm)
+    target_link_libraries(pixelpilot_tests PkgConfig::gstreamer PkgConfig::gstreamer-app ${RGA_LIBRARIES} EGL GLESv2 gbm)
 
     target_link_options(pixelpilot_tests
       BEFORE PUBLIC -fsanitize=undefined PUBLIC -fsanitize=address

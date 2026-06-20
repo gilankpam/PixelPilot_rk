@@ -151,10 +151,10 @@ float live_colortrans_offset = -0.15f;
 float live_colortrans_gain = 2.5f;
 gamma_lut_controller lut_ctrl;
 
-// Helper: get target width/height for the current re-encode resolution setting.
+// Helper: get target width/height for the re-encode encoder (screen mode dims).
 static void reenc_target_dims(uint32_t &w, uint32_t &h) {
-    if (reenc_params.resolution == EncResolution::Res720p) { w = 1280; h = 720; }
-    else { w = 1920; h = 1080; }
+    w = output_list ? output_list->mode.hdisplay : 1920;
+    h = output_list ? output_list->mode.vdisplay : 1080;
 }
 
 void init_buffer(MppFrame frame) {
@@ -568,7 +568,6 @@ extern "C" {
         if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
         reenc_params.fps = fps;
         if (dvr_reenc_inst) dvr_reenc_inst->set_video_framerate(fps);
-        if (frame_proc) frame_proc->set_fps(fps);
         if (reencoder) reencoder->set_fps(fps);
     }
     void dvr_reenc_set_osd(int enabled) {
@@ -612,7 +611,6 @@ extern "C" {
     void dvr_reenc_set_resolution(int idx) {
         if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
         reenc_params.resolution = (EncResolution)idx;
-        if (frame_proc) frame_proc->set_resolution(reenc_params.resolution);
         if (dvr_reenc_inst) {
             uint32_t rw, rh; reenc_target_dims(rw, rh);
             dvr_reenc_inst->set_video_params(rw, rh, reenc_params.codec);
@@ -739,7 +737,11 @@ extern "C" {
                                  if (dvr_enabled && dvr_reenc_inst) dvr_reenc_inst->frame(nal, (int64_t)pts_ms);
                              });
             pthread_create(&g_tid_enc, NULL, &MppEncoder::__THREAD__, reencoder);
-            frame_proc = new FrameProcessor(reencoder, reenc_params.fps, reenc_params.resolution);
+            {
+                uint32_t rw, rh; reenc_target_dims(rw, rh);
+                int cap = output_list ? output_list->mode.vrefresh : 60;
+                frame_proc = new FrameProcessor(reencoder, cap, rw, rh);
+            }
             if (enable_live_colortrans)
                 frame_proc->set_color_correction(live_colortrans_gain,
                                                 live_colortrans_offset, drm_fd);
@@ -1563,7 +1565,11 @@ int main(int argc, char **argv)
 			});
 			ret = pthread_create(&g_tid_enc, NULL, &MppEncoder::__THREAD__, reencoder);
 			assert(!ret);
-			frame_proc = new FrameProcessor(reencoder, reenc_params.fps, reenc_params.resolution);
+			{
+				uint32_t rw, rh; reenc_target_dims(rw, rh);
+				int cap = output_list ? output_list->mode.vrefresh : 60;
+				frame_proc = new FrameProcessor(reencoder, cap, rw, rh);
+			}
 			if (enable_live_colortrans) {
 				frame_proc->set_color_correction(live_colortrans_gain,
 				                                live_colortrans_offset, drm_fd);

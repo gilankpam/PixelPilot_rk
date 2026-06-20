@@ -121,11 +121,7 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "gs",  "dvr",     "dvr_mode",         "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "dvr",     "rec_fps",          "pixelpilot.dvr.framerate",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "dvr",     "dvr_max_size",     "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_reenc_codec",  "pixelpilot.dvr.reencCodec",      FPVD_T_ENUM,            FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_reenc_resolution", "pixelpilot.dvr.reencResolution", FPVD_T_ENUM,        FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_reenc_fps",    "pixelpilot.dvr.reencFps",        FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "dvr",     "dvr_reenc_bitrate","pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_osd",          "pixelpilot.dvr.osd",             FPVD_T_BOOL,            FPVD_EP_GS, FPVD_ROW_STAGED },
 };
 
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);

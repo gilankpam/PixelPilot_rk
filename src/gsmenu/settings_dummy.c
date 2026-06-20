@@ -97,11 +97,7 @@ static const dummy_entry_t g_seed[] = {
     { "dvr_mode",             "reencode" },
     { "rec_fps",              "60" },
     { "dvr_max_size",         "4000" },
-    { "dvr_reenc_codec",      "h265" },
-    { "dvr_reenc_resolution", "1080p" },
-    { "dvr_reenc_fps",        "60" },
     { "dvr_reenc_bitrate",    "8000" },
-    { "dvr_osd",              "on" },
 
     /* System — Receiver / Network / Telemetry (kept) */
     { "rx_codec",     "h265" },

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <vector>
+#include <cstdio>
 #include "hevc_depayloader.h"
 
 namespace {
@@ -202,4 +203,39 @@ TEST_CASE("IRAP without param sets gets cached VPS/SPS/PPS prepended", "[depay][
     REQUIRE(((nals[1][0] >> 1) & 0x3F) == 33);
     REQUIRE(((nals[2][0] >> 1) & 0x3F) == 34);
     REQUIRE(((nals[3][0] >> 1) & 0x3F) == 20);
+}
+
+TEST_CASE("golden: depayloader output matches gst reference NAL sequence", "[depay][golden]") {
+    FILE* cap = std::fopen("tests/files/hevc_capture.bin", "rb");
+    FILE* gold = std::fopen("tests/files/hevc_golden.bin", "rb");
+    if (!cap || !gold) { if(cap)fclose(cap); if(gold)fclose(gold); SKIP("golden fixtures not present"); }
+
+    // Replay capture through the depayloader, collecting AUs.
+    std::vector<std::vector<uint8_t>> got;
+    HevcDepayloader d([&](const uint8_t* p, size_t n){ got.emplace_back(p, p+n); });
+    uint32_t plen;
+    while (std::fread(&plen,4,1,cap)==1) {              // little-endian length
+        std::vector<uint8_t> pkt(plen);
+        if (plen && std::fread(pkt.data(),1,plen,cap)!=plen) break;
+        if (pkt.size() < 12) continue;
+        const bool marker = (pkt[1] & 0x80) != 0;
+        const uint32_t ts = (uint32_t(pkt[4])<<24)|(uint32_t(pkt[5])<<16)|
+                            (uint32_t(pkt[6])<<8)|pkt[7];
+        d.on_payload(pkt.data()+12, pkt.size()-12, marker, ts);
+    }
+    // Read golden AUs.
+    std::vector<std::vector<uint8_t>> want;
+    uint32_t alen;
+    while (std::fread(&alen,4,1,gold)==1) {
+        std::vector<uint8_t> au(alen);
+        if (alen && std::fread(au.data(),1,alen,gold)!=alen) break;
+        want.emplace_back(std::move(au));
+    }
+    std::fclose(cap); std::fclose(gold);
+
+    REQUIRE(got.size() == want.size());
+    for (size_t i = 0; i < got.size(); ++i) {
+        // Compare NAL sequence (type+body), tolerating start-code length differences.
+        REQUIRE(split_nals(got[i]) == split_nals(want[i]));
+    }
 }

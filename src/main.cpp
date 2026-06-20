@@ -564,12 +564,6 @@ static void *dvr_shutdown_worker(void *arg) {
 
 // C-compatible interface for gsmenu live control of the DVR.
 extern "C" {
-    void dvr_reenc_set_fps(int fps) {
-        if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
-        reenc_params.fps = fps;
-        if (dvr_reenc_inst) dvr_reenc_inst->set_video_framerate(fps);
-        if (reencoder) reencoder->set_fps(fps);
-    }
     void dvr_reenc_set_osd(int enabled) {
         dvr_osd = (bool)enabled;
         if (!enabled && frame_proc)
@@ -583,11 +577,8 @@ extern "C" {
         else
             frame_proc->set_color_correction_enabled(false);
     }
-    int dvr_reenc_get_fps(void)     { return reenc_params.fps; }
     int dvr_reenc_get_bitrate(void) { return reenc_params.bitrate_kbps; }
     int dvr_reenc_get_osd(void)     { return (int)dvr_osd; }
-    int dvr_reenc_get_codec(void)   { return (int)reenc_params.codec - 1; } // 0=h264, 1=h265
-    int dvr_reenc_get_resolution(void) { return (int)reenc_params.resolution; } // 0=720p, 1=1080p
 
     int  dvr_get_mode(void)  { return (int)dvr_mode; }
     // Deprecated — use dvr_get_mode() instead
@@ -608,29 +599,9 @@ extern "C" {
         }
     }
 
-    void dvr_reenc_set_resolution(int idx) {
-        if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
-        reenc_params.resolution = (EncResolution)idx;
-        if (dvr_reenc_inst) {
-            uint32_t rw, rh; reenc_target_dims(rw, rh);
-            dvr_reenc_inst->set_video_params(rw, rh, reenc_params.codec);
-        }
-    }
-
     void dvr_reenc_set_bitrate(int kbps) {
         reenc_params.bitrate_kbps = kbps;
         if (reencoder) reencoder->set_bitrate(kbps);
-    }
-
-    void dvr_reenc_set_codec(int idx) {
-        if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
-        VideoCodec vc = (idx == 1) ? VideoCodec::H265 : VideoCodec::H264;
-        reenc_params.codec = vc;
-        if (reencoder) reencoder->set_codec(vc);
-        if (dvr_reenc_inst) {
-            uint32_t rw, rh; reenc_target_dims(rw, rh);
-            dvr_reenc_inst->set_video_params(rw, rh, vc);
-        }
     }
 
     void dvr_start_all(void) {
@@ -1066,13 +1037,7 @@ void printHelp() {
     "\n"
     "    --dvr-mode <mode>      - DVR recording mode: raw, reencode, or both (Default: raw)\n"
     "\n"
-    "    --dvr-reenc-codec <c>  - Re-encode codec: h264 or h265  (Default: h264)\n"
-    "\n"
     "    --dvr-reenc-bitrate <k>- Re-encode bitrate in kbps       (Default: 8000)\n"
-    "\n"
-    "    --dvr-reenc-fps <fps>  - Re-encode output FPS            (Default: 30)\n"
-    "\n"
-    "    --dvr-reenc-resolution <r> - Re-encode resolution: 720p or 1080p (Default: 1080p)\n"
     "\n"
     "    --dvr-osd              - Blend the OSD into the DVR recording\n"
     "\n"
@@ -1209,12 +1174,8 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-reenc-codec") {
-		VideoCodec c = video_codec(const_cast<char*>(__ArgValue));
-		if (c == VideoCodec::UNKNOWN) {
-			fprintf(stderr, "unsupported codec for --dvr-reenc-codec (use h264 or h265)\n");
-			return -1;
-		}
-		reenc_params.codec = c;
+		(void)__ArgValue;   // deprecated: re-encode codec is always h265
+		spdlog::warn("--dvr-reenc-codec is deprecated and ignored (codec is h265)");
 		continue;
 	}
 
@@ -1224,18 +1185,14 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-reenc-fps") {
-		reenc_params.fps = atoi(__ArgValue);
+		(void)__ArgValue;   // deprecated: fps follows input, capped at display refresh
+		spdlog::warn("--dvr-reenc-fps is deprecated and ignored (fps follows input, capped at display refresh)");
 		continue;
 	}
 
 	__OnArgument("--dvr-reenc-resolution") {
-		const char *v = __ArgValue;
-		if (!strcmp(v, "720p")) reenc_params.resolution = EncResolution::Res720p;
-		else if (!strcmp(v, "1080p")) reenc_params.resolution = EncResolution::Res1080p;
-		else {
-			fprintf(stderr, "unsupported resolution for --dvr-reenc-resolution (use 720p or 1080p)\n");
-			return -1;
-		}
+		(void)__ArgValue;   // deprecated: resolution follows the screen mode
+		spdlog::warn("--dvr-reenc-resolution is deprecated and ignored (resolution = screen mode)");
 		continue;
 	}
 
@@ -1370,6 +1327,9 @@ int main(int argc, char **argv)
 	idr_set_enabled(!disable_gregidr);
 	pp_settings_register_fpvd();
 	pp_osd_air_bridge_init();
+
+	// Re-encode codec is always h265 regardless of any (now-deprecated) --dvr-reenc-codec flag.
+	reenc_params.codec = VideoCodec::H265;
 
 	if (dvr_template != NULL && (dvr_mode == DVR_MODE_RAW || dvr_mode == DVR_MODE_BOTH) && video_framerate < 0) {
 		printf("--dvr-framerate must be provided when raw DVR is enabled.\n"

@@ -68,3 +68,35 @@ TEST_CASE("two single-NAL packets, one AU until marker", "[depay][single]") {
     REQUIRE(nals[0] == a);
     REQUIRE(nals[1] == b);
 }
+
+TEST_CASE("aggregation packet expands to multiple NALs", "[depay][ap]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    auto sps = single_nal(33, {0x11, 0x12});
+    auto pps = single_nal(34, {0x21});
+    // AP: 2-byte AP header (type 48) + [u16 size][nal] * 2
+    std::vector<uint8_t> ap = { uint8_t(48 << 1), 0x01 };
+    auto add = [&](const std::vector<uint8_t>& n) {
+        ap.push_back(uint8_t(n.size() >> 8));
+        ap.push_back(uint8_t(n.size() & 0xFF));
+        ap.insert(ap.end(), n.begin(), n.end());
+    };
+    add(sps); add(pps);
+    REQUIRE(d.on_payload(ap.data(), ap.size(), true, 3000));
+    REQUIRE(sink.aus.size() == 1);
+    auto nals = split_nals(sink.aus[0]);
+    REQUIRE(nals.size() == 2);
+    REQUIRE(nals[0] == sps);
+    REQUIRE(nals[1] == pps);
+}
+
+TEST_CASE("aggregation packet with overrunning size is dropped+counted", "[depay][ap]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    // claim a 0x00FF-byte NAL but provide only 3 bytes
+    std::vector<uint8_t> ap = { uint8_t(48 << 1), 0x01, 0x00, 0xFF, 0xAA, 0xBB, 0xCC };
+    bool ok = d.on_payload(ap.data(), ap.size(), true, 3100);
+    REQUIRE_FALSE(ok);
+    REQUIRE(d.stats().malformed == 1);
+    REQUIRE(sink.aus.empty());   // corrupt AU not emitted
+}

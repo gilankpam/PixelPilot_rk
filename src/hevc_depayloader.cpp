@@ -35,7 +35,21 @@ void HevcDepayloader::handle_single_nal(const uint8_t* p, size_t len) {
     append_nal_with_startcode(p, len);
 }
 
-bool HevcDepayloader::handle_ap(const uint8_t* p, size_t len) { (void)p; (void)len; return true; }
+bool HevcDepayloader::handle_ap(const uint8_t* p, size_t len) {
+    size_t off = 2;  // skip 2-byte AP payload header
+    while (off + 2 <= len) {
+        const size_t nal_size = (size_t(p[off]) << 8) | p[off + 1];
+        off += 2;
+        if (nal_size == 0 || off + nal_size > len) {
+            stats_.malformed++;
+            au_corrupt_ = true;
+            return false;
+        }
+        append_nal_with_startcode(p + off, nal_size);
+        off += nal_size;
+    }
+    return true;
+}
 bool HevcDepayloader::handle_fu(const uint8_t* p, size_t len) { (void)p; (void)len; return true; }
 
 bool HevcDepayloader::on_payload(const uint8_t* p, size_t len, bool marker, uint32_t rtp_ts) {

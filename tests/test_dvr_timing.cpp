@@ -95,3 +95,27 @@ TEST_CASE("empty or null buffers are not frames", "[dvr_timing]") {
     std::vector<uint8_t> empty;
     REQUIRE_FALSE(dvr_buffer_has_vcl(empty.data(), empty.size(), true));
 }
+
+TEST_CASE("rtp duration: first frame uses nominal fallback", "[dvr_timing]") {
+    REQUIRE(dvr_rtp_duration_90k(123456, 0, /*have_last=*/false, 60) == 1500);
+    REQUIRE(dvr_rtp_duration_90k(0, 0, false, 30) == 3000);
+}
+
+TEST_CASE("rtp duration: steady delta passes through (90 kHz)", "[dvr_timing]") {
+    REQUIRE(dvr_rtp_duration_90k(1500, 0, true, 60) == 1500);   // 60 fps
+    REQUIRE(dvr_rtp_duration_90k(3000, 0, true, 60) == 3000);   // 30 fps
+}
+
+TEST_CASE("rtp duration: 32-bit wrap is handled", "[dvr_timing]") {
+    // last just below wrap, ts just after -> forward delta 1500
+    REQUIRE(dvr_rtp_duration_90k(1000u, 0xFFFFFFFFu - 499u, true, 60) == 1500);
+}
+
+TEST_CASE("rtp duration: duplicate / oversized gap fall back to nominal", "[dvr_timing]") {
+    REQUIRE(dvr_rtp_duration_90k(5000, 5000, true, 60) == 1500); // delta 0
+    REQUIRE(dvr_rtp_duration_90k(200000, 0, true, 60) == 1500);  // delta > 90000
+}
+
+TEST_CASE("rtp duration: invalid fallback_fps still sane", "[dvr_timing]") {
+    REQUIRE(dvr_rtp_duration_90k(0, 0, false, 0) == 1500);
+}

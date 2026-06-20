@@ -4,18 +4,24 @@
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
+#ifndef USE_SIMULATOR
 #include <gpiod.h>
+#endif
 #include <dirent.h>
 #include <string.h>
 #include <time.h>
+#ifndef USE_SIMULATOR
 #include <yaml-cpp/yaml.h>
+#endif
 #include <glob.h>
 #include "main.h"
 #include "lvgl/lvgl.h"
 #include "input.h"
-#include "gsmenu/gs_system.h"
+#include "gsmenu/settings.h"
 
+#ifndef USE_SIMULATOR
 extern YAML::Node config;
+#endif
 extern lv_group_t *main_group;
 extern lv_indev_t * indev_drv;
 
@@ -245,10 +251,10 @@ void send_button_event(size_t button_index) {
                 next_key = LV_KEY_ENTER;
             }
             else if (strcmp(gpio_buttons[button_index].name, "rec") == 0) {
-                #ifdef USE_SIMULATOR
-                                dvr_enabled ^= 1;
-                #endif
-                            toggle_rec_enabled();
+#ifdef USE_SIMULATOR
+                dvr_enabled ^= 1;
+#endif
+                toggle_rec_enabled();
             }
             break;
             
@@ -424,20 +430,32 @@ void restore_stdin(void) {
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
 }
 
-void toggle_screen(void) {
+void toggle_rec_enabled(void) {
+#ifndef USE_SIMULATOR
+    /* Device: toggle the on-board DVR via the C interface in main.cpp. */
+    if (dvr_enabled) dvr_stop_all();
+    else             dvr_start_all();
+#endif
+    /* Simulator: no-op. The sim "rec" button path in send_button_event
+     * already flips dvr_enabled itself, so doing nothing here avoids a
+     * double toggle. */
+}
+
+extern "C" void toggle_screen(void) {
     if( ! menu_active ) {
         lv_scr_load(pp_menu_screen);
         lv_indev_set_group(indev_drv,main_group);
         lv_obj_invalidate(pp_menu_screen);
         menu_active = true;
+        pp_settings_set_visibility(true);
     }
 }
 
-// Handle WASD input and convert to LVGL key codes
-void handle_keyboard_input(void) {
-    char c;
-    if (read(STDIN_FILENO, &c, 1) > 0) {
-        switch(c) {
+// Map a single ASCII character (w/a/s/d/Enter/q/t) to LVGL key events,
+// respecting the current control_mode. Used by both the stdin reader and
+// the SDL window key bridge (simulator only).
+extern "C" void dispatch_input_char(char c) {
+    switch(c) {
             case 'w':
             case 'W':
                 switch (control_mode)
@@ -458,7 +476,6 @@ void handle_keyboard_input(void) {
                     break;
                 }
                 next_key_pressed = true;
-                printf("Up\n");
                 break;
             case 's':
             case 'S':
@@ -480,7 +497,6 @@ void handle_keyboard_input(void) {
                     break;
                 } 
                 next_key_pressed = true;
-                printf("Down\n");
                 break;
             case 'a':
             case 'A':
@@ -501,7 +517,6 @@ void handle_keyboard_input(void) {
                     break;
                 }
                 next_key_pressed = true;
-                printf("Left\n");
                 break;
             case 'd':
             case 'D':
@@ -523,12 +538,10 @@ void handle_keyboard_input(void) {
                     break;
                 }        
                 next_key_pressed = true;
-                printf("Right\n");
                 break;
             case '\n':
                 next_key = LV_KEY_ENTER;
                 next_key_pressed = true;
-                printf("Enter\n");
                 break;
 #ifdef USE_SIMULATOR
             case 't':
@@ -546,6 +559,14 @@ void handle_keyboard_input(void) {
                 raise(SIGINT);
                 break;
         }
+}
+
+// Handle WASD input from stdin (terminal). Also driven from the SDL window
+// via the SDL event bridge in simulator.c which calls dispatch_input_char.
+void handle_keyboard_input(void) {
+    char c;
+    if (read(STDIN_FILENO, &c, 1) > 0) {
+        dispatch_input_char(c);
     }
 }
 
@@ -558,6 +579,17 @@ static void virtual_keyboard_read(lv_indev_t * indev, lv_indev_data_t * data) {
 #endif
 
     if (next_key != LV_KEY_END) {
+        /* ENTER does not open the menu (see below), so with the menu closed
+         * it would be delivered to whatever group the indev points at —
+         * acting on invisible widgets (switching pages, toggling settings,
+         * opening dropdown lists nobody can see). Swallow it instead. */
+        if (!menu_active && next_key == LV_KEY_ENTER) {
+            next_key = LV_KEY_END;
+            next_key_pressed = false;
+            data->state = LV_INDEV_STATE_REL;
+            return;
+        }
+
         data->key = next_key;
         data->state = next_key_pressed ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
 

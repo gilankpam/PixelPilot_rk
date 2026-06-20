@@ -28,6 +28,7 @@ void restore_stdin(void);
 void handle_keyboard_input(void);
 
 void toggle_rec_enabled(void);
+void toggle_screen(void);
 
 // Custom function to simulate keyboard input
 static void virtual_keyboard_read(lv_indev_t * indev, lv_indev_data_t * data);

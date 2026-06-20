@@ -4,9 +4,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#if defined(__APPLE__)
+typedef unsigned int uint;
+typedef unsigned long ulong;
+#endif
 #ifndef USE_SIMULATOR
 #include "drm.h"
 #endif
+
+/* Receiver mode. Relocated here from the purged gsmenu/gs_system.h; used by
+ * main.cpp and wfbcli.cpp (both already include osd.h). */
+enum RXMode {
+    WFB,
+    APFPV
+};
 
 extern int enable_osd;
 extern bool osd_custom_message;

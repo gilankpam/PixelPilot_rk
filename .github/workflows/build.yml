@@ -226,7 +226,6 @@ jobs:
             sbc_*_pixelpilot
             config_osd.json
             pixelpilot.yaml
-            gsmenu.sh
 
       - name: Upload latest
         if: github.event_name != 'pull_request'
@@ -243,4 +242,3 @@ jobs:
             sbc_*_pixelpilot
             config_osd.json
             pixelpilot.yaml
-            gsmenu.sh

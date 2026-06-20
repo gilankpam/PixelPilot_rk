@@ -1,0 +1,10 @@
+{
+    "format": "0.0.1",
+    "assets_dir": "/usr/share/pixelpilot/",
+    "widgets": [
+        { "name": "All-in-one link OSD", "type": "AIOWidget", "color_scheme": "accent" },
+
+        { "name": "msposd", "type": "ExternalSurfaceWidget",
+          "x": 0, "y": 0, "width": 0, "height": 0, "facts": [] }
+    ]
+}

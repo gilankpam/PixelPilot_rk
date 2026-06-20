@@ -13,6 +13,8 @@
  * MSP/Displayport OSD.
  */
 #include <cmath>
+#include <algorithm>
+#include <cstdio>
 extern "C" {
 #include "drm.h"
 #include "mavlink.h"
@@ -21,6 +23,7 @@ extern "C" {
 }
 #include "osd.h"
 #include "osd.hpp"
+#include "osd_buf.hpp"
 
 #include <pthread.h>
 #include <map>
@@ -40,6 +43,7 @@ extern "C" {
 #include <utility>
 #include <filesystem>
 #include <cairo.h>
+#include "osd_aio_logic.hpp"
 #include <time.h>
 #include <stdint.h>
 #include <nlohmann/json.hpp>
@@ -73,6 +77,9 @@ extern pthread_cond_t video_cond;
 bool osd_update_ready = false;
 bool menu_active = false;
 bool gsmenu_enabled = false;
+/* Receiver mode, default WFB. Was defined in the purged gsmenu/gs_system.c
+ * and set by old menu dropdowns; the new menu has no RX-mode control yet. */
+enum RXMode RXMODE = WFB;
 
 OsdGl osd_gl;
 extern bool enable_live_colortrans;
@@ -1392,6 +1399,422 @@ private:
 };
 
 
+class AIOWidget : public Widget {
+public:
+    // Fixed slot order. The factory registers one tagless matcher per slot in
+    // exactly this order, so setFact's idx maps directly to a Slot.
+    enum Slot {
+        SLOT_VIDEO_RES = 0, // air.video.resolution    (string)
+        SLOT_VIDEO_FPS,     // air.video.fps           (int, configured)
+        SLOT_FREQ,          // wfbcli.rx.ant_stats.freq(uint, per-antenna)
+        SLOT_PKT_ALL,       // wfbcli.rx.packets.all.delta   (uint)
+        SLOT_PKT_LOST,      // wfbcli.rx.packets.lost.delta  (uint)
+        SLOT_PKT_FEC,       // wfbcli.rx.packets.fec_rec.delta (uint, -> LINK quality)
+        SLOT_BITRATE,       // gstreamer.received_bytes(uint, -> Mb/s)
+        SLOT_LATENCY,       // video.latency.total_ms  (uint)
+        SLOT_FPS_LIVE,      // video.displayed_frame   (uint, -> per-second)
+        SLOT_RSSI,          // wfbcli.rx.ant_stats.rssi_avg (int, per-antenna)
+        SLOT_SNR,           // wfbcli.rx.ant_stats.snr_avg  (int, per-antenna)
+        SLOT_REC,           // dvr.recording           (bool)
+        SLOT_COUNT
+    };
+
+    AIOWidget(int pos_x, int pos_y, aio::Scheme scheme)
+        : Widget(pos_x, pos_y, SLOT_COUNT), scheme(scheme),
+          fps(2000, 200), bps(2000, 100),
+          pkt_all(2000, 200), pkt_lost(2000, 200), pkt_fec(2000, 200) {}
+
+    void setFact(uint idx, Fact fact) override {
+        if (idx >= SLOT_COUNT) return;
+        long now = now_ms();
+        switch (idx) {
+        case SLOT_FPS_LIVE:
+            fps.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = Fact(FactMeta("aio.fps_live"),
+                             (ulong)fps.rate_per_second_over_last_ms(1000));
+            break;
+        case SLOT_BITRATE:
+            bps.add(static_cast<long>(fact.getUintValue()));
+            // 125000 = 1e6 / 8  -> megabits
+            args[idx] = Fact(FactMeta("aio.mbps"),
+                             bps.rate_per_second_over_last_ms(1000) / 125000.0);
+            break;
+        case SLOT_PKT_ALL:
+            if (accept_link(fact)) pkt_all.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = fact;
+            break;
+        case SLOT_PKT_LOST:
+            if (accept_link(fact)) pkt_lost.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = fact;
+            break;
+        case SLOT_RSSI:
+            if (accept_link(fact)) rssi_agg.update(ant_id_of(fact), (long)fact, now);
+            args[idx] = fact;
+            break;
+        case SLOT_SNR:
+            if (accept_link(fact)) snr_agg.update(ant_id_of(fact), (long)fact, now);
+            args[idx] = fact;
+            break;
+        case SLOT_FREQ:
+            if (accept_link(fact)) last_freq = static_cast<long>(fact.getUintValue());
+            args[idx] = fact;
+            break;
+        case SLOT_REC: {
+            bool rec = fact.isDefined() && fact.getBoolValue();
+            if (rec && !recording) rec_start_ms = now; // false->true transition
+            recording = rec;
+            args[idx] = fact;
+            break;
+        }
+        case SLOT_PKT_FEC:
+            if (accept_link(fact)) pkt_fec.add(static_cast<long>(fact.getUintValue()));
+            args[idx] = fact;
+            break;
+        default: // SLOT_VIDEO_RES, SLOT_VIDEO_FPS, SLOT_LATENCY
+            args[idx] = fact;
+            break;
+        }
+    }
+
+    void draw(cairo_t *cr) override {
+        cairo_surface_t *target = cairo_get_target(cr);
+        const double W = cairo_image_surface_get_width(target);
+        const double H = cairo_image_surface_get_height(target);
+        const double s = H / 1080.0; // uniform scale; 16:9 stays undistorted
+
+        cairo_save(cr);
+        draw_gradient_rail(cr, W, H, s);
+        draw_strip(cr, W, H, s);
+        draw_rec_badge(cr, W, H, s);
+        cairo_restore(cr);
+    }
+
+private:
+    // ---- pixel snapping helpers -------------------------------------------
+    static double px(double v, double min_px) { // scaled, integer-snapped, floored
+        double r = std::round(v);
+        return r < min_px ? min_px : r;
+    }
+    static void set_rgba(cairo_t *cr, aio::Rgba c) {
+        cairo_set_source_rgba(cr, c.r, c.g, c.b, c.a);
+    }
+    // ---- fonts (toy API + fontconfig-resolved Barlow Condensed) -----------
+    static void font_value(cairo_t *cr, double size) { // 800 italic
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_ITALIC, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, size);
+    }
+    static void font_label(cairo_t *cr, double size) { // 600
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+        cairo_set_font_size(cr, size);
+    }
+    static void font_unit(cairo_t *cr, double size) {  // 700
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, size);
+    }
+    static void font_rec(cairo_t *cr, double size) {   // 800 italic
+        cairo_select_font_face(cr, "Barlow Condensed",
+                               CAIRO_FONT_SLANT_ITALIC, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, size);
+    }
+    // Text with a 1px dark shadow behind it (legibility over video).
+    void text_shadow(cairo_t *cr, double x, double y, const std::string &t,
+                     aio::Rgba col, double s) {
+        double off = px(1 * s, 1);
+        cairo_move_to(cr, x + off, y + off);
+        cairo_set_source_rgba(cr, 0, 0, 0, 0.7);
+        cairo_show_text(cr, t.c_str());
+        cairo_move_to(cr, x, y);
+        set_rgba(cr, col);
+        cairo_show_text(cr, t.c_str());
+    }
+
+    struct Tile {
+        std::string label;
+        std::string value;
+        std::string unit;     // may be empty
+        aio::Rgba value_col;
+        aio::Rgba rail_col;
+        std::string reserve;  // width sample (widest expected value); fixes layout
+    };
+
+    aio::Rgba neutral_rail() const { return aio::Rgba{1, 1, 1, 0.5}; }
+    aio::Rgba label_col() const    { return aio::Rgba{1, 1, 1, 0.62}; }
+    aio::Rgba unit_col() const     { return aio::Rgba{1, 1, 1, 0.66}; }
+
+    // Threshold-/band-colored tile. Pass the resolved band directly so callers
+    // can use any band source (resolve_band, fps_band, ...).
+    Tile metric_tile(const std::string &label, const std::string &value,
+                     const std::string &unit, aio::Band band,
+                     const std::string &reserve) {
+        aio::Rgba col = aio::resolve_color(band, scheme, false);
+        aio::Rgba rail = (scheme == aio::Scheme::Accent && band != aio::Band::Neutral)
+                             ? col : aio::Rgba{1, 1, 1, 1};
+        return Tile{label, value, unit, col, rail, reserve};
+    }
+    Tile neutral_tile(const std::string &label, const std::string &value,
+                      const std::string &unit, const std::string &reserve) {
+        return Tile{label, value, unit,
+                    aio::Rgba{1, 1, 1, 1}, neutral_rail(), reserve};
+    }
+
+    // Returns the tile's drawn width so the caller can advance x. The value-field
+    // width comes from t.reserve (a fixed sample), NOT the live value, so the
+    // value, unit, and all neighbouring tiles stay put as digits change.
+    double draw_tile(cairo_t *cr, double x, double baseline, const Tile &t, double s) {
+        const double pad   = px(26 * s, 2);
+        const double rail_w = px(30 * s, 4);
+        const double rail_h = px(4 * s, 2);
+        const double gap    = px(2 * s, 1);
+        const double label_sz = 14 * s;
+        const double value_sz = 46 * s;
+        const double unit_sz  = 16 * s;
+
+        double cx = x + pad;
+        double rail_y = baseline - value_sz - label_sz - gap * 2 - rail_h;
+        set_rgba(cr, t.rail_col);
+        rounded_rect(cr, cx, rail_y, rail_w, rail_h, px(2 * s, 1));
+        cairo_fill(cr);
+
+        font_label(cr, label_sz);
+        double label_y = rail_y + rail_h + gap + label_sz;
+        text_shadow(cr, cx, label_y, t.label, label_col(), s);
+
+        // Reserved value-field width from the widest sample.
+        font_value(cr, value_sz);
+        cairo_text_extents_t re;
+        cairo_text_extents(cr, t.reserve.c_str(), &re);
+        double value_field = re.x_advance;
+
+        // Value, left-aligned within the reserved field.
+        double value_y = baseline;
+        text_shadow(cr, cx, value_y, t.value, t.value_col, s);
+
+        // Unit (optional) at a fixed offset after the reserved value field.
+        double tile_right = cx + value_field;
+        if (!t.unit.empty()) {
+            font_unit(cr, unit_sz);
+            double ux = cx + value_field + px(6 * s, 1);
+            text_shadow(cr, ux, value_y, t.unit, unit_col(), s);
+            cairo_text_extents_t ue;
+            cairo_text_extents(cr, t.unit.c_str(), &ue);
+            tile_right = ux + ue.x_advance;
+        }
+        double content_right = std::max(cx + rail_w, tile_right);
+        return (content_right - x) + pad;
+    }
+
+    static void rounded_rect(cairo_t *cr, double x, double y, double w, double h,
+                             double r) {
+        if (r * 2 > h) r = h / 2;
+        if (r * 2 > w) r = w / 2;
+        cairo_new_sub_path(cr);
+        cairo_arc(cr, x + w - r, y + r, r, -M_PI / 2, 0);
+        cairo_arc(cr, x + w - r, y + h - r, r, 0, M_PI / 2);
+        cairo_arc(cr, x + r, y + h - r, r, M_PI / 2, M_PI);
+        cairo_arc(cr, x + r, y + r, r, M_PI, 3 * M_PI / 2);
+        cairo_close_path(cr);
+    }
+
+    void draw_gradient_rail(cairo_t *cr, double W, double H, double s) {
+        double rail_h = px(150 * s, 4);
+        cairo_pattern_t *g = cairo_pattern_create_linear(0, H - rail_h, 0, H);
+        cairo_pattern_add_color_stop_rgba(g, 0.00, 10/255.0, 11/255.0, 14/255.0, 0.00);
+        cairo_pattern_add_color_stop_rgba(g, 0.55, 10/255.0, 11/255.0, 14/255.0, 0.10);
+        cairo_pattern_add_color_stop_rgba(g, 1.00, 10/255.0, 11/255.0, 14/255.0, 0.34);
+        cairo_rectangle(cr, 0, H - rail_h, W, rail_h);
+        cairo_set_source(cr, g);
+        cairo_fill(cr);
+        cairo_pattern_destroy(g);
+    }
+
+    void draw_signal_bars(cairo_t *cr, double x, double baseline, int filled,
+                          aio::Rgba on_col, double s) {
+        const int N = 5;
+        const double bw  = px(8 * s, 3);
+        const double gap = px(5 * s, 1);
+        const double maxh = px(42 * s, 6);
+        const double rad = px(2 * s, 1);
+        for (int i = 0; i < N; ++i) {
+            double frac = 0.32 + (1.0 - 0.32) * (i / double(N - 1));
+            double h = px(maxh * frac, 2);
+            double bx = x + i * (bw + gap);
+            double by = baseline - h;
+            aio::Rgba c = (i < filled) ? on_col : aio::Rgba{1, 1, 1, 0.26};
+            set_rgba(cr, c);
+            rounded_rect(cr, bx, by, bw, h, rad);
+            cairo_fill(cr);
+        }
+    }
+
+    void draw_strip(cairo_t *cr, double W, double H, double s) {
+        const double pad_x = px(46 * s, 2);
+        const double pad_b = px(26 * s, 2);
+        const double baseline = H - pad_b;
+
+        // ---- Left group: VIDEO (configured air mode), WIFI CH -------------
+        std::string res = arg_s(SLOT_VIDEO_RES);
+        int cfg_fps = (int)arg_u(SLOT_VIDEO_FPS);
+        std::string video = res.empty() ? std::string("--")
+                                        : aio::format_video_mode(res, cfg_fps);
+        std::string chan = "--";
+        if (last_freq > 0) {
+            auto c = aio::freq_to_channel((int)last_freq);
+            chan = c ? std::to_string(*c) : (std::to_string(last_freq));
+        }
+        double x = pad_x;
+        x += draw_tile(cr, x, baseline, neutral_tile("VIDEO", video, "", "1080p120"), s);
+        x += draw_tile(cr, x, baseline, neutral_tile("WIFI CH", chan, "", "8888"), s);
+
+        // ---- Right group (right-anchored, fixed widths) ------------------
+        int lq = aio::link_quality_pct(window_sum(pkt_all), window_sum(pkt_lost), window_sum(pkt_fec));
+        double br = arg_d(SLOT_BITRATE);
+        long lat = (long)arg_u(SLOT_LATENCY);
+        auto rssi = rssi_agg.best(now_ms());
+        auto snr  = snr_agg.best(now_ms());
+
+        // Live FPS tile, deviation-colored vs configured fps.
+        Tile fps_t = neutral_tile("FPS", "--", "", "888");
+        if (args[SLOT_FPS_LIVE].isDefined()) {
+            int live = (int)arg_u(SLOT_FPS_LIVE);
+            aio::Band fb = aio::fps_band(live, cfg_fps);
+            fps_t = (fb == aio::Band::Neutral)
+                ? neutral_tile("FPS", std::to_string(live), "", "888")
+                : metric_tile("FPS", std::to_string(live), "", fb, "888");
+        }
+
+        std::vector<Tile> right;
+        right.push_back(metric_tile("LINK", std::to_string(lq), "%",
+                                    aio::resolve_band(aio::Metric::Link, lq), "100"));
+        right.push_back(metric_tile("BITRATE", fmt1(br), "Mb/s",
+                                    aio::resolve_band(aio::Metric::Bitrate, br), "888.8"));
+        right.push_back(metric_tile("LATENCY", std::to_string(lat), "ms",
+                                    aio::resolve_band(aio::Metric::Latency, (double)lat), "888"));
+        right.push_back(fps_t);
+        right.push_back(rssi
+            ? metric_tile("RSSI", std::to_string(*rssi), "dBm",
+                          aio::resolve_band(aio::Metric::Rssi, (double)*rssi), "-888")
+            : neutral_tile("RSSI", "--", "dBm", "-888"));
+        right.push_back(snr
+            ? metric_tile("SNR", std::to_string(*snr), "dB",
+                          aio::resolve_band(aio::Metric::Snr, (double)*snr), "-88")
+            : neutral_tile("SNR", "--", "dB", "-88"));
+
+        // Signal bars = RSSI strength, RSSI-band colored.
+        int bars = rssi ? aio::rssi_to_bars((int)*rssi) : 0;
+        aio::Rgba bar_col = rssi
+            ? aio::resolve_color(aio::resolve_band(aio::Metric::Rssi, (double)*rssi), scheme, false)
+            : aio::Rgba{1, 1, 1, 1};
+
+        const double bars_w = 5 * px(8 * s, 3) + 4 * px(5 * s, 1) + px(26 * s, 2);
+        double total = bars_w;
+        for (auto &t : right) total += measure_tile(cr, t, s);
+        double rx = W - pad_x - total;
+        draw_signal_bars(cr, rx, baseline, bars, bar_col, s);
+        rx += bars_w;
+        for (auto &t : right) rx += draw_tile(cr, rx, baseline, t, s);
+    }
+
+    // Measure a tile's width from its reserve sample. Note: sets Cairo font state
+    // (font_value/font_unit); draw_tile re-sets the font, and draw()'s
+    // save/restore bounds it.
+    double measure_tile(cairo_t *cr, const Tile &t, double s) {
+        const double pad = px(26 * s, 2);
+        const double rail_w = px(30 * s, 4);
+        font_value(cr, 46 * s);
+        cairo_text_extents_t re; cairo_text_extents(cr, t.reserve.c_str(), &re);
+        double right = re.x_advance;
+        if (!t.unit.empty()) {
+            font_unit(cr, 16 * s);
+            cairo_text_extents_t ue; cairo_text_extents(cr, t.unit.c_str(), &ue);
+            right += px(6 * s, 1) + ue.x_advance;
+        }
+        double content = std::max(rail_w, right);
+        return pad + content + pad;
+    }
+
+    void draw_rec_badge(cairo_t *cr, double W, double H, double s) {
+        if (!recording) return;
+        long now = now_ms();
+        if (now - blink_last_ms >= 1100) { blink_on = !blink_on; blink_last_ms = now; }
+
+        const double top = px(38 * s, 1);
+        const double right = px(48 * s, 1);
+        const double gap = px(12 * s, 1);
+        const double dot = px(14 * s, 4);
+        const double rec_sz = 26 * s;
+
+        std::string tc = aio::format_timecode((now - rec_start_ms) / 1000);
+        font_rec(cr, rec_sz);
+        cairo_text_extents_t re; cairo_text_extents(cr, "REC", &re);
+        cairo_text_extents_t te; cairo_text_extents(cr, tc.c_str(), &te);
+        double total = dot + gap + re.x_advance + px(10 * s, 1) + te.x_advance;
+        double x = W - right - total;
+        double cy = top + rec_sz; // baseline-ish
+
+        // Dot (red even in white scheme; hard blink).
+        if (blink_on) cairo_set_source_rgba(cr, 0xff/255.0, 0x2e/255.0, 0x3e/255.0, 1);
+        else          cairo_set_source_rgba(cr, 0xff/255.0, 0x2e/255.0, 0x3e/255.0, 0.28);
+        rounded_rect(cr, x, cy - dot, dot, dot, px(3 * s, 1));
+        cairo_fill(cr);
+        x += dot + gap;
+
+        font_rec(cr, rec_sz);
+        text_shadow(cr, x, cy, "REC", aio::Rgba{1, 1, 1, 1}, s);
+        x += re.x_advance + px(10 * s, 1);
+        font_unit(cr, rec_sz);
+        text_shadow(cr, x, cy, tc, aio::Rgba{1, 1, 1, 0.92}, s);
+    }
+
+    // ---- small arg accessors ----
+    ulong arg_u(int idx) {
+        return args[idx].isDefined() ? (ulong)args[idx] : 0ul;
+    }
+    double arg_d(int idx) {
+        return args[idx].isDefined() ? (double)args[idx] : 0.0;
+    }
+    std::string arg_s(int idx) {
+        return (args[idx].isDefined() && args[idx].getType() == Fact::T_STRING)
+                   ? args[idx].getStrValue() : std::string();
+    }
+    long window_sum(const RunningAverage &ra) {
+        return ra.get_stats_over_last_ms_result(1000).sum;
+    }
+    static std::string fmt1(double v) {
+        char b[32]; std::snprintf(b, sizeof(b), "%.1f", v); return std::string(b);
+    }
+
+protected:
+    static long now_ms() {
+        auto t = std::chrono::steady_clock::now().time_since_epoch();
+        return std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
+    }
+    // Aggregate only the video link: accept facts whose "id" tag contains
+    // "video", or that carry no "id" tag at all.
+    static bool accept_link(const Fact& f) {
+        auto tags = f.getTags();
+        auto it = tags.find("id");
+        if (it == tags.end()) return true;
+        return it->second.find("video") != std::string::npos;
+    }
+    static std::string ant_id_of(const Fact& f) {
+        auto tags = f.getTags();
+        auto it = tags.find("ant_id");
+        return it != tags.end() ? it->second : std::string("0");
+    }
+
+    aio::Scheme scheme;
+    RunningAverage fps, bps, pkt_all, pkt_lost, pkt_fec;
+    aio::AntennaAggregator rssi_agg{2500}, snr_agg{2500};
+    long last_freq = -1;
+    bool recording = false;
+    long rec_start_ms = 0;
+    long blink_last_ms = 0;
+    bool blink_on = true;
+};
+
 class GPSWidget: public Widget {
 public:
 	GPSWidget(int pos_x, int pos_y, uint num_args) :
@@ -1745,27 +2168,29 @@ public:
 			}
 			auto name = widget_j.at("name").template get<std::string>();
 			auto type = widget_j.at("type").template get<std::string>();
-			auto x = widget_j.at("x").template get<int>();
-			auto y = widget_j.at("y").template get<int>();
+			int x = widget_j.contains("x") ? widget_j.at("x").template get<int>() : 0;
+			int y = widget_j.contains("y") ? widget_j.at("y").template get<int>() : 0;
 			std::vector<FactMatcher> matchers;
-			for(json matcher_j : widget_j.at("facts")) {
-				auto matcher_name = matcher_j.at("name").template get<std::string>();
-				FactTags tags;
-				if (matcher_j.contains("tags")) {
-					for (auto& [key, value] : matcher_j.at("tags").items()) {
-						tags.insert({key, value});
+			if (widget_j.contains("facts")) {
+				for(json matcher_j : widget_j.at("facts")) {
+					auto matcher_name = matcher_j.at("name").template get<std::string>();
+					FactTags tags;
+					if (matcher_j.contains("tags")) {
+						for (auto& [key, value] : matcher_j.at("tags").items()) {
+							tags.insert({key, value});
+						}
 					}
-				}
-				if (matcher_j.contains("convert")) {
-					auto expression_str = matcher_j.at("convert").template get<std::string>();
-					try {
-						matchers.push_back(FactMatcher(matcher_name, tags, expression_str));
-					} catch (const ExpressionException& e) {
-						spdlog::error("Invalid convert expression {}: {}",
-									  expression_str, e.what());
+					if (matcher_j.contains("convert")) {
+						auto expression_str = matcher_j.at("convert").template get<std::string>();
+						try {
+							matchers.push_back(FactMatcher(matcher_name, tags, expression_str));
+						} catch (const ExpressionException& e) {
+							spdlog::error("Invalid convert expression {}: {}",
+										  expression_str, e.what());
+						}
+					} else {
+						matchers.push_back(FactMatcher(matcher_name, tags));
 					}
-				} else {
-					matchers.push_back(FactMatcher(matcher_name, tags));
 				}
 			}
 			if (type == "TextWidget") {
@@ -1912,6 +2337,36 @@ public:
 						  matchers);
 			} else if (type == "DebugWidget") {
 				addWidget(new DebugWidget(x, y, (uint)matchers.size()), matchers);
+			} else if (type == "AIOWidget") {
+				aio::Scheme scheme = aio::Scheme::Accent;
+				if (widget_j.contains("color_scheme")) {
+					auto cs = widget_j.at("color_scheme").template get<std::string>();
+					if (cs == "white") scheme = aio::Scheme::White;
+					else if (cs != "accent")
+						spdlog::warn("AIOWidget '{}': unknown color_scheme '{}', using accent",
+									 name, cs);
+				}
+				// Default tagless matchers, injected when no facts are given.
+				// Order MUST match AIOWidget::Slot (see the Slot enum).
+				if (matchers.empty()) {
+					matchers.push_back(FactMatcher("air.video.resolution"));          // SLOT_VIDEO_RES
+					matchers.push_back(FactMatcher("air.video.fps"));                 // SLOT_VIDEO_FPS
+					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.freq"));      // SLOT_FREQ
+					matchers.push_back(FactMatcher("wfbcli.rx.packets.all.delta"));   // SLOT_PKT_ALL
+					matchers.push_back(FactMatcher("wfbcli.rx.packets.lost.delta"));  // SLOT_PKT_LOST
+					matchers.push_back(FactMatcher("wfbcli.rx.packets.fec_rec.delta"));// SLOT_PKT_FEC
+					matchers.push_back(FactMatcher("gstreamer.received_bytes"));      // SLOT_BITRATE
+					matchers.push_back(FactMatcher("video.latency.total_ms"));        // SLOT_LATENCY
+					matchers.push_back(FactMatcher("video.displayed_frame"));         // SLOT_FPS_LIVE
+					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.rssi_avg"));  // SLOT_RSSI
+					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.snr_avg"));   // SLOT_SNR
+					matchers.push_back(FactMatcher("dvr.recording"));                 // SLOT_REC
+				} else if (matchers.size() != (size_t)AIOWidget::SLOT_COUNT) {
+					spdlog::warn("AIOWidget '{}': {} facts supplied but {} expected; "
+								 "unmapped slots will be blank",
+								 name, matchers.size(), (int)AIOWidget::SLOT_COUNT);
+				}
+				addWidget(new AIOWidget(x, y, scheme), matchers);
 			} else {
 				spdlog::warn("Widget '{}': unknown type: {}", name, type);
 			}
@@ -1992,7 +2447,10 @@ private:
 std::queue<Fact> fact_queue;
 std::mutex mtx;
 std::condition_variable cv;
-pthread_mutex_t osd_mutex;
+// Statically initialized: the display thread starts before the OSD thread
+// and locks this mutex on its first frame, so a runtime init inside the OSD
+// thread would race with it.
+pthread_mutex_t osd_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void modeset_paint_buffer(struct modeset_buf *buf, Osd *osd) {
 	unsigned int j,k,off;
@@ -2054,12 +2512,15 @@ void my_flush_cb(lv_display_t * display, const lv_area_t * area, uint8_t * px_ma
 
     struct modeset_buf *buf1 = &p->out->osd_bufs[0];
     struct modeset_buf *buf2 = &p->out->osd_bufs[1];
+    struct modeset_buf *buf3 = &p->out->osd_bufs[2];
 	int ret = pthread_mutex_lock(&osd_mutex);
-	assert(!ret);	
+	assert(!ret);
     if (px_map == buf1->map) {
 		p->out->osd_buf_switch = 0;
     } else if (px_map == buf2->map) {
 		p->out->osd_buf_switch = 1;
+    } else if (px_map == buf3->map) {
+		p->out->osd_buf_switch = 2;
     } else {
         spdlog::error("Unknown buffer being flushed");
     }
@@ -2108,12 +2569,16 @@ void setup_lvgl(osd_thread_params *p) {
     struct modeset_buf *buf = &p->out->osd_bufs[p->out->osd_buf_switch];
 	display = lv_display_create(buf->width, buf->height);
 
-	// Get the first two buffers from the OSD buffers
+	// Get all three DRM-allocated OSD buffers
 	struct modeset_buf *buf1 = &p->out->osd_bufs[0];
 	struct modeset_buf *buf2 = &p->out->osd_bufs[1];
+	struct modeset_buf *buf3 = &p->out->osd_bufs[2];
 
-	// Set the buffers in LVGL
-	lv_display_set_buffers(display, buf1->map, buf2->map, buf1->size, LV_DISPLAY_RENDER_MODE_DIRECT);
+	// Triple-buffer: buf1 stays on-screen while LVGL double-buffers into buf2+buf3.
+	// The flush_cb recognises all three so osd_buf_switch is set correctly for page-flip.
+	// At 1080p XRGB8888 each buffer is 1920*1080*4 = ~8 MB; total ~24 MB.
+	LV_LOG_INFO("Display buffers: 3 x %u bytes = %u total", buf1->size, 3 * buf1->size);
+	lv_display_set_buffers(display, buf2->map, buf3->map, buf2->size, LV_DISPLAY_RENDER_MODE_DIRECT);
 
 	lv_display_set_flush_cb(display, my_flush_cb);
 
@@ -2133,11 +2598,8 @@ void *__OSD_THREAD__(void *param) {
 	osd->loadConfig(p->config);
 	auto last_display_at = std::chrono::steady_clock::now();
 
-	int ret = pthread_mutex_init(&osd_mutex, NULL);
-	assert(!ret);
-
 	struct modeset_buf *buf = &p->out->osd_bufs[p->out->osd_buf_switch];
-	ret = modeset_perform_modeset(p->fd, p->out, p->out->osd_request, &p->out->osd_plane,
+	int ret = modeset_perform_modeset(p->fd, p->out, p->out->osd_request, &p->out->osd_plane,
 								  buf->fb, buf->width, buf->height, osd_zpos);
 
 	if (!osd_gl.init(p->fd, buf->width, buf->height,
@@ -2185,7 +2647,7 @@ void *__OSD_THREAD__(void *param) {
 
 			if (! menu_active ) {
 				SPDLOG_DEBUG("refresh OSD");
-				int buf_idx = p->out->osd_buf_switch ^ 1;
+				int buf_idx = osd_next_paint_buf(p->out->osd_buf_switch, OSD_BUF_COUNT);
 				struct modeset_buf *buf = &p->out->osd_bufs[buf_idx];
 				modeset_paint_buffer(buf, osd);
 

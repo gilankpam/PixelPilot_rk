@@ -68,8 +68,7 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
     pp_slider(page, LV_SYMBOL_SD_CARD, "Max file size (MB)",
               "gs", "dvr", "dvr_max_size", 100, 16000);
 
-    pp_section_header(page, "DVR · Re-encode");
-    pp_dropdown(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",
+    pp_dropdown(page, LV_SYMBOL_AUDIO, "Re-encode bitrate (kbps)",
                 "gs", "dvr", "dvr_reenc_bitrate",
                 "4000\n8000\n12000\n16000\n25000");
 

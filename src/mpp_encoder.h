@@ -13,13 +13,10 @@
 
 #include "video_codec.h"
 
-enum class EncResolution { Res720p = 0, Res1080p = 1 };
-
 struct MppEncoderParams {
     VideoCodec codec = VideoCodec::H264;
     int fps = 30;
     int bitrate_kbps = 8000;
-    EncResolution resolution = EncResolution::Res1080p;
 };
 
 struct EncRpc {

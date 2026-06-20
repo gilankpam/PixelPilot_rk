@@ -246,9 +246,9 @@ void FrameProcessor::process_loop() {
         }
 
         // ── Hand the composited buffer to the encoder; take a fresh one next ──
-        struct timespec nts;
-        clock_gettime(CLOCK_MONOTONIC, &nts);
-        uint64_t pts_ms = (uint64_t)nts.tv_sec * 1000 + nts.tv_nsec / 1000000;
+        // Reuse the cap's capture timestamp as the PTS (frame-arrival time is a
+        // steadier cadence for the duration deltas than the post-process time).
+        uint64_t pts_ms = (uint64_t)(now_us / 1000);
         encoder->push_frame(proc_copy_, proc_meta_.width, proc_meta_.height,
                             proc_meta_.hor_stride, proc_meta_.ver_stride,
                             proc_meta_.fmt, pts_ms);

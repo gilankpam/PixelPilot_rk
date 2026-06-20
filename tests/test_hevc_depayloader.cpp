@@ -38,6 +38,14 @@ std::vector<std::vector<uint8_t>> split_nals(const std::vector<uint8_t>& au) {
     }
     return out;
 }
+// Build one FU packet. fu_type is the real NAL type being fragmented.
+std::vector<uint8_t> fu_pkt(uint8_t fu_type, bool s, bool e, std::vector<uint8_t> frag) {
+    std::vector<uint8_t> v = { uint8_t(49 << 1), 0x01 };          // FU payload header
+    uint8_t fuh = (s ? 0x80 : 0) | (e ? 0x40 : 0) | (fu_type & 0x3F);
+    v.push_back(fuh);
+    v.insert(v.end(), frag.begin(), frag.end());
+    return v;
+}
 }
 
 TEST_CASE("single-NAL frame emits one AU on marker", "[depay][single]") {
@@ -99,4 +107,45 @@ TEST_CASE("aggregation packet with overrunning size is dropped+counted", "[depay
     REQUIRE_FALSE(ok);
     REQUIRE(d.stats().malformed == 1);
     REQUIRE(sink.aus.empty());   // corrupt AU not emitted
+}
+
+TEST_CASE("FU across three packets reassembles one NAL", "[depay][fu]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    auto p0 = fu_pkt(1, true,  false, {0xA0, 0xA1});
+    auto p1 = fu_pkt(1, false, false, {0xB0, 0xB1});
+    auto p2 = fu_pkt(1, false, true,  {0xC0});
+    REQUIRE(d.on_payload(p0.data(), p0.size(), false, 4000));
+    REQUIRE(d.on_payload(p1.data(), p1.size(), false, 4000));
+    REQUIRE(d.on_payload(p2.data(), p2.size(), true,  4000));
+    REQUIRE(sink.aus.size() == 1);
+    auto nals = split_nals(sink.aus[0]);
+    REQUIRE(nals.size() == 1);
+    // reconstructed NAL = [rebuilt 2-byte header (type=1)] + A0 A1 B0 B1 C0
+    std::vector<uint8_t> expect = { uint8_t(1 << 1), 0x01, 0xA0,0xA1,0xB0,0xB1,0xC0 };
+    REQUIRE(nals[0] == expect);
+}
+
+TEST_CASE("FU missing the Start fragment is dropped", "[depay][fu]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    auto cont = fu_pkt(1, false, false, {0xB0});   // S=0 with no active FU
+    bool ok = d.on_payload(cont.data(), cont.size(), false, 4100);
+    REQUIRE_FALSE(ok);
+    REQUIRE(d.stats().fu_drops == 1);
+    auto end = fu_pkt(1, false, true, {0xC0});
+    d.on_payload(end.data(), end.size(), true, 4100);
+    REQUIRE(sink.aus.empty());   // AU corrupt → not emitted
+}
+
+TEST_CASE("on_discontinuity mid-FU drops the partial NAL", "[depay][fu]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    auto p0 = fu_pkt(1, true, false, {0xA0});
+    d.on_payload(p0.data(), p0.size(), false, 4200);
+    d.on_discontinuity();
+    auto p1 = fu_pkt(1, false, true, {0xB0});
+    d.on_payload(p1.data(), p1.size(), true, 4200);
+    REQUIRE(d.stats().fu_drops >= 1);
+    REQUIRE(sink.aus.empty());
 }

@@ -50,7 +50,35 @@ bool HevcDepayloader::handle_ap(const uint8_t* p, size_t len) {
     }
     return true;
 }
-bool HevcDepayloader::handle_fu(const uint8_t* p, size_t len) { (void)p; (void)len; return true; }
+bool HevcDepayloader::handle_fu(const uint8_t* p, size_t len) {
+    if (len < 3) { stats_.malformed++; return false; }  // 2-byte hdr + 1-byte FU hdr
+    const uint8_t fuh = p[2];
+    const bool start = (fuh & 0x80) != 0;
+    const bool end   = (fuh & 0x40) != 0;
+    const uint8_t fu_type = fuh & 0x3F;
+    const uint8_t* frag = p + 3;
+    const size_t frag_len = len - 3;
+
+    if (start) {
+        if (fu_active_) { stats_.fu_drops++; au_corrupt_ = true; }  // lost End of prior FU
+        fu_.clear();
+        // Rebuild the 2-byte NAL header: keep forbidden/layer/tid, set type=fu_type.
+        fu_.push_back(uint8_t((p[0] & 0x81) | (fu_type << 1)));
+        fu_.push_back(p[1]);
+        fu_.insert(fu_.end(), frag, frag + frag_len);
+        fu_active_ = true;
+    } else {
+        if (!fu_active_) { stats_.fu_drops++; au_corrupt_ = true; return false; }  // lost Start
+        fu_.insert(fu_.end(), frag, frag + frag_len);
+    }
+
+    if (end && fu_active_) {
+        append_nal_with_startcode(fu_.data(), fu_.size());
+        fu_active_ = false;
+        fu_.clear();
+    }
+    return true;
+}
 
 bool HevcDepayloader::on_payload(const uint8_t* p, size_t len, bool marker, uint32_t rtp_ts) {
     if (len < 2) { stats_.malformed++; return false; }

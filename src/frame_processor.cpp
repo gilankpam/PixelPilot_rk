@@ -257,10 +257,20 @@ void FrameProcessor::process_loop() {
             }
         }
 
-        // ── Publish: swap proc buffer into last_copy for the timer ──────
+        // ── Publish: hand proc_copy_ to the timer/encoder as last_copy ──
+        // Do NOT swap the outgoing last_copy back in as the next working
+        // buffer. push_frame() is asynchronous: the encoder thread may still
+        // be reading the previous last_copy when we start the next frame. The
+        // resize writes raw video into the working buffer *before* the OSD is
+        // blended, so reusing an in-flight buffer races the encoder and emits
+        // OSD-less frames (recording-only flicker). Instead drop our ref to the
+        // old buffer (the encoder's own refs keep it alive until it is done)
+        // and take a fresh buffer from the pool next iteration.
         {
             std::lock_guard<std::mutex> lock(ready_mtx_);
-            std::swap(proc_copy_, last_copy);
+            if (last_copy) mpp_buffer_put(last_copy);
+            last_copy   = proc_copy_;
+            proc_copy_  = nullptr;   // forces a fresh pool buffer next iteration
             last_meta = proc_meta_;
             ready_fresh_ = true;
         }

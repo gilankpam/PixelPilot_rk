@@ -162,6 +162,20 @@ TEST_CASE("timestamp change flushes a frame whose marker was lost", "[depay][emi
     REQUIRE(split_nals(sink.aus[0])[0] == a);
 }
 
+TEST_CASE("short/empty payloads are dropped, never crash", "[depay][malformed]") {
+    Sink sink;
+    HevcDepayloader d(sink.cb());
+    REQUIRE_FALSE(d.on_payload(nullptr, 0, true, 1));
+    uint8_t one = 0x40;
+    REQUIRE_FALSE(d.on_payload(&one, 1, true, 1));     // < 2-byte header
+    std::vector<uint8_t> fu2 = { uint8_t(49 << 1), 0x01 };  // FU with no FU header
+    REQUIRE_FALSE(d.on_payload(fu2.data(), fu2.size(), true, 1));
+    std::vector<uint8_t> paci = { uint8_t(50 << 1), 0x01, 0x00 };  // PACI unsupported
+    REQUIRE_FALSE(d.on_payload(paci.data(), paci.size(), true, 1));
+    REQUIRE(d.stats().malformed >= 3);
+    REQUIRE(sink.aus.empty());
+}
+
 TEST_CASE("IRAP without param sets gets cached VPS/SPS/PPS prepended", "[depay][paramset]") {
     Sink sink;
     HevcDepayloader d(sink.cb());

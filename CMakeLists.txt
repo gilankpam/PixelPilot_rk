@@ -290,6 +290,17 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR})
     target_link_libraries(rtp_depay_tests Catch2::Catch2WithMain)
 
+    option(BUILD_FUZZERS "Build libFuzzer targets" OFF)
+    if(BUILD_FUZZERS)
+      add_executable(rtp_depay_fuzz
+        src/hevc_depayloader.cpp
+        tests/fuzz_hevc_depayloader.cpp)
+      target_include_directories(rtp_depay_fuzz PRIVATE
+        ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR})
+      target_compile_options(rtp_depay_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+      target_link_options(rtp_depay_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+    endif()
+
     # Hidden native widgets (lv_dropdown/lv_switch) must never be
     # group-focusable — see tests/test_widget_focus.cpp.
     add_executable(widget_focus_tests

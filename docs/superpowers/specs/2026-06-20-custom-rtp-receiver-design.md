@@ -254,27 +254,41 @@ std::unique_ptr<RtpVideoReceiver> receiver;     // live (custom)
 std::unique_ptr<GstFilePlayer>    file_player;  // DVR (gst)
 ```
 
-`extern "C"` playback-control routing:
-- `switch_pipeline_source(path)` → DVR: `receiver->stop()` + `file_player = …;
-  file_player->start(cb)`; back to live: `file_player.reset()` + `receiver->start(cb)`.
-- `seek_to_ms` / fast-forward / rewind / pause / resume / skip → routed to
-  `file_player` only (DVR-only operations; they move out of the receiver).
+`extern "C"` playback-control routing (existing functions in the `extern "C"` block
+at `main.cpp:583`, decls in `main.h:5-11`):
+- `switch_pipeline_source(source_type, source_path)` → `"file"`: `receiver->stop()` +
+  start `GstFilePlayer` on the path; `"stream"`: stop the file player +
+  `receiver->start(cb)`. **No MPP reinit** (always HEVC).
+- `fast_forward` / `fast_rewind` / `skip_duration` / `normal_playback` /
+  `pause_playback` / `resume_playback` → routed to `file_player` only (DVR-only
+  operations; they move out of the receiver onto `GstFilePlayer`).
 
 ## 7. H265-only deletions
 
 | Removed | Safe because |
 |---|---|
-| `reinit_mpp_decoder()`, `current_mpp_type`, `stream_mpp_type` | MPP inits once as `MPP_VIDEO_CodingHEVC`, never switches |
-| `mpp_reinit_mutex`, `mpp_reinit_pending` + decode-loop pending checks | no mid-stream reinit → decode thread loses a mutex + branch |
-| `detect_mp4_codec()` H264 branch; codec-select (`idx==1 ? H265 : H264`) | live + DVR are H265; `GstFilePlayer` hardcodes `h265parse` |
+| `reinit_mpp_decoder()` (main.cpp:805-831), `current_mpp_type`, `stream_mpp_type` (802-803) | MPP inits once as `MPP_VIDEO_CodingHEVC`, never switches |
+| `mpp_reinit_mutex`, `mpp_reinit_pending` (108-109) + decode-loop pending checks (307,315) | no mid-stream reinit → decode thread loses a mutex + branch |
+| Live-decoder codec branch `mpp_type = (codec==H264)?AVC:HEVC` (main.cpp:1528-1533) | live path is H265-only → fixed HEVC |
+| `detect_mp4_codec()` H264 branch | DVR recordings are H265; `GstFilePlayer` hardcodes `h265parse` |
 | RFC 6184 (H264 depay) | never written — depayloader is H265-only |
 
 MPP init becomes a single fixed `mpp_init(ctx, MPP_CTX_DEC, MPP_VIDEO_CodingHEVC)`.
 The decode thread keeps its real work (`info_change → init_buffer`,
 `errinfo/discard → idr_request_decoder_issue`, good-frame → `idr_notify_decoded_frame`).
 
-Keep the `VideoCodec` enum (still referenced by `GstFilePlayer` and the depayloader's
-codec-typed helpers), delete the `H264` enumerator and every branch on it.
+**Keep the `VideoCodec` enum intact, including `H264`.** The DVR *re-encoder*
+(`dvr_reenc_set_codec` at main.cpp:644-653, `mpp_encoder`) still encodes to H264 and
+uses `VideoCodec::H264` — it is a separate recording subsystem and is **not** touched.
+The `--codec` CLI arg (main.cpp:1229-1237) stays parsed, but the live decoder + receiver
+ignore it and always use HEVC (warn if `--codec h264` is passed). Move the enum +
+`video_codec()` helper out of the old `gstrtpreceiver.h` into a small shared
+`src/video_codec.h`.
+
+**Preserved OSD contract:** the live frame callback keeps publishing the
+`gstreamer.received_bytes` fact (main.cpp:1020) — `osd.cpp` matches that exact name
+for its bitrate slot. The name is retained even though GStreamer no longer feeds the
+live path.
 
 ## 8. Build changes (`CMakeLists.txt`)
 

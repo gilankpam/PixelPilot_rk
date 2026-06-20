@@ -50,7 +50,7 @@ struct EncRpc {
 
 class MppEncoder {
 public:
-    using FrameCallback = std::function<void(std::shared_ptr<std::vector<uint8_t>>)>;
+    using FrameCallback = std::function<void(std::shared_ptr<std::vector<uint8_t>>, uint64_t pts_ms)>;
 
     explicit MppEncoder(MppEncoderParams params, FrameCallback cb);
     ~MppEncoder();

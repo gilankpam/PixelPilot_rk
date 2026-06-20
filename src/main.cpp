@@ -735,8 +735,8 @@ extern "C" {
             pthread_create(&g_tid_dvr_reenc, NULL, &Dvr::__THREAD__, dvr_reenc_inst);
 
             reencoder = new MppEncoder(reenc_params,
-                             [](std::shared_ptr<std::vector<uint8_t>> nal) {
-                                 if (dvr_enabled && dvr_reenc_inst) dvr_reenc_inst->frame(nal);
+                             [](std::shared_ptr<std::vector<uint8_t>> nal, uint64_t pts_ms) {
+                                 if (dvr_enabled && dvr_reenc_inst) dvr_reenc_inst->frame(nal, (int64_t)pts_ms);
                              });
             pthread_create(&g_tid_enc, NULL, &MppEncoder::__THREAD__, reencoder);
             frame_proc = new FrameProcessor(reencoder, reenc_params.fps, reenc_params.resolution);
@@ -1556,9 +1556,9 @@ int main(int argc, char **argv)
 			ret = pthread_create(&g_tid_dvr_reenc, NULL, &Dvr::__THREAD__, dvr_reenc_inst);
 			assert(!ret);
 
-			reencoder = new MppEncoder(reenc_params, [](std::shared_ptr<std::vector<uint8_t>> nal) {
+			reencoder = new MppEncoder(reenc_params, [](std::shared_ptr<std::vector<uint8_t>> nal, uint64_t pts_ms) {
 				if (dvr_enabled && dvr_reenc_inst != NULL) {
-					dvr_reenc_inst->frame(nal);
+					dvr_reenc_inst->frame(nal, (int64_t)pts_ms);
 				}
 			});
 			ret = pthread_create(&g_tid_enc, NULL, &MppEncoder::__THREAD__, reencoder);

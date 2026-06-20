@@ -49,6 +49,7 @@ struct dvr_rpc {
         std::shared_ptr<std::vector<uint8_t>> frame;
     /*     video_params params; */
     /* }; */
+    int64_t pts_ms = -1;  // capture timestamp (ms) for RPC_FRAME; <0 = no pts (raw path)
 };
 
 
@@ -59,7 +60,7 @@ public:
     explicit Dvr(dvr_thread_params params);
     virtual ~Dvr();
 
-    void frame(std::shared_ptr<std::vector<uint8_t>> frame);
+    void frame(std::shared_ptr<std::vector<uint8_t>> frame, int64_t pts_ms = -1);
     void set_video_params(uint32_t video_frm_width,
                           uint32_t video_frm_height,
                           VideoCodec codec);
@@ -105,6 +106,7 @@ private:
     std::vector<uint8_t> cached_sps;
     std::vector<uint8_t> cached_pps;
     bool params_complete = false;
+    int64_t last_pts_ms = -1;  // previous re-encoded frame's capture ts (90k-duration delta)
 
     dvr_write_ctx write_ctx;
     MP4E_mux_tag *mux;

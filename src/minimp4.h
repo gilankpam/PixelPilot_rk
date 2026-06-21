@@ -681,6 +681,11 @@ typedef struct
     minimp4_vector_t vpps;  // not used for audio
     minimp4_vector_t vvps;  // used for HEVC
 
+    // Fragmentation mode keeps no sample table, so the running total duration
+    // (in track timescale units) is accumulated here as fragments are written,
+    // then used to back-patch the moov header at close.
+    uint64_t frag_duration;
+
 } track_t;
 
 typedef struct MP4E_mux_tag
@@ -695,6 +700,13 @@ typedef struct MP4E_mux_tag
     int sequential_mode_flag;
     int enable_fragmentation; // flag, indicating streaming-friendly 'fragmentation' mode
     int fragments_count;      // # of fragments in 'fragmentation' mode
+
+    // Fragmentation mode: location/size of the moov box, captured when it is
+    // first written (before frame 1). Used to overwrite it in place at close
+    // with the now-known total duration. moov_size is fixed (no sample tables),
+    // so the rewrite drops cleanly into the same slot the fragments follow.
+    int64_t moov_pos;
+    int64_t moov_size;
 
 } MP4E_mux_t;
 
@@ -816,6 +828,8 @@ MP4E_mux_t *MP4E_open(int sequential_mode_flag, int enable_fragmentation, void *
     mux->sequential_mode_flag = sequential_mode_flag || enable_fragmentation;
     mux->enable_fragmentation = enable_fragmentation;
     mux->fragments_count = 0;
+    mux->moov_pos = 0;
+    mux->moov_size = 0;
     mux->write_callback = write_callback;
     mux->token = token;
     mux->text_comment = NULL;
@@ -940,6 +954,16 @@ static unsigned get_duration(const track_t *tr)
     return sum_duration;
 }
 
+// Total track duration in timescale units. In fragmentation mode there is no
+// sample table, so the value is the running total accumulated as fragments were
+// written; otherwise it is the sum over the sample descriptors.
+static unsigned mp4e_track_duration(const MP4E_mux_t *mux, const track_t *tr)
+{
+    if (mux->enable_fragmentation)
+        return (unsigned)tr->frag_duration;
+    return get_duration(tr);
+}
+
 static int write_pending_data(MP4E_mux_t *mux, track_t *tr)
 {
     // if have pending sample && have at least one sample in the index
@@ -984,6 +1008,9 @@ static int add_sample_descriptor(MP4E_mux_t *mux, track_t *tr, int data_bytes, i
 }
 
 static int mp4e_flush_index(MP4E_mux_t *mux);
+// moov_override_offset >= 0 rewrites the moov in place at that offset (used to
+// back-patch the fragmentation-mode header at close); < 0 appends normally.
+static int mp4e_flush_index_ex(MP4E_mux_t *mux, int64_t moov_override_offset);
 
 /**
 *   Write Movie Fragment: 'moof' box
@@ -1108,6 +1135,9 @@ int MP4E_put_sample(MP4E_mux_t *mux, int track_num, const void *data, int data_b
         #endif
         if (!mux->fragments_count++)
             ERR(mp4e_flush_index(mux)); // write file headers before 1st sample
+        // Accumulate total duration for the moov back-patch at close. Summed (not
+        // fragments_count * duration) so variable per-frame durations are exact.
+        tr->frag_duration += (uint64_t)(duration ? duration : tr->info.default_duration);
         // write MOOF + MDAT + sample data
         #if MP4D_TFDT_SUPPORT
         ERR(mp4e_write_fragment_header(mux, track_num, data_bytes, duration, kind, timestamp));
@@ -1186,6 +1216,11 @@ int MP4E_set_text_comment(MP4E_mux_t *mux, const char *comment)
 */
 static int mp4e_flush_index(MP4E_mux_t *mux)
 {
+    return mp4e_flush_index_ex(mux, -1);
+}
+
+static int mp4e_flush_index_ex(MP4E_mux_t *mux, int64_t moov_override_offset)
+{
     unsigned char *stack_base[20]; // atoms nesting stack
     unsigned char **stack = stack_base;
     unsigned char *base, *p;
@@ -1256,7 +1291,7 @@ static int mp4e_flush_index(MP4E_mux_t *mux)
         if (ntracks)
         {
             track_t *tr = ((track_t*)mux->tracks.data) + 0;    // take 1st track
-            unsigned duration = get_duration(tr);
+            unsigned duration = mp4e_track_duration(mux, tr);
             duration = (unsigned)(duration * 1LL * MOOV_TIMESCALE / tr->info.time_scale);
             WRITE_4(MOOV_TIMESCALE); // duration
             WRITE_4(duration); // duration
@@ -1286,7 +1321,7 @@ static int mp4e_flush_index(MP4E_mux_t *mux)
     for (ntr = 0; ntr < ntracks; ntr++)
     {
         track_t *tr = ((track_t*)mux->tracks.data) + ntr;
-        unsigned duration = get_duration(tr);
+        unsigned duration = mp4e_track_duration(mux, tr);
         int samples_count = tr->smpl.bytes / sizeof(sample_t);
         const sample_t *sample = (const sample_t *)tr->smpl.data;
         unsigned handler_type;
@@ -1709,7 +1744,11 @@ static int mp4e_flush_index(MP4E_mux_t *mux)
     if (mux->enable_fragmentation)
     {
         track_t *tr = ((track_t*)mux->tracks.data) + 0;
-        uint32_t movie_duration = get_duration(tr);
+        // mehd.fragment_duration is in the MOVIE timescale (mvhd's), not the
+        // track timescale -- rescale like mvhd/tkhd, else players that trust
+        // mehd as the total duration read it (time_scale/MOOV_TIMESCALE)x too long.
+        uint32_t movie_duration = mp4e_track_duration(mux, tr);
+        movie_duration = (uint32_t)(movie_duration * 1LL * MOOV_TIMESCALE / tr->info.time_scale);
 
         ATOM(BOX_mvex);
             ATOM_FULL(BOX_mehd, 0);
@@ -1731,8 +1770,27 @@ static int mp4e_flush_index(MP4E_mux_t *mux)
 
     assert((unsigned)(p - base) <= index_bytes);
 
-    err = mux->write_callback(mux->write_pos, base, p - base, mux->token);
-    mux->write_pos += p - base;
+    if (moov_override_offset >= 0)
+    {
+        // Back-patch: overwrite the original moov in place with the corrected
+        // duration. The frag-mode moov carries no sample tables, so its size is
+        // fixed and the rewrite fits exactly where the fragments already follow.
+        assert((int64_t)(p - base) == mux->moov_size);
+        err = mux->write_callback(moov_override_offset, base, p - base, mux->token);
+        // Do NOT advance write_pos: the fragments after the moov stay put.
+    }
+    else
+    {
+        if (mux->enable_fragmentation)
+        {
+            // Remember where the (zero-duration) moov landed so close() can
+            // back-patch it once the total duration is known.
+            mux->moov_pos = mux->write_pos;
+            mux->moov_size = p - base;
+        }
+        err = mux->write_callback(mux->write_pos, base, p - base, mux->token);
+        mux->write_pos += p - base;
+    }
     free(base);
     return err;
 }
@@ -1745,6 +1803,11 @@ int MP4E_close(MP4E_mux_t *mux)
         return MP4E_STATUS_BAD_ARGUMENTS;
     if (!mux->enable_fragmentation)
         err = mp4e_flush_index(mux);
+    else if (mux->fragments_count)
+        // Clean stop: back-patch the moov header (written before frame 1 with
+        // duration 0) so the now-known total duration shows in every player.
+        // Skipped on a crash (close never runs) — the file is unchanged then.
+        err = mp4e_flush_index_ex(mux, mux->moov_pos);
     if (mux->text_comment)
         free(mux->text_comment);
     ntracks = mux->tracks.bytes / sizeof(track_t);

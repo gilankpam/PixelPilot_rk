@@ -94,7 +94,7 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
     pp_toggle(page, LV_SYMBOL_VIDEO, "Enabled",
               "gs", "dvr", "rec_enabled");
     pp_dropdown(page, LV_SYMBOL_VIDEO, "Mode",
-                "gs", "dvr", "dvr_mode", "raw\nreencode");
+                "gs", "dvr", "dvr_mode", "raw\nreencode\nboth");
     pp_slider(page, LV_SYMBOL_SD_CARD, "Max file size (MB)",
               "gs", "dvr", "dvr_max_size", 100, 16000);
 

@@ -298,6 +298,12 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(dvr_fps_cap_tests Catch2::Catch2WithMain)
 
+    add_executable(dvr_moov_duration_tests
+      tests/test_dvr_moov_duration.cpp)
+    target_include_directories(dvr_moov_duration_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(dvr_moov_duration_tests Catch2::Catch2WithMain)
+
     add_executable(rtp_depay_tests
       src/hevc_depayloader.cpp
       tests/test_hevc_depayloader.cpp)

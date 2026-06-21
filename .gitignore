@@ -68,3 +68,7 @@ pixelpilot
 # Scratch directory written by superpowers skills (brainstorming, etc.)
 .superpowers/
 radxa_zero3_rootfs.squashfs
+
+# Superpowers plans/specs (local-only working docs)
+docs/superpowers/plans/
+docs/superpowers/specs/

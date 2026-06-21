@@ -437,6 +437,7 @@ else()
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
       src/gsmenu/settings_fpvd.c
+      src/conn_state.c
       src/gsmenu/settings_runtime_cfg.c
       src/gsmenu/osd_air_bridge.h
       src/gsmenu/osd_air_bridge.c

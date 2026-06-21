@@ -286,6 +286,16 @@ if(USE_SIMULATOR)
     target_link_libraries(runtime_cfg_tests
       Catch2::Catch2WithMain)
 
+    add_executable(conn_state_tests
+      src/conn_state.c
+      ${PP_CJSON_SOURCES}
+      tests/test_conn_state.cpp)
+    target_include_directories(conn_state_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
+    target_link_libraries(conn_state_tests
+      Catch2::Catch2WithMain CURL::libcurl pthread)
+
     add_executable(aio_logic_tests
       src/osd_aio_logic.cpp
       tests/test_aio_logic.cpp)

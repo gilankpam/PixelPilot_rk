@@ -915,14 +915,11 @@ static void prov_set_async(const char *d, const char *p, const char *k,
     }
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) { schedule_done(cb, ud, -1, "Unknown setting"); return; }
-    /* Dynamic-link lock only governs drone-owned (AIR) fields. */
-    if (e->endpoint == FPVD_EP_AIR && fpvd_is_locked_path(e->path)) {
-        pthread_mutex_lock(&G.mu);
-        cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;
-        cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
-        bool dlink_on = en && cJSON_IsTrue(en);
-        pthread_mutex_unlock(&G.mu);
-        if (dlink_on) { schedule_done(cb, ud, -1, "Locked by Dynamic Link"); return; }
+    /* Dynamic-link lock only governs drone-owned (AIR) fields; the mode-aware
+     * exceptions live in dl_locks_field (shared with prov_is_locked). */
+    if (e->endpoint == FPVD_EP_AIR && dl_locks_field(e, d, p, k)) {
+        schedule_done(cb, ud, -1, "Locked by Dynamic Link");
+        return;
     }
     pthread_mutex_lock(&G.mu);
     if (e->kind == FPVD_ROW_STAGED) {

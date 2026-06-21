@@ -622,3 +622,39 @@ TEST_CASE("integration: DL off — FEC + compute rows all editable", "[fpvd][net
     REQUIRE(pp_settings_is_locked("air", "dlink", "compute_base_redundancy") == false);
     m.stop();
 }
+
+TEST_CASE("integration: FEC mode push allowed while DL on (swfec)", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"fec":{"mode":"swfec"}},"dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    DoneWaiter w;
+    pp_settings_set_async("air", "wfbng", "fec_mode", "rs", DoneWaiter::cb, &w);
+    REQUIRE(w.wait());
+    REQUIRE(w.rc == 0);                       /* not rejected by the DL lock */
+    auto writes = m.writes_only();
+    REQUIRE(writes.size() == 2);
+    REQUIRE(writes[0] == "PATCH /air/config");
+    REQUIRE(m.last_air_patch_body.find("\"mode\":\"rs\"") != std::string::npos);
+    m.stop();
+}
+
+TEST_CASE("integration: compute knob push rejected while DL on (swfec)", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"fec":{"mode":"swfec"}},"dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    DoneWaiter w;
+    pp_settings_set_async("air", "dlink", "compute_base_redundancy", "0.7",
+                          DoneWaiter::cb, &w);
+    REQUIRE(w.wait());
+    REQUIRE(w.rc != 0);
+    REQUIRE(w.err_str() == "Locked by Dynamic Link");
+    for (auto &l : m.snapshot_log())
+        REQUIRE(l != "PATCH /air/config");    /* never sent */
+    m.stop();
+}

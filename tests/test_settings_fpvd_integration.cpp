@@ -401,12 +401,14 @@ TEST_CASE("integration: staged pixelpilot row patches /gs/config without apply",
     GsMockServer srv; srv.start();
     install_provider_pointing_at(srv.port);
 
+    /* Use a still-staged row (rtp_jitter_ms); dvr_reenc_bitrate now routes
+     * directly through runtime-cfg and no longer produces a staged patch. */
     DoneWaiter w;
-    pp_settings_set_async("gs", "dvr", "dvr_reenc_bitrate", "4000", DoneWaiter::cb, &w);
+    pp_settings_set_async("gs", "display", "rtp_jitter_ms", "50", DoneWaiter::cb, &w);
     REQUIRE(w.wait());
     REQUIRE(w.rc == 0);
     REQUIRE(pp_settings_has_pending() == true);
-    REQUIRE(srv.last_gs_patch_body.find("\"reencBitrate\":4000") != std::string::npos);
+    REQUIRE(srv.last_gs_patch_body.find("\"rtpJitterMs\":50") != std::string::npos);
     for (auto &l : srv.snapshot_log()) REQUIRE(l != "POST /gs/apply");
 
     /* Explicit apply commits and clears pending. */

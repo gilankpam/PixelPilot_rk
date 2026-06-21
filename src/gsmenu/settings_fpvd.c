@@ -1,6 +1,7 @@
 /* fpvd HTTP settings provider — talks to the local fpvd-GS daemon. */
 #include "settings.h"
 #include "settings_fpvd_internal.h"
+#include "settings_runtime_cfg.h"
 
 #include <string.h>
 #include "cJSON.h"
@@ -118,9 +119,6 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "gs",  "display", "screen_mode",      "pixelpilot.screenMode",          FPVD_T_STRING,          FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "display", "video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_GS, FPVD_ROW_STAGED },
     { "gs",  "display", "rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_mode",         "pixelpilot.dvr.mode",            FPVD_T_ENUM,            FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_max_size",     "pixelpilot.dvr.maxSizeMb",       FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "dvr",     "dvr_reenc_bitrate","pixelpilot.dvr.reencBitrate",    FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
 };
 
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);
@@ -853,6 +851,7 @@ static void enqueue_locked(const fpvd_keymap_entry_t *e, const char *value,
 }
 
 static char *prov_get(const char *d, const char *p, const char *k) {
+    if (pp_runtime_cfg_owns(d, p, k)) return pp_runtime_cfg_get(d, p, k);
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return strdup("");
     pthread_mutex_lock(&G.mu);
@@ -877,6 +876,11 @@ static char *prov_get(const char *d, const char *p, const char *k) {
 
 static void prov_set_async(const char *d, const char *p, const char *k,
                            const char *v, pp_settings_done_cb cb, void *ud) {
+    if (pp_runtime_cfg_owns(d, p, k)) {
+        pp_runtime_cfg_set(d, p, k, v);
+        schedule_done(cb, ud, 0, NULL);   /* applied + persisted synchronously */
+        return;
+    }
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) { schedule_done(cb, ud, -1, "Unknown setting"); return; }
     /* Dynamic-link lock only governs drone-owned (AIR) fields. */
@@ -919,6 +923,7 @@ static void prov_apply(pp_settings_done_cb cb, void *ud) {
 }
 
 static bool prov_is_available(const char *d, const char *p, const char *k) {
+    if (pp_runtime_cfg_owns(d, p, k)) return true;
     return fpvd_keymap_lookup(d, p, k) != NULL;
 }
 
@@ -930,6 +935,11 @@ static bool prov_has_pending(void) {
 }
 
 static bool prov_is_locked(const char *d, const char *p, const char *k) {
+    if (pp_runtime_cfg_owns(d, p, k)) {
+        /* DVR rows are read-only mid-recording; cc rows are always live. */
+        bool is_dvr = (strcmp(p, "dvr") == 0);
+        return is_dvr && pp_runtime_cfg_is_recording();
+    }
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) return false;
     /* DL governs drone-owned (AIR) fields. The Bandwidth row is the one

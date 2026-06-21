@@ -253,6 +253,7 @@ if(USE_SIMULATOR)
       src/gsmenu/settings.c
       src/gsmenu/settings_fpvd.c
       src/gsmenu/settings_gs_enum.c
+      src/gsmenu/settings_runtime_cfg.c
       ${PP_CJSON_SOURCES}
       tests/test_settings_fpvd.cpp
       tests/test_settings_fpvd_integration.cpp)

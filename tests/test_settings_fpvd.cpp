@@ -3,6 +3,8 @@
 
 extern "C" {
 #include "gsmenu/settings_fpvd_internal.h"
+#include "gsmenu/settings.h"
+#include "gsmenu/settings_runtime_cfg.h"
 }
 
 TEST_CASE("keymap: lookup returns the json path for known triples", "[fpvd][keymap]") {
@@ -388,17 +390,32 @@ TEST_CASE("keymap: pixelpilot rows route to EP_GS as staged rows", "[fpvd][keyma
     REQUIRE(e != nullptr);
     REQUIRE(std::strcmp(e->path, "pixelpilot.rtpJitterMs") == 0);
 
-    e = fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate");
-    REQUIRE(e != nullptr);
-    REQUIRE(e->endpoint == FPVD_EP_GS);
-    REQUIRE(e->kind == FPVD_ROW_STAGED);
-    REQUIRE(std::strcmp(e->path, "pixelpilot.dvr.reencBitrate") == 0);
-    REQUIRE(e->type == FPVD_T_INT);
+    // dvr rows are now owned by runtime-cfg, not the fpvd keymap
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_mode") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_max_size") == nullptr);
 
     // color correction stays unmapped (handled by the unavailable rule)
     REQUIRE(fpvd_keymap_lookup("gs", "display", "color_correction") == nullptr);
     REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_enabled") == nullptr);
     REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_fps") == nullptr);
+}
+
+TEST_CASE("runtime-config keys are no longer fpvd-staged but are available") {
+    // gs/dvr/* dropped from the fpvd keymap (now owned by runtime-cfg)
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_mode") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_max_size") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate") == nullptr);
+    // color-correction keys were never in the keymap
+    REQUIRE(fpvd_keymap_lookup("gs", "display", "color_correction") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "display", "cc_gain") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "display", "cc_offset") == nullptr);
+    // ...but the provider reports all six as available (so rows are not greyed)
+    pp_settings_register_fpvd();
+    REQUIRE(pp_settings_is_available("gs", "dvr", "dvr_mode"));
+    REQUIRE(pp_settings_is_available("gs", "display", "cc_gain"));
+    // a still-staged display row remains available too
+    REQUIRE(pp_settings_is_available("gs", "display", "screen_mode"));
 }
 
 static int plan(fpvd_row_kind_t kind, fpvd_endpoint_t ep, const char *path,

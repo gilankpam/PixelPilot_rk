@@ -1039,13 +1039,7 @@ void printHelp() {
     "\n"
     "    --dvr-sequenced-files  - Prepend a sequence number to the names of the dvr files\n"
     "\n"
-    "    --dvr-max-size <MB>    - DEPRECATED, ignored (set via runtime.json)\n"
-    "\n"
     "    --dvr-fmp4             - Save the video feed as a fragmented mp4\n"
-    "\n"
-    "    --dvr-mode <mode>      - DEPRECATED, ignored (set via runtime.json)\n"
-    "\n"
-    "    --dvr-reenc-bitrate <k>- DEPRECATED, ignored (set via runtime.json)\n"
     "\n"
     "    --screen-mode <mode>   - Override default screen mode. <width>x<heigth>@<fps> ex: 1920x1080@120\n"
     "\n"
@@ -1058,8 +1052,6 @@ void printHelp() {
     "    --disable-vsync        - Disable VSYNC commits\n"
     "\n"
     "    --disable-gregidr      - Disable last-hop probing and IDR requests\n"
-    "\n"
-    "    --live-colortrans      - DEPRECATED, ignored (set via runtime.json)\n"
     "\n"
     "    --screen-mode-list     - Print the list of supported screen modes and exit.\n"
     "\n"
@@ -1141,55 +1133,8 @@ int main(int argc, char **argv)
 		continue;
 	}
 
-	__OnArgument("--dvr-framerate") {
-		(void)__ArgValue;
-		spdlog::warn("--dvr-framerate is deprecated and ignored (raw DVR times from RTP timestamps)");
-		continue;
-	}
-
-	__OnArgument("--dvr-max-size") {
-		(void)__ArgValue;
-		spdlog::warn("--dvr-max-size is deprecated and ignored (set via runtime.json)");
-		continue;
-	}
-
 	__OnArgument("--dvr-fmp4") {
 		mp4_fragmentation_mode = 1;
-		continue;
-	}
-
-	__OnArgument("--dvr-mode") {
-		(void)__ArgValue;
-		spdlog::warn("--dvr-mode is deprecated and ignored (set via runtime.json)");
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-codec") {
-		(void)__ArgValue;   // deprecated: re-encode codec is always h265
-		spdlog::warn("--dvr-reenc-codec is deprecated and ignored (codec is h265)");
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-bitrate") {
-		(void)__ArgValue;
-		spdlog::warn("--dvr-reenc-bitrate is deprecated and ignored (set via runtime.json)");
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-fps") {
-		(void)__ArgValue;   // deprecated: fps follows input, capped at display refresh
-		spdlog::warn("--dvr-reenc-fps is deprecated and ignored (fps follows input, capped at display refresh)");
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-resolution") {
-		(void)__ArgValue;   // deprecated: resolution follows the screen mode
-		spdlog::warn("--dvr-reenc-resolution is deprecated and ignored (resolution = screen mode)");
-		continue;
-	}
-
-	__OnArgument("--dvr-osd") {
-		spdlog::warn("--dvr-osd is deprecated and ignored (re-encode always burns in the OSD)");
 		continue;
 	}
 
@@ -1272,11 +1217,6 @@ int main(int argc, char **argv)
 
 	__OnArgument("--screen-mode-list") {
 		print_modelist = 1;
-		continue;
-	}
-
-	__OnArgument("--live-colortrans") {
-		spdlog::warn("--live-colortrans is deprecated and ignored (set via runtime.json)");
 		continue;
 	}
 

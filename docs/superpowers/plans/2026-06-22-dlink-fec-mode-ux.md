@@ -31,13 +31,13 @@
 
 ## File Structure
 
-- `src/gsmenu/settings_fpvd.c` — add `dl_locks_field`; rewire `prov_is_locked` + `prov_set_async`; later remove `safe_*` keymap entries (Tasks 1, 2, 4).
-- `src/gsmenu/settings_dummy.c` — mode-aware `dummy_is_locked`; later remove `safe_*` seeds (Tasks 3, 4).
-- `src/gsmenu/pages/dynamiclink.c` — remove the Failsafe section (Task 4).
+- `src/gsmenu/settings_fpvd.c` — add `dl_locks_field`; rewire `prov_is_locked` + `prov_set_async`; remove `safe_*` keymap entries; add the `flightlog_enabled` keymap entry (Tasks 1, 2, 4, 5).
+- `src/gsmenu/settings_dummy.c` — mode-aware `dummy_is_locked`; remove `safe_*` seeds; add the `flightlog_enabled` seed (Tasks 3, 4, 5).
+- `src/gsmenu/pages/dynamiclink.c` — remove the Failsafe section; add the Flight Log toggle (Tasks 4, 5).
 - `tests/test_settings_fpvd_integration.cpp` — lock + apply-gate behavior tests (Tasks 1, 2).
 - `tests/test_settings_dummy_lock.cpp` — **new**, simulator-provider lock parity (Task 3).
-- `tests/test_dynamiclink_page.cpp` — Failsafe-gone / Compute-present assertions (Task 4).
-- `tests/test_settings_fpvd.cpp` — drop `safe_*` keymap assertions (Task 4).
+- `tests/test_dynamiclink_page.cpp` — Failsafe-gone / Compute-present / Flight Log assertions (Tasks 4, 5).
+- `tests/test_settings_fpvd.cpp` — drop `safe_*` keymap assertions; add the `flightlog_enabled` keymap assertion (Tasks 4, 5).
 - `CMakeLists.txt` — register the new test file in `settings_tests` (Task 3).
 
 ---
@@ -552,7 +552,109 @@ git commit -m "gsmenu: remove the Dynamic Link Failsafe section (UI + keymap + s
 
 ---
 
-### Task 5: Full regression + simulator compile
+### Task 5: Add the Flight Log toggle (GS `dynamicLink.flightlog.enabled`)
+
+The GS config (`http://10.18.0.1:8080/gs/config`) exposes
+`dynamicLink.flightlog.enabled` (boolean) alongside `dynamicLink.maxMcs`. It is a
+**GS-domain field** (`FPVD_EP_GS`), so it is pushed via `PATCH /gs/config` and is
+**never** governed by the dynamic-link lock (GS rows are exempt in
+`prov_is_locked`). It renders as a toggle in the Dynamic Link page's General
+section, right after the Enabled toggle — placing it past the
+`LV_OBJ_FLAG_USER_3` visibility anchor means it shows only while Dynamic Link is
+enabled, consistent with the rest of the page.
+
+**Files:**
+- Modify: `src/gsmenu/settings_fpvd.c` (add one keymap entry after the `max_mcs` row, ~line 112)
+- Modify: `src/gsmenu/pages/dynamiclink.c` (add the toggle after the Enabled toggle, ~line 45)
+- Modify: `src/gsmenu/settings_dummy.c` (add one seed default after `max_mcs`)
+- Test: `tests/test_settings_fpvd.cpp` (keymap lookup assertion)
+- Test: `tests/test_dynamiclink_page.cpp` (row-presence assertion)
+
+**Interfaces:**
+- Produces: keymap triple `gs/dlink/flightlog_enabled` → path `dynamicLink.flightlog.enabled`, `FPVD_T_BOOL`, `FPVD_EP_GS`, `FPVD_ROW_PLAIN`.
+
+- [ ] **Step 1: Write the failing tests**
+
+(a) In `tests/test_settings_fpvd.cpp`, inside the existing keymap `TEST_CASE`
+"keymap: camera resilience/osd + dlink compute/maxMcs" (after the
+`compute_base_redundancy` assertion block, ~line 59), add:
+
+```cpp
+    e = fpvd_keymap_lookup("gs", "dlink", "flightlog_enabled");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.flightlog.enabled") == 0);
+    REQUIRE(e->type == FPVD_T_BOOL);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
+```
+
+(b) In `tests/test_dynamiclink_page.cpp`, add a row-presence case:
+
+```cpp
+TEST_CASE("Dynamic Link page has the Flight Log toggle", "[dynamiclink]") {
+    lv_obj_t *scr = setup_screen();
+    lv_obj_t *page = build_dynamiclink_tab(scr);
+
+    REQUIRE(subtree_has_label(page, "Flight Log"));
+
+    lv_obj_delete(scr);
+}
+```
+
+- [ ] **Step 2: Build + run to verify failure**
+
+Run:
+```bash
+nix-shell shell-sim.nix --run 'cmake --build build-sim --target fpvd_tests dynamiclink_page_tests -j 2>&1 | tail -3 && ./build-sim/fpvd_tests "[keymap]" && ./build-sim/dynamiclink_page_tests'
+```
+Expected: FAIL — `fpvd_keymap_lookup("gs","dlink","flightlog_enabled")` returns null, and the page has no `"Flight Log"` label.
+
+- [ ] **Step 3: Add the keymap entry**
+
+In `src/gsmenu/settings_fpvd.c`, add this row immediately after the `max_mcs`
+entry (`{ "gs", "dlink", "max_mcs", "dynamicLink.maxMcs", ... }`):
+
+```c
+    { "gs",  "dlink", "flightlog_enabled",        "dynamicLink.flightlog.enabled",           FPVD_T_BOOL,  FPVD_EP_GS,  FPVD_ROW_PLAIN },
+```
+
+- [ ] **Step 4: Add the page toggle**
+
+In `src/gsmenu/pages/dynamiclink.c`, after
+`lv_obj_add_flag(enabled, LV_OBJ_FLAG_USER_3);` and before
+`pp_section_header(page, "Compute");`, add:
+
+```c
+    pp_toggle(page, LV_SYMBOL_SD_CARD, "Flight Log",
+              "gs", "dlink", "flightlog_enabled");
+```
+
+- [ ] **Step 5: Add the simulator seed default**
+
+In `src/gsmenu/settings_dummy.c`, in the Dynamic Link seed block, add after the
+`{ "max_mcs", "5" },` entry:
+
+```c
+    { "flightlog_enabled",        "on" },
+```
+
+- [ ] **Step 6: Build + run to verify pass**
+
+Run:
+```bash
+nix-shell shell-sim.nix --run 'cmake --build build-sim --target fpvd_tests dynamiclink_page_tests -j 2>&1 | tail -3 && ./build-sim/fpvd_tests "[keymap]" && ./build-sim/dynamiclink_page_tests'
+```
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/gsmenu/settings_fpvd.c src/gsmenu/pages/dynamiclink.c src/gsmenu/settings_dummy.c tests/test_settings_fpvd.cpp tests/test_dynamiclink_page.cpp
+git commit -m "gsmenu: add Flight Log toggle (GS dynamicLink.flightlog.enabled) to Dynamic Link page"
+```
+
+---
+
+### Task 6: Full regression + simulator compile
 
 **Files:** none (verification only)
 
@@ -578,6 +680,9 @@ Per the spec data flow, on the ground station: enable Dynamic Link, then on the 
 - `swfec`: Deadline / Overhead become editable; on the Dynamic Link page, **Base Redundancy Ratio** and **Blocks / Frame** grey out.
 - `rs`: FEC_K / FEC_N stay greyed; the two compute rows un-grey.
 - The Dynamic Link page has no **Failsafe** section.
+- The Dynamic Link page shows a **Flight Log** toggle (visible while Dynamic Link
+  is enabled); toggling it round-trips to the GS config
+  (`dynamicLink.flightlog.enabled`) and stays editable regardless of FEC mode.
 
 ---
 
@@ -591,6 +696,7 @@ Per the spec data flow, on the ground station: enable Dynamic Link, then on the 
 - "Shared predicate across widget-grey and apply gate" → Tasks 1 + 2 both call `dl_locks_field`. ✓
 - "Sim parity" → Task 3. ✓
 - "Full Failsafe removal (UI + keymap + seeds + tests)" → Task 4. ✓
+- "Add Flight Log toggle (GS `dynamicLink.flightlog.enabled`)" → Task 5 (plan addition beyond the original spec; GS-domain row, lock-exempt). ✓
 - "No drone-side changes" → no task touches drone code. ✓
 
 **Placeholder scan:** no TBD/TODO; every code + command step is concrete. ✓

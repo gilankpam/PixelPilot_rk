@@ -36,6 +36,7 @@ void pp_runtime_cfg_defaults(pp_runtime_cfg_t *out) {
     out->cc_enabled      = 0;
     out->cc_gain         = 25;
     out->cc_offset       = -15;
+    out->video_scale_pct = 100;
 }
 
 /* Parse the file at g_path into *out. Returns true on a successful read+parse. */
@@ -76,6 +77,11 @@ static bool read_file(pp_runtime_cfg_t *out) {
         cJSON *o  = cJSON_GetObjectItemCaseSensitive(cc, "offset");
         if (cJSON_IsNumber(o)) out->cc_offset = (int)o->valuedouble;
     }
+    cJSON *disp = cJSON_GetObjectItemCaseSensitive(root, "display");
+    if (disp) {
+        cJSON *vs = cJSON_GetObjectItemCaseSensitive(disp, "videoScalePct");
+        if (cJSON_IsNumber(vs)) out->video_scale_pct = (int)vs->valuedouble;
+    }
     cJSON_Delete(root);
     return true;
 }
@@ -102,7 +108,8 @@ bool pp_runtime_cfg_owns(const char *domain, const char *page, const char *key) 
     if (eq(page, "dvr"))
         return eq(key, "dvr_mode") || eq(key, "dvr_max_size") || eq(key, "dvr_reenc_bitrate");
     if (eq(page, "display"))
-        return eq(key, "color_correction") || eq(key, "cc_gain") || eq(key, "cc_offset");
+        return eq(key, "color_correction") || eq(key, "cc_gain") || eq(key, "cc_offset")
+            || eq(key, "video_scale");
     return false;
 }
 
@@ -119,6 +126,7 @@ char *pp_runtime_cfg_get(const char *domain, const char *page, const char *key) 
         if (eq(key, "color_correction"))  return strdup(g_state.cc_enabled ? "on" : "off");
         if (eq(key, "cc_gain"))           { snprintf(buf, sizeof buf, "%d", g_state.cc_gain);   return strdup(buf); }
         if (eq(key, "cc_offset"))         { snprintf(buf, sizeof buf, "%d", g_state.cc_offset); return strdup(buf); }
+        if (eq(key, "video_scale"))       { snprintf(buf, sizeof buf, "%d", g_state.video_scale_pct); return strdup(buf); }
     }
     return NULL;
 }
@@ -140,6 +148,8 @@ static void persist(void) {
     cJSON_AddBoolToObject(cc, "enabled", g_state.cc_enabled ? 1 : 0);
     cJSON_AddNumberToObject(cc, "gain", g_state.cc_gain);
     cJSON_AddNumberToObject(cc, "offset", g_state.cc_offset);
+    cJSON *disp = cJSON_AddObjectToObject(root, "display");
+    cJSON_AddNumberToObject(disp, "videoScalePct", g_state.video_scale_pct);
 
     char *txt = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -197,6 +207,10 @@ void pp_runtime_cfg_set(const char *domain, const char *page,
         } else if (eq(key, "cc_offset")) {
             g_state.cc_offset = atoi(value);
             apply_colortrans();
+        } else if (eq(key, "video_scale")) {
+            g_state.video_scale_pct = atoi(value);
+            if (g_ops && g_ops->set_video_scale)
+                g_ops->set_video_scale(g_state.video_scale_pct / 100.0f);
         }
     }
     persist();

@@ -374,21 +374,17 @@ TEST_CASE("endpoint: routing helpers map AIR and GS trees", "[fpvd][endpoint]") 
 
 TEST_CASE("keymap: pixelpilot rows route to EP_GS as staged rows", "[fpvd][keymap]") {
     const fpvd_keymap_entry_t *e;
-    e = fpvd_keymap_lookup("gs", "display", "video_scale");
+    // screen_mode is the only remaining staged pixelpilot row.
+    e = fpvd_keymap_lookup("gs", "display", "screen_mode");
     REQUIRE(e != nullptr);
     REQUIRE(e->endpoint == FPVD_EP_GS);
     REQUIRE(e->kind == FPVD_ROW_STAGED);
-    REQUIRE(std::strcmp(e->path, "pixelpilot.videoScale") == 0);
-    REQUIRE(e->type == FPVD_T_PERCENT_TO_FRAC);
-
-    e = fpvd_keymap_lookup("gs", "display", "screen_mode");
-    REQUIRE(e != nullptr);
     REQUIRE(std::strcmp(e->path, "pixelpilot.screenMode") == 0);
     REQUIRE(e->type == FPVD_T_STRING);
 
-    e = fpvd_keymap_lookup("gs", "display", "rtp_jitter_ms");
-    REQUIRE(e != nullptr);
-    REQUIRE(std::strcmp(e->path, "pixelpilot.rtpJitterMs") == 0);
+    // video_scale now routes to runtime-cfg; rtp_jitter_ms was removed.
+    REQUIRE(fpvd_keymap_lookup("gs", "display", "video_scale") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "display", "rtp_jitter_ms") == nullptr);
 
     // dvr rows are now owned by runtime-cfg, not the fpvd keymap
     REQUIRE(fpvd_keymap_lookup("gs", "dvr", "dvr_reenc_bitrate") == nullptr);

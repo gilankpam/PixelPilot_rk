@@ -115,10 +115,9 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
 
-    /* PixelPilot launch config → fpvd /gs/config (pixelpilot.*); staged, applied on demand */
+    /* PixelPilot launch config → fpvd /gs/config (pixelpilot.*). screen_mode is
+     * the only staged row left; it self-applies on change (see prov_set_async). */
     { "gs",  "display", "screen_mode",      "pixelpilot.screenMode",          FPVD_T_STRING,          FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "display", "video_scale",      "pixelpilot.videoScale",          FPVD_T_PERCENT_TO_FRAC, FPVD_EP_GS, FPVD_ROW_STAGED },
-    { "gs",  "display", "rtp_jitter_ms",    "pixelpilot.rtpJitterMs",         FPVD_T_INT,             FPVD_EP_GS, FPVD_ROW_STAGED },
 };
 
 static const size_t KEYMAP_N = sizeof(KEYMAP) / sizeof(KEYMAP[0]);
@@ -893,7 +892,26 @@ static void prov_set_async(const char *d, const char *p, const char *k,
         if (dlink_on) { schedule_done(cb, ud, -1, "Locked by Dynamic Link"); return; }
     }
     pthread_mutex_lock(&G.mu);
-    enqueue_locked(e, v, cb, ud);
+    if (e->kind == FPVD_ROW_STAGED) {
+        /* No manual Apply button anymore: a staged change (screen_mode is the
+         * only staged row) self-applies. Stage the value, then enqueue an
+         * apply-only job (POST /apply -> pixelpilot restart). The completion cb
+         * rides the apply job; the set itself carries none. */
+        enqueue_locked(e, v, NULL, NULL);
+        if (G.queue_n < FPVD_QUEUE_CAP) {
+            fpvd_job_t *j = &G.queue[G.queue_n++];
+            memset(j, 0, sizeof *j);
+            j->endpoint   = FPVD_EP_GS;
+            j->kind       = FPVD_ROW_STAGED;
+            j->apply_only = true;
+            j->on_done    = cb;
+            j->user_data  = ud;
+        } else {
+            schedule_done(cb, ud, -1, "Settings queue full");
+        }
+    } else {
+        enqueue_locked(e, v, cb, ud);
+    }
     pthread_cond_signal(&G.cv);
     pthread_mutex_unlock(&G.mu);
 }

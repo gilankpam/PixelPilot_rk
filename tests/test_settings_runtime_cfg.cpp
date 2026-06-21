@@ -24,6 +24,7 @@ TEST_CASE("defaults are the documented built-ins") {
     REQUIRE(c.cc_enabled == 0);
     REQUIRE(c.cc_gain == 25);
     REQUIRE(c.cc_offset == -15);
+    REQUIRE(c.video_scale_pct == 100);
 }
 
 TEST_CASE("load missing file yields defaults and returns false") {
@@ -37,7 +38,8 @@ TEST_CASE("load missing file yields defaults and returns false") {
 TEST_CASE("load reads all fields") {
     std::string p = write_tmp(
         "{\"dvr\":{\"mode\":\"both\",\"maxSizeMb\":8000,\"reencBitrateKbps\":12000},"
-        "\"colorCorrection\":{\"enabled\":true,\"gain\":30,\"offset\":-20}}");
+        "\"colorCorrection\":{\"enabled\":true,\"gain\":30,\"offset\":-20},"
+        "\"display\":{\"videoScalePct\":75}}");
     pp_runtime_cfg_set_path(p.c_str());
     pp_runtime_cfg_t c;
     REQUIRE(pp_runtime_cfg_load(&c) == true);
@@ -47,6 +49,7 @@ TEST_CASE("load reads all fields") {
     REQUIRE(c.cc_enabled == 1);
     REQUIRE(c.cc_gain == 30);
     REQUIRE(c.cc_offset == -20);
+    REQUIRE(c.video_scale_pct == 75);
     remove(p.c_str());
 }
 
@@ -88,6 +91,7 @@ TEST_CASE("owns matches exactly the six keys") {
     REQUIRE(pp_runtime_cfg_owns("gs", "display", "color_correction"));
     REQUIRE(pp_runtime_cfg_owns("gs", "display", "cc_gain"));
     REQUIRE(pp_runtime_cfg_owns("gs", "display", "cc_offset"));
+    REQUIRE(pp_runtime_cfg_owns("gs", "display", "video_scale"));
     REQUIRE_FALSE(pp_runtime_cfg_owns("gs", "display", "screen_mode"));
     REQUIRE_FALSE(pp_runtime_cfg_owns("gs", "dvr", "rec_enabled"));
     REQUIRE_FALSE(pp_runtime_cfg_owns("air", "camera", "fps"));
@@ -112,6 +116,7 @@ TEST_CASE("get returns widget-format strings from the loaded file") {
     chk("gs", "display", "color_correction", "on");
     chk("gs", "display", "cc_gain", "30");
     chk("gs", "display", "cc_offset", "-20");
+    chk("gs", "display", "video_scale", "100");   /* absent in file -> default */
     REQUIRE(pp_runtime_cfg_get("gs", "display", "screen_mode") == nullptr);
     remove(p.c_str());
 }
@@ -121,6 +126,7 @@ struct FakeOps {
     int mode = -1, max_mb = -1, kbps = -1;
     int cc_enabled = -1; float cc_gain = -1, cc_offset = -1;
     int recording = 0;
+    float vscale = -1;
 };
 static FakeOps g_fake;
 static void f_mode(int m)      { g_fake.mode = m; }
@@ -128,9 +134,10 @@ static void f_max(int mb)      { g_fake.max_mb = mb; }
 static void f_kbps(int k)      { g_fake.kbps = k; }
 static void f_cc(int e, float g, float o) { g_fake.cc_enabled = e; g_fake.cc_gain = g; g_fake.cc_offset = o; }
 static int  f_rec(void)        { return g_fake.recording; }
+static void f_vscale(float fct){ g_fake.vscale = fct; }
 
 static void install_fake_ops() {
-    static pp_runtime_cfg_ops_t ops = { f_mode, f_max, f_kbps, f_cc, f_rec };
+    static pp_runtime_cfg_ops_t ops = { f_mode, f_max, f_kbps, f_cc, f_rec, f_vscale };
     pp_runtime_cfg_set_ops(&ops);
 }
 
@@ -159,6 +166,9 @@ TEST_CASE("set applies via ops and persists to disk") {
     pp_runtime_cfg_set("gs", "display", "color_correction", "on");
     REQUIRE(g_fake.cc_enabled == 1);
 
+    pp_runtime_cfg_set("gs", "display", "video_scale", "75");
+    REQUIRE(g_fake.vscale == 0.75f);   /* pct mapped /100 */
+
     /* Persisted: reload from a fresh path-reset and confirm round-trip. */
     pp_runtime_cfg_set_path(p.c_str());
     pp_runtime_cfg_t r; REQUIRE(pp_runtime_cfg_load(&r) == true);
@@ -167,6 +177,7 @@ TEST_CASE("set applies via ops and persists to disk") {
     REQUIRE(r.dvr_reenc_kbps == 16000);
     REQUIRE(r.cc_gain == 30);
     REQUIRE(r.cc_enabled == 1);
+    REQUIRE(r.video_scale_pct == 75);
     remove(p.c_str());
     pp_runtime_cfg_set_ops(NULL);
 }

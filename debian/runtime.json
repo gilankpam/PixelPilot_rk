@@ -1,4 +1,5 @@
 {
   "dvr": { "mode": "raw", "maxSizeMb": 4000, "reencBitrateKbps": 8000 },
-  "colorCorrection": { "enabled": false, "gain": 25, "offset": -15 }
+  "colorCorrection": { "enabled": false, "gain": 25, "offset": -15 },
+  "display": { "videoScalePct": 100 }
 }

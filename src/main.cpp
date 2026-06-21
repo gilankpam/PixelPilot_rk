@@ -1401,9 +1401,11 @@ int main(int argc, char **argv)
 		enable_live_colortrans = rc.cc_enabled ? true : false;
 		live_colortrans_gain   = rc.cc_gain   / 10.0f;
 		live_colortrans_offset = rc.cc_offset / 100.0f;
-		spdlog::info("runtime.json {}: dvr_mode={} maxMB={} reencKbps={} cc={} gain={} offset={}",
+		video_scale_factor     = rc.video_scale_pct / 100.0f;
+		spdlog::info("runtime.json {}: dvr_mode={} maxMB={} reencKbps={} cc={} gain={} offset={} vscale={}",
 		             loaded ? "loaded" : "defaulted", rc.dvr_mode, rc.dvr_max_size_mb,
-		             rc.dvr_reenc_kbps, rc.cc_enabled, live_colortrans_gain, live_colortrans_offset);
+		             rc.dvr_reenc_kbps, rc.cc_enabled, live_colortrans_gain, live_colortrans_offset,
+		             video_scale_factor);
 	}
 
 	spdlog::info("disable_vsync: {}", disable_vsync);
@@ -1446,6 +1448,7 @@ int main(int argc, char **argv)
 		dvr_reenc_set_bitrate,
 		pp_colortrans_apply,
 		dvr_is_recording,
+		drm_set_video_scale,
 	};
 	pp_runtime_cfg_set_ops(&k_runtime_cfg_ops);
 

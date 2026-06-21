@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-/* The six hot-reloadable settings, in menu-scale units. */
+/* The hot-reloadable settings, in menu-scale units. */
 typedef struct {
     int dvr_mode;        /* 0=raw, 1=reencode, 2=both */
     int dvr_max_size_mb; /* megabytes */
@@ -15,6 +15,7 @@ typedef struct {
     int cc_enabled;      /* 0/1 */
     int cc_gain;         /* 0..50   (shader gain   = cc_gain / 10.0)  */
     int cc_offset;       /* -50..50 (shader offset = cc_offset / 100.0) */
+    int video_scale_pct; /* 50..100 (drm factor = video_scale_pct / 100.0) */
 } pp_runtime_cfg_t;
 
 /* Apply backend. The device build registers real functions; the simulator and
@@ -25,6 +26,7 @@ typedef struct {
     void (*dvr_reenc_set_bitrate)(int kbps);
     void (*colortrans_apply)(int enabled, float gain, float offset);
     int  (*is_recording)(void);
+    void (*set_video_scale)(float factor);
 } pp_runtime_cfg_ops_t;
 
 /* Override the JSON path (default "/etc/pixelpilot/runtime.json"). */

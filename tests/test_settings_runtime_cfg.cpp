@@ -70,6 +70,17 @@ TEST_CASE("load on malformed json returns false and fills defaults") {
     remove(p.c_str());
 }
 
+TEST_CASE("owns is NULL-safe (pp_row_text passes NULL domain/page)") {
+    /* Regression: prov_get/is_available/is_locked call pp_runtime_cfg_owns first,
+     * and the menu invokes the provider with NULL domain/page for non-settings
+     * text rows (pp_row_text). owns must answer false, not dereference.
+     * This crashed the OSD thread on device (build_system_tab -> pp_row_text). */
+    REQUIRE_FALSE(pp_runtime_cfg_owns(nullptr, nullptr, nullptr));
+    REQUIRE_FALSE(pp_runtime_cfg_owns(nullptr, nullptr, "Version"));
+    REQUIRE_FALSE(pp_runtime_cfg_owns("gs", nullptr, "dvr_mode"));
+    REQUIRE_FALSE(pp_runtime_cfg_owns("gs", "dvr", nullptr));
+}
+
 TEST_CASE("owns matches exactly the six keys") {
     REQUIRE(pp_runtime_cfg_owns("gs", "dvr", "dvr_mode"));
     REQUIRE(pp_runtime_cfg_owns("gs", "dvr", "dvr_max_size"));

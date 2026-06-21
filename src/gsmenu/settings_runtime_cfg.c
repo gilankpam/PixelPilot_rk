@@ -94,6 +94,10 @@ static void ensure_primed(void) {
 static bool eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
 bool pp_runtime_cfg_owns(const char *domain, const char *page, const char *key) {
+    /* NULL-safe: pp_row_text() reads rows with NULL domain/page (non-settings
+     * text rows), relying on the provider answering "not owned" rather than
+     * dereferencing. Mirrors fpvd_keymap_lookup's contract. */
+    if (!domain || !page || !key) return false;
     if (!eq(domain, "gs")) return false;
     if (eq(page, "dvr"))
         return eq(key, "dvr_mode") || eq(key, "dvr_max_size") || eq(key, "dvr_reenc_bitrate");

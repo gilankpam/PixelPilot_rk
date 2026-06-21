@@ -1,5 +1,6 @@
 #include "rtp_video_receiver.h"
 #include "latency_probe.hpp"
+#include "osd.h"
 #include "spdlog/spdlog.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -18,6 +19,7 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <stdexcept>
 #if defined(__linux__)
 #include <sys/random.h>
@@ -790,6 +792,20 @@ void RtpVideoReceiver::recv_loop() {
         const bool marker = (rtp[1] & 0x80) != 0;
         const uint32_t ts = (uint32_t(rtp[4]) << 24) | (uint32_t(rtp[5]) << 16) |
                             (uint32_t(rtp[6]) << 8) | uint32_t(rtp[7]);
+
+        // RFC 3550 interarrival jitter, per frame-marker. Computed here (not in
+        // latency_probe) so the OSD JITTER tile is live whenever video flows,
+        // regardless of whether the latency probe is enabled.
+        if (marker) {
+            const uint32_t ssrc = (uint32_t(rtp[8]) << 24) | (uint32_t(rtp[9]) << 16) |
+                                  (uint32_t(rtp[10]) << 8) | uint32_t(rtp[11]);
+            const uint64_t recv_us = uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            const double jms = m_jitter.update(ssrc, ts, recv_us);
+            osd_publish_uint_fact("video.rtp_jitter_ms", nullptr, 0,
+                                  (unsigned long)std::llround(jms));
+        }
+
         m_depay.on_payload(rtp + RTP_HEADER_LEN, len - RTP_HEADER_LEN, marker, ts);
 
         tick_stream_presence();

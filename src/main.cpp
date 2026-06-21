@@ -65,6 +65,7 @@ extern "C" {
 #include "gsmenu/osd_air_bridge.h"
 #include "gsmenu/settings_runtime_cfg.h"
 #include "menu.h"
+#include "conn_state.h"
 
 
 #define READ_BUF_SIZE (1024*1024) // SZ_1M https://github.com/rockchip-linux/mpp/blob/ed377c99a733e2cdbcc457a6aa3f0fcd438a9dff/osal/inc/mpp_common.h#L179
@@ -1640,6 +1641,7 @@ int main(int argc, char **argv)
 	drmModeFreeCrtc(output_list->saved_crtc);
 	drmModeAtomicFree(output_list->video_request);
 	drmModeAtomicFree(output_list->osd_request);
+	conn_state_stop();
 	gamma_lut_cleanup(&lut_ctrl);
 	modeset_cleanup(drm_fd, output_list);
 	close(drm_fd);

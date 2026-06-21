@@ -254,6 +254,7 @@ if(USE_SIMULATOR)
       src/gsmenu/settings_fpvd.c
       src/gsmenu/settings_gs_enum.c
       src/gsmenu/settings_runtime_cfg.c
+      src/conn_state.c
       ${PP_CJSON_SOURCES}
       tests/test_settings_fpvd.cpp
       tests/test_settings_fpvd_integration.cpp)
@@ -285,6 +286,16 @@ if(USE_SIMULATOR)
       ${PP_CJSON_INC})
     target_link_libraries(runtime_cfg_tests
       Catch2::Catch2WithMain)
+
+    add_executable(conn_state_tests
+      src/conn_state.c
+      ${PP_CJSON_SOURCES}
+      tests/test_conn_state.cpp)
+    target_include_directories(conn_state_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PP_CJSON_INC})
+    target_link_libraries(conn_state_tests
+      Catch2::Catch2WithMain CURL::libcurl pthread)
 
     add_executable(aio_logic_tests
       src/osd_aio_logic.cpp
@@ -426,6 +437,7 @@ else()
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
       src/gsmenu/settings_fpvd.c
+      src/conn_state.c
       src/gsmenu/settings_runtime_cfg.c
       src/gsmenu/osd_air_bridge.h
       src/gsmenu/osd_air_bridge.c

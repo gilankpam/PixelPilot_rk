@@ -7,7 +7,7 @@
 namespace aio {
 
 enum class Band { Good, Warn, Crit, Neutral };
-enum class Metric { Link, Bitrate, Latency, Rssi, Snr };
+enum class Metric { Link, Bitrate, Latency, Rssi, Snr, Jitter };
 enum class Scheme { Accent, White };
 
 struct Rgba {

@@ -48,12 +48,14 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
               "gs", "dlink", "flightlog_enabled");
 
     pp_section_header(page, "Compute");
+    /* Stored as a ratio (e.g. 0.5) but shown as a percent (50 %): raw is the
+     * percent, the wire value is raw/100. */
     static const pp_slider_cfg_t redundancy_cfg = {
-        .raw_min = 1, .raw_max = 20, .step = 1, .fine_step = 0,
-        .fine_threshold = 0, .disp_div = 10, .decimals = 1,
-        .unit = NULL, .serialize = PP_SER_FLOAT_DIV,
+        .raw_min = 10, .raw_max = 200, .step = 10, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1, .decimals = 0,
+        .unit = "%", .serialize = PP_SER_FLOAT_PCT,
     };
-    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Base Redundancy Ratio",
+    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Base Redundancy",
                  "air", "dlink", "compute_base_redundancy", &redundancy_cfg);
     static const pp_slider_cfg_t blocks_cfg = {
         .raw_min = 1, .raw_max = 16, .step = 1, .fine_step = 0,

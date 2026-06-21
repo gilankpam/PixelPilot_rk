@@ -85,7 +85,7 @@ TEST_CASE("Dynamic Link page keeps the Compute rows", "[dynamiclink]") {
     lv_obj_t *scr = setup_screen();
     lv_obj_t *page = build_dynamiclink_tab(scr);
 
-    REQUIRE(subtree_has_label(page, "Base Redundancy Ratio"));
+    REQUIRE(subtree_has_label(page, "Base Redundancy"));
     REQUIRE(subtree_has_label(page, "Blocks / Frame"));
     REQUIRE(subtree_has_label(page, "Min Bitrate"));
     REQUIRE(subtree_has_label(page, "Max Bitrate"));

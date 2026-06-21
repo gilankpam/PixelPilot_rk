@@ -6,7 +6,18 @@
 extern "C" {
 #endif
 
-typedef enum { PP_SER_INT = 0, PP_SER_FLOAT_DIV = 1 } pp_slider_ser_t;
+/* Wire serialization of the raw value:
+ *   PP_SER_INT       => "%d" of raw.
+ *   PP_SER_FLOAT_DIV => raw/disp_div (wire == display).
+ *   PP_SER_FLOAT_PCT => raw/100 as a trimmed float (a ratio), while the
+ *                       display stays raw/disp_div. Use for a field stored as
+ *                       a ratio (e.g. 0.5) but shown as a percent (50 %):
+ *                       raw is the percent, disp_div=1/decimals=0/unit="%". */
+typedef enum {
+    PP_SER_INT = 0,
+    PP_SER_FLOAT_DIV = 1,
+    PP_SER_FLOAT_PCT = 2,
+} pp_slider_ser_t;
 
 /* Slider value model: an integer "raw" value. Display value = raw/disp_div
  * with `decimals` places (trailing zeros trimmed). Stepping is `step`, or

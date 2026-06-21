@@ -8,6 +8,38 @@
 #include "../widgets/pp_drilldown.h"
 #include "../widgets/pp_toast.h"
 #include "../settings.h"
+#include "../settings_runtime_cfg.h"
+#include "../helper.h"
+#include <stdlib.h>
+
+/* ---- Recording-watch timer: re-apply row lock when DVR starts/stops ----
+ * Recording is toggled out-of-band (SIGUSR1), not through the settings
+ * snapshot, so nothing else re-evaluates row lock state.  A 500 ms timer
+ * polls the in-process flag and calls pp_page_reapply_lock_state only when
+ * the flag changes.  The page user_data is owned by pp_page_data_t (in
+ * pp_page.c), so we keep our own context struct in the timer user_data and
+ * free it via LV_EVENT_DELETE on the page. */
+typedef struct {
+    lv_obj_t  *page;
+    lv_timer_t *timer;
+    int        last;
+} rec_watch_ctx_t;
+
+static void rec_watch_timer_cb(lv_timer_t *t) {
+    rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)lv_timer_get_user_data(t);
+    int now = pp_runtime_cfg_is_recording() ? 1 : 0;
+    if (ctx->last != now) {
+        ctx->last = now;
+        pp_page_reapply_lock_state(ctx->page);
+    }
+}
+
+static void rec_watch_page_delete_cb(lv_event_t *e) {
+    rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)lv_event_get_user_data(e);
+    if (!ctx) return;
+    lv_timer_delete(ctx->timer);
+    free(ctx);
+}
 
 /* ---- DVR playback drilldown (read-only stub, unchanged from dvr.c) ---- */
 static void build_playback_drilldown(lv_obj_t *body, void *user) {
@@ -88,5 +120,17 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
             lv_group_add_obj(grp, c);
         }
     }
+
+    /* Drive recording-aware lock state for the DVR rows.  We can't use
+     * lv_obj_set_user_data(page, ...) because pp_page.c already owns it
+     * for pp_page_data_t, so the context lives in the timer user_data and
+     * is freed by the LV_EVENT_DELETE handler below. */
+    rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)malloc(sizeof(*ctx));
+    ctx->page  = page;
+    ctx->last  = pp_runtime_cfg_is_recording() ? 1 : 0;
+    ctx->timer = lv_timer_create(rec_watch_timer_cb, 500, ctx);
+    lv_obj_add_event_cb(page, rec_watch_page_delete_cb, LV_EVENT_DELETE, ctx);
+    pp_page_reapply_lock_state(page);   /* initial state */
+
     return page;
 }

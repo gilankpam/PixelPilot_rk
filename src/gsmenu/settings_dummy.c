@@ -87,13 +87,11 @@ static const dummy_entry_t g_seed[] = {
     /* Display */
     { "video_scale",      "100" },
     { "screen_mode",      "1920x1080@60" },
-    { "rtp_jitter_ms",    "5" },
     { "color_correction", "off" },
     { "cc_gain",          "25" },
     { "cc_offset",        "0" },
 
     /* DVR (kept) */
-    { "rec_enabled",          "on" },
     { "dvr_mode",             "reencode" },
     { "dvr_max_size",         "4000" },
     { "dvr_reenc_bitrate",    "8000" },

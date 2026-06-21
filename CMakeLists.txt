@@ -96,6 +96,7 @@ set(SIMULATOR_SOURCES
         src/gsmenu/settings_stub.c
         src/gsmenu/settings_dummy.c
         src/gsmenu/settings_gs_enum.c
+        src/gsmenu/settings_runtime_cfg.c
         third_party/cjson/cJSON.c
         src/lvosd.h
         src/lvosd.c
@@ -252,6 +253,7 @@ if(USE_SIMULATOR)
       src/gsmenu/settings.c
       src/gsmenu/settings_fpvd.c
       src/gsmenu/settings_gs_enum.c
+      src/gsmenu/settings_runtime_cfg.c
       ${PP_CJSON_SOURCES}
       tests/test_settings_fpvd.cpp
       tests/test_settings_fpvd_integration.cpp)
@@ -272,6 +274,17 @@ if(USE_SIMULATOR)
       ${PP_CJSON_INC})
     target_link_libraries(gs_enum_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
+
+    add_executable(runtime_cfg_tests
+      src/gsmenu/settings_runtime_cfg.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_runtime_cfg.cpp)
+    target_include_directories(runtime_cfg_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR}/src/gsmenu
+      ${PP_CJSON_INC})
+    target_link_libraries(runtime_cfg_tests
+      Catch2::Catch2WithMain)
 
     add_executable(aio_logic_tests
       src/osd_aio_logic.cpp
@@ -413,6 +426,7 @@ else()
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
       src/gsmenu/settings_fpvd.c
+      src/gsmenu/settings_runtime_cfg.c
       src/gsmenu/osd_air_bridge.h
       src/gsmenu/osd_air_bridge.c
       third_party/cjson/cJSON.c
@@ -533,5 +547,8 @@ install(FILES ${OSD_CONFIGS}
     DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/${PROJECT_NAME}
 )
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/pixelpilot.yaml
+    DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/${PROJECT_NAME}
+)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/debian/runtime.json
     DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/${PROJECT_NAME}
 )

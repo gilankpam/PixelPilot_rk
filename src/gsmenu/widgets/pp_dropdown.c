@@ -4,6 +4,7 @@
 #include "../styles.h"
 #include "../settings.h"
 #include "../../input.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -22,12 +23,31 @@ struct pp_dd_data {
     lv_obj_t *popup;            /* floating options list while in EDIT */
     uint16_t saved_sel;
     bool      in_flight;
+    char     *unit;             /* display-only suffix (NULL => none) */
+    int       disp_div;         /* display = atoi(option)/disp_div (>=1) */
 };
+
+/* Format a raw option string for DISPLAY only. The stored/matched value stays
+ * the raw option (e.g. "8000"); the user sees e.g. "8 Mbps" when unit/disp_div
+ * are set. */
+static void dd_fmt_display(const pp_dd_data_t *d, const char *raw,
+                           char *out, size_t n) {
+    if (d->unit && d->unit[0]) {
+        if (d->disp_div > 1)
+            snprintf(out, n, "%g %s", (double)atoi(raw) / d->disp_div, d->unit);
+        else
+            snprintf(out, n, "%s %s", raw, d->unit);
+    } else {
+        snprintf(out, n, "%s", raw);
+    }
+}
 
 struct dropdown_ctx {
     pp_dd_data_t *d;
     uint16_t      target_sel;
 };
+
+static void refresh_label(pp_dd_data_t *d);
 
 static void dropdown_done_cb(int rc, const char *err, void *user_data) {
     struct dropdown_ctx *ctx = (struct dropdown_ctx *)user_data;
@@ -36,10 +56,7 @@ static void dropdown_done_cb(int rc, const char *err, void *user_data) {
     d->in_flight = false;
     if (rc == 0) {
         lv_dropdown_set_selected(d->dd, ctx->target_sel);
-        /* refresh the value label using the existing helper. */
-        char buf[64];
-        lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
-        lv_label_set_text(d->value_label, buf);
+        refresh_label(d);
     } else {
         pp_toast_error(err ? err : "Failed to apply dropdown");
         /* Selection already at saved_sel — we never moved it. */
@@ -53,14 +70,16 @@ static void on_delete(lv_event_t *e) {
     pp_dd_data_t *d = lv_event_get_user_data(e);
     if (d) {
         popup_close(d);
-        free(d->domain); free(d->page); free(d->key); free(d->label); free(d);
+        free(d->domain); free(d->page); free(d->key); free(d->label);
+        free(d->unit); free(d);
     }
 }
 
 static void refresh_label(pp_dd_data_t *d) {
-    char buf[64];
-    lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
-    lv_label_set_text(d->value_label, buf);
+    char raw[64], disp[80];
+    lv_dropdown_get_selected_str(d->dd, raw, sizeof raw);
+    dd_fmt_display(d, raw, disp, sizeof disp);
+    lv_label_set_text(d->value_label, disp);
 }
 
 static void popup_open(pp_dd_data_t *d) {
@@ -125,9 +144,10 @@ static void popup_open(pp_dd_data_t *d) {
     uint16_t saved = d->saved_sel;
     uint16_t n     = lv_dropdown_get_option_count(d->dd);
     for (uint16_t i = 0; i < n; i++) {
-        char buf[64];
+        char raw[64], buf[80];
         lv_dropdown_set_selected(d->dd, i);
-        lv_dropdown_get_selected_str(d->dd, buf, sizeof buf);
+        lv_dropdown_get_selected_str(d->dd, raw, sizeof raw);
+        dd_fmt_display(d, raw, buf, sizeof buf);
 
         lv_obj_t *item = lv_obj_create(p);
         lv_obj_remove_style_all(item);
@@ -294,10 +314,10 @@ static void on_key(lv_event_t *e) {
     if (consumed) lv_event_stop_bubbling(e);
 }
 
-lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
+static lv_obj_t *dropdown_make(lv_obj_t *parent_page,
                      const char *icon_text, const char *label,
                      const char *domain, const char *page, const char *key,
-                     const char *options) {
+                     const char *options, const char *unit, int disp_div) {
     lv_obj_t *row = lv_obj_create(parent_page);
     lv_obj_remove_style_all(row);
     lv_obj_add_style(row, &pp_style_row, 0);
@@ -340,6 +360,8 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     d->dd     = dd;
     d->value_label = value_label;
     d->row    = row;
+    d->unit   = (unit && unit[0]) ? strdup(unit) : NULL;
+    d->disp_div = disp_div > 1 ? disp_div : 1;
     lv_obj_set_user_data(row, d);
     lv_obj_add_event_cb(row, on_delete, LV_EVENT_DELETE, d);
     lv_obj_add_event_cb(row, on_key,    LV_EVENT_KEY,    d);
@@ -371,4 +393,20 @@ lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
     }
 
     return row;
+}
+
+lv_obj_t *pp_dropdown(lv_obj_t *parent_page,
+                     const char *icon_text, const char *label,
+                     const char *domain, const char *page, const char *key,
+                     const char *options) {
+    return dropdown_make(parent_page, icon_text, label, domain, page, key,
+                         options, NULL, 1);
+}
+
+lv_obj_t *pp_dropdown_units(lv_obj_t *parent_page,
+                     const char *icon_text, const char *label,
+                     const char *domain, const char *page, const char *key,
+                     const char *options, const char *unit, int disp_div) {
+    return dropdown_make(parent_page, icon_text, label, domain, page, key,
+                         options, unit, disp_div);
 }

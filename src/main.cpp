@@ -63,6 +63,7 @@ extern "C" {
 #include "latency_probe.hpp"
 #include "gsmenu/settings.h"
 #include "gsmenu/osd_air_bridge.h"
+#include "gsmenu/settings_runtime_cfg.h"
 #include "menu.h"
 
 
@@ -719,6 +720,26 @@ extern "C" {
     void dvr_reenc_set_mode(int enabled) {
         dvr_set_mode(enabled ? DVR_MODE_REENCODE : DVR_MODE_RAW);
     }
+
+    // Unified live color-correction apply: live display (DRM gamma LUT) + the
+    // re-encode pipeline. gain/offset are the shader-space floats.
+    void pp_colortrans_apply(int enabled, float gain, float offset) {
+        enable_live_colortrans = enabled ? true : false;
+        live_colortrans_gain   = gain;
+        live_colortrans_offset = offset;
+        // Live display: push/clear the CRTC gamma LUT. The display thread reads
+        // enable_live_colortrans per frame (main.cpp ~424) and swaps the OSD
+        // compositing path automatically.
+        if (enabled) gamma_lut_enable(&lut_ctrl, offset, gain);
+        else         gamma_lut_disable(&lut_ctrl);
+        // Re-encode pipeline (only exists when a reencode/both mode is active).
+        if (frame_proc) {
+            if (enabled) frame_proc->set_color_correction(gain, offset, drm_fd);
+            else         frame_proc->set_color_correction_enabled(false);
+        }
+    }
+
+    int dvr_is_recording(void) { return dvr_enabled; }
 }
 
 int decoder_stalled_count=0;
@@ -1018,15 +1039,7 @@ void printHelp() {
     "\n"
     "    --dvr-sequenced-files  - Prepend a sequence number to the names of the dvr files\n"
     "\n"
-    "    --dvr-start            - Start DVR immediately\n"
-    "\n"
-    "    --dvr-max-size <MB>    - Split DVR files at <MB> megabytes (Default: 4000, for VFAT)\n"
-    "\n"
     "    --dvr-fmp4             - Save the video feed as a fragmented mp4\n"
-    "\n"
-    "    --dvr-mode <mode>      - DVR recording mode: raw, reencode, or both (Default: raw)\n"
-    "\n"
-    "    --dvr-reenc-bitrate <k>- Re-encode bitrate in kbps       (Default: 8000)\n"
     "\n"
     "    --screen-mode <mode>   - Override default screen mode. <width>x<heigth>@<fps> ex: 1920x1080@120\n"
     "\n"
@@ -1039,8 +1052,6 @@ void printHelp() {
     "    --disable-vsync        - Disable VSYNC commits\n"
     "\n"
     "    --disable-gregidr      - Disable last-hop probing and IDR requests\n"
-    "\n"
-    "    --live-colortrans      - Apply colortrans LUT to live display via DRM gamma\n"	
     "\n"
     "    --screen-mode-list     - Print the list of supported screen modes and exit.\n"
     "\n"
@@ -1063,7 +1074,6 @@ int main(int argc, char **argv)
 	int i, j;
 	int mavlink_thread = 0;
 	int print_modelist = 0;
-	int dvr_autostart = 0;
 	uint16_t wfb_port = 8003;
 	const char *wfb_api_host = "127.0.0.1";
 	uint16_t mode_width = 0;
@@ -1113,11 +1123,6 @@ int main(int argc, char **argv)
 		continue;
 	}
 
-	__OnArgument("--dvr-start") {
-		dvr_autostart = 1;
-		continue;
-	}
-
 	__OnArgument("--dvr-template") {
 		dvr_template = const_cast<char*>(__ArgValue);
 		continue;
@@ -1128,64 +1133,8 @@ int main(int argc, char **argv)
 		continue;
 	}
 
-	__OnArgument("--dvr-framerate") {
-		(void)__ArgValue;
-		spdlog::warn("--dvr-framerate is deprecated and ignored (raw DVR times from RTP timestamps)");
-		continue;
-	}
-
-	__OnArgument("--dvr-max-size") {
-		int mb = atoi(__ArgValue);
-		if (mb <= 0) {
-			fprintf(stderr, "invalid --dvr-max-size value\n");
-			return -1;
-		}
-		dvr_max_file_size = (int64_t)mb * 1000000LL;
-		continue;
-	}
-
 	__OnArgument("--dvr-fmp4") {
 		mp4_fragmentation_mode = 1;
-		continue;
-	}
-
-	__OnArgument("--dvr-mode") {
-		const char *v = __ArgValue;
-		if (!strcmp(v, "raw")) dvr_mode = DVR_MODE_RAW;
-		else if (!strcmp(v, "reencode")) dvr_mode = DVR_MODE_REENCODE;
-		else if (!strcmp(v, "both")) dvr_mode = DVR_MODE_BOTH;
-		else {
-			fprintf(stderr, "unsupported --dvr-mode (use raw, reencode, or both)\n");
-			return -1;
-		}
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-codec") {
-		(void)__ArgValue;   // deprecated: re-encode codec is always h265
-		spdlog::warn("--dvr-reenc-codec is deprecated and ignored (codec is h265)");
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-bitrate") {
-		reenc_params.bitrate_kbps = atoi(__ArgValue);
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-fps") {
-		(void)__ArgValue;   // deprecated: fps follows input, capped at display refresh
-		spdlog::warn("--dvr-reenc-fps is deprecated and ignored (fps follows input, capped at display refresh)");
-		continue;
-	}
-
-	__OnArgument("--dvr-reenc-resolution") {
-		(void)__ArgValue;   // deprecated: resolution follows the screen mode
-		spdlog::warn("--dvr-reenc-resolution is deprecated and ignored (resolution = screen mode)");
-		continue;
-	}
-
-	__OnArgument("--dvr-osd") {
-		spdlog::warn("--dvr-osd is deprecated and ignored (re-encode always burns in the OSD)");
 		continue;
 	}
 
@@ -1268,11 +1217,6 @@ int main(int argc, char **argv)
 
 	__OnArgument("--screen-mode-list") {
 		print_modelist = 1;
-		continue;
-	}
-
-	__OnArgument("--live-colortrans") {
-		enable_live_colortrans = true;
 		continue;
 	}
 
@@ -1386,6 +1330,24 @@ int main(int argc, char **argv)
 		std::cerr << "Configuration error: " << e.what() << std::endl;
 	}
 
+	// Seed DVR + color-correction globals from the persistent runtime JSON.
+	// JSON is authoritative; the matching CLI flags are deprecated no-ops.
+	{
+		pp_runtime_cfg_t rc;
+		bool loaded = pp_runtime_cfg_load(&rc);
+		dvr_mode               = (DvrMode)rc.dvr_mode;
+		dvr_max_file_size      = (int64_t)rc.dvr_max_size_mb * 1000000LL;
+		reenc_params.bitrate_kbps = rc.dvr_reenc_kbps;
+		enable_live_colortrans = rc.cc_enabled ? true : false;
+		live_colortrans_gain   = rc.cc_gain   / 10.0f;
+		live_colortrans_offset = rc.cc_offset / 100.0f;
+		video_scale_factor     = rc.video_scale_pct / 100.0f;
+		spdlog::info("runtime.json {}: dvr_mode={} maxMB={} reencKbps={} cc={} gain={} offset={} vscale={}",
+		             loaded ? "loaded" : "defaulted", rc.dvr_mode, rc.dvr_max_size_mb,
+		             rc.dvr_reenc_kbps, rc.cc_enabled, live_colortrans_gain, live_colortrans_offset,
+		             video_scale_factor);
+	}
+
 	spdlog::info("disable_vsync: {}", disable_vsync);
 
 	if (enable_osd == 0 ) {
@@ -1419,6 +1381,16 @@ int main(int argc, char **argv)
 	}
 
 	gamma_lut_controller_init(&lut_ctrl, drm_fd, output_list);
+
+	static const pp_runtime_cfg_ops_t k_runtime_cfg_ops = {
+		dvr_set_mode,
+		dvr_set_max_size,
+		dvr_reenc_set_bitrate,
+		pp_colortrans_apply,
+		dvr_is_recording,
+		drm_set_video_scale,
+	};
+	pp_runtime_cfg_set_ops(&k_runtime_cfg_ops);
 
 	if (enable_live_colortrans) {
 		if (gamma_lut_enable(&lut_ctrl, live_colortrans_offset, live_colortrans_gain)) {
@@ -1526,14 +1498,6 @@ int main(int argc, char **argv)
 			spdlog::info("Re-encoding recorder: codec={} fps={} bitrate={}kbps",
 			             reenc_params.codec == VideoCodec::H265 ? "h265" : "h264",
 			             reenc_params.fps, reenc_params.bitrate_kbps);
-		}
-
-		if (dvr_autostart) {
-			dvr_enabled = 1;
-			osd_publish_bool_fact("dvr.recording", NULL, 0, true);
-			if (dvr_raw) dvr_raw->start_recording();
-			if (dvr_reenc_inst) dvr_reenc_inst->start_recording();
-			if (reencoder) reencoder->request_idr();
 		}
 	}
 	ret = pthread_create(&tid_frame, NULL, __FRAME_THREAD__, NULL);

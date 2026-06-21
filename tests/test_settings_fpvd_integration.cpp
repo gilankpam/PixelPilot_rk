@@ -397,27 +397,22 @@ TEST_CASE("integration: /air 2xx marks the drone reachable (no status field)", "
     srv.stop();
 }
 
-TEST_CASE("integration: staged pixelpilot row patches /gs/config without apply", "[fpvd][network]") {
+TEST_CASE("integration: staged screen_mode self-applies (patch + apply)", "[fpvd][network]") {
     GsMockServer srv; srv.start();
     install_provider_pointing_at(srv.port);
 
+    /* screen_mode is the only staged row left, and there is no manual Apply
+     * button: a single set must produce both a /gs/config PATCH and a
+     * POST /gs/apply, then clear pending. */
     DoneWaiter w;
-    pp_settings_set_async("gs", "dvr", "dvr_reenc_bitrate", "4000", DoneWaiter::cb, &w);
+    pp_settings_set_async("gs", "display", "screen_mode", "1280x720@60", DoneWaiter::cb, &w);
     REQUIRE(w.wait());
     REQUIRE(w.rc == 0);
-    REQUIRE(pp_settings_has_pending() == true);
-    REQUIRE(srv.last_gs_patch_body.find("\"reencBitrate\":4000") != std::string::npos);
-    for (auto &l : srv.snapshot_log()) REQUIRE(l != "POST /gs/apply");
-
-    /* Explicit apply commits and clears pending. */
-    DoneWaiter wa;
-    pp_settings_apply(DoneWaiter::cb, &wa);
-    REQUIRE(wa.wait());
-    REQUIRE(wa.rc == 0);
-    REQUIRE(pp_settings_has_pending() == false);
+    REQUIRE(srv.last_gs_patch_body.find("\"screenMode\":\"1280x720@60\"") != std::string::npos);
     int applies = 0;
     for (auto &l : srv.snapshot_log()) if (l == "POST /gs/apply") applies++;
     REQUIRE(applies == 1);
+    REQUIRE(pp_settings_has_pending() == false);
     srv.stop();
 }
 

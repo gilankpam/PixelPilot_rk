@@ -71,10 +71,6 @@ pixelpilot-rk - OpenIPC video display client for wfb-ng
 
     --dvr-sequenced-files  - Prepend a sequence number to the names of the dvr files
 
-    --dvr-start            - Start DVR immediately
-
-    --dvr-framerate <rate> - Force the dvr framerate for smoother dvr, ex: 60
-
     --dvr-fmp4             - Save the video feed as a fragmented mp4
 
     --screen-mode <mode>   - Override default screen mode. <width>x<heigth>@<fps> ex: 1920x1080@120
@@ -149,12 +145,6 @@ a complete description, see the **info**(1) files.
 
 **--dvr-sequenced-files**
 : Prepend a sequence number to the names of the dvr files
-
-**--dvr-start**
-: Start DVR immediately
-
-**--dvr-framerate \<rate\>**
-: Force the dvr framerate for smoother dvr, ex: 60
 
 **--dvr-fmp4**
 : Save the video feed as a fragmented mp4

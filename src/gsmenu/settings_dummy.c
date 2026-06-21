@@ -161,7 +161,7 @@ static void dummy_fire_listener(void) {
  * Mirrors the LOCKED_PATHS list in settings_fpvd.c at the UI-key level. */
 static const char *g_dummy_locked_keys[] = {
     "mcs_index", "txpower", "fec_k", "fec_n",
-    "fec_mode", "fec_deadline_ms", "fec_overhead_pct",
+    "fec_deadline_ms", "fec_overhead_pct",
     "bandwidth", /* link.width */
     "bitrate",
     "qp_delta",
@@ -187,6 +187,19 @@ static bool dummy_is_locked(const char *d, const char *p, const char *k) {
     const char *enabled = find_value("enabled");
     bool dlink_on = enabled && strcmp(enabled, "on") == 0;
     if (!dlink_on) return false;
+
+    const char *mode = find_value("fec_mode");
+    bool swfec = mode && strcmp(mode, "swfec") == 0;
+
+    /* swfec: deadline/overhead become editable; the compute redundancy/blocks
+     * knobs become locked. Mirrors dl_locks_field() in settings_fpvd.c. */
+    if (swfec && (strcmp(k, "fec_deadline_ms") == 0 ||
+                  strcmp(k, "fec_overhead_pct") == 0))
+        return false;
+    if (swfec && (strcmp(k, "compute_base_redundancy") == 0 ||
+                  strcmp(k, "compute_blocks_per_frame") == 0))
+        return true;
+
     for (size_t i = 0; i < sizeof(g_dummy_locked_keys)/sizeof(g_dummy_locked_keys[0]); i++) {
         if (strcmp(g_dummy_locked_keys[i], k) == 0) return true;
     }

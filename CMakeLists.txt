@@ -236,7 +236,8 @@ if(USE_SIMULATOR)
       tests/test_settings_failure.cpp
       tests/test_slider_bounds.cpp
       tests/test_slider_accel.cpp
-      tests/test_slider_scale.cpp)
+      tests/test_slider_scale.cpp
+      tests/test_settings_dummy_lock.cpp)
     target_include_directories(settings_tests PRIVATE
       ${PROJECT_SOURCE_DIR}/src
       ${PP_CJSON_INC})

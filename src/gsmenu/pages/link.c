@@ -13,7 +13,7 @@ extern void pp_page_reapply_lock_state(lv_obj_t *);
 
 /* Show exactly one FEC parameter group based on link.fec.mode.
  * rs    -> FEC_K / FEC_N      (rows tagged LV_OBJ_FLAG_USER_1)
- * swfec -> Deadline / Overhead (rows tagged LV_OBJ_FLAG_USER_2)
+ * swfec -> Deadline / Redundancy (rows tagged LV_OBJ_FLAG_USER_2)
  * An unknown/empty mode hides both groups until the snapshot arrives. */
 static void apply_fec_visibility(lv_obj_t *page) {
     char *v = pp_settings_get("air", "wfbng", "fec_mode");
@@ -77,10 +77,21 @@ lv_obj_t *build_link_tab(lv_obj_t *parent) {
     pp_slider_set_relation(fec_k, "air", "wfbng", "fec_n", -2, /*is_max*/ true);
     pp_slider_set_relation(fec_n, "air", "wfbng", "fec_k",  2, /*is_max*/ false);
 
-    lv_obj_t *fec_deadline = pp_slider(page, LV_SYMBOL_SETTINGS, "Deadline (ms)",
-                                       "air", "wfbng", "fec_deadline_ms", 10, 50);
-    lv_obj_t *fec_overhead = pp_slider(page, LV_SYMBOL_SETTINGS, "Overhead (%)",
-                                       "air", "wfbng", "fec_overhead_pct", 0, 100);
+    /* Integer sliders with a trailing unit label (mirrors the dBm sliders). */
+    static const pp_slider_cfg_t DEADLINE_CFG = {
+        .raw_min = 10, .raw_max = 50, .step = 1, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1, .decimals = 0,
+        .unit = "ms", .serialize = PP_SER_INT,
+    };
+    lv_obj_t *fec_deadline = pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Deadline",
+                                          "air", "wfbng", "fec_deadline_ms", &DEADLINE_CFG);
+    static const pp_slider_cfg_t REDUNDANCY_CFG = {
+        .raw_min = 0, .raw_max = 100, .step = 1, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1, .decimals = 0,
+        .unit = "%", .serialize = PP_SER_INT,
+    };
+    lv_obj_t *fec_overhead = pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Redundancy",
+                                          "air", "wfbng", "fec_overhead_pct", &REDUNDANCY_CFG);
 
     /* Conditional groups: rs -> k/n, swfec -> deadline/overhead. */
     lv_obj_add_flag(fec_k,        LV_OBJ_FLAG_USER_1);

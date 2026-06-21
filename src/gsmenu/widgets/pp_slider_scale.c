@@ -16,22 +16,28 @@ int32_t pp_slider_step(int32_t raw, const pp_slider_cfg_t *cfg, int dir) {
     return (raw > cfg->fine_threshold) ? cfg->step : cfg->fine_step;
 }
 
+/* Trim trailing zeros, and a bare trailing '.', from a formatted decimal. */
+static void trim_float(char *buf) {
+    char *dot = strchr(buf, '.');
+    if (!dot) return;
+    char *end = buf + strlen(buf) - 1;
+    while (end > dot && *end == '0') *end-- = '\0';
+    if (end == dot) *end = '\0';
+}
+
 void pp_slider_fmt(int32_t raw, const pp_slider_cfg_t *cfg, char *buf, size_t n) {
     int32_t div = cfg->disp_div > 0 ? cfg->disp_div : 1;
     if (div == 1 && cfg->decimals == 0) { snprintf(buf, n, "%d", (int)raw); return; }
     snprintf(buf, n, "%.*f", cfg->decimals, (double)raw / (double)div);
-    char *dot = strchr(buf, '.');
-    if (dot) {
-        char *end = buf + strlen(buf) - 1;
-        while (end > dot && *end == '0') *end-- = '\0';
-        if (end == dot) *end = '\0';            /* drop a bare trailing '.' */
-    }
+    trim_float(buf);
 }
 
 int32_t pp_slider_parse(const char *s, const pp_slider_cfg_t *cfg) {
     if (!s || !*s) return cfg->raw_min;
     int32_t raw;
-    if (cfg->serialize == PP_SER_FLOAT_DIV) {
+    if (cfg->serialize == PP_SER_FLOAT_PCT) {
+        raw = (int32_t)lround(atof(s) * 100.0);     /* ratio wire -> percent raw */
+    } else if (cfg->serialize == PP_SER_FLOAT_DIV) {
         int32_t div = cfg->disp_div > 0 ? cfg->disp_div : 1;
         raw = (int32_t)lround(atof(s) * (double)div);
     } else {
@@ -41,6 +47,12 @@ int32_t pp_slider_parse(const char *s, const pp_slider_cfg_t *cfg) {
 }
 
 void pp_slider_ser(int32_t raw, const pp_slider_cfg_t *cfg, char *buf, size_t n) {
-    if (cfg->serialize == PP_SER_FLOAT_DIV) pp_slider_fmt(raw, cfg, buf, n);
-    else snprintf(buf, n, "%d", (int)raw);
+    if (cfg->serialize == PP_SER_FLOAT_PCT) {
+        snprintf(buf, n, "%.2f", (double)raw / 100.0);   /* percent raw -> ratio wire */
+        trim_float(buf);
+    } else if (cfg->serialize == PP_SER_FLOAT_DIV) {
+        pp_slider_fmt(raw, cfg, buf, n);
+    } else {
+        snprintf(buf, n, "%d", (int)raw);
+    }
 }

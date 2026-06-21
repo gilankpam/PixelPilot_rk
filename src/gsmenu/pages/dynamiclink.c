@@ -44,13 +44,18 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
                                   "air", "dlink", "enabled");
     lv_obj_add_flag(enabled, LV_OBJ_FLAG_USER_3);   /* visibility anchor */
 
+    pp_toggle(page, LV_SYMBOL_SD_CARD, "Flight Log",
+              "gs", "dlink", "flightlog_enabled");
+
     pp_section_header(page, "Compute");
+    /* Stored as a ratio (e.g. 0.5) but shown as a percent (50 %): raw is the
+     * percent, the wire value is raw/100. */
     static const pp_slider_cfg_t redundancy_cfg = {
-        .raw_min = 1, .raw_max = 20, .step = 1, .fine_step = 0,
-        .fine_threshold = 0, .disp_div = 10, .decimals = 1,
-        .unit = NULL, .serialize = PP_SER_FLOAT_DIV,
+        .raw_min = 10, .raw_max = 200, .step = 10, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1, .decimals = 0,
+        .unit = "%", .serialize = PP_SER_FLOAT_PCT,
     };
-    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Base Redundancy Ratio",
+    pp_slider_ex(page, LV_SYMBOL_SETTINGS, "Base Redundancy",
                  "air", "dlink", "compute_base_redundancy", &redundancy_cfg);
     static const pp_slider_cfg_t blocks_cfg = {
         .raw_min = 1, .raw_max = 16, .step = 1, .fine_step = 0,
@@ -74,18 +79,6 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
     pp_slider_set_relation(max_br, "air", "dlink", "compute_min_bitrate_kbps",  500, /*is_max*/ false);
     pp_slider(page, LV_SYMBOL_SETTINGS, "Max MCS",
               "gs", "dlink", "max_mcs", 0, 7);
-
-    pp_section_header(page, "Failsafe");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "MCS",
-              "air", "dlink", "safe_mcs", 0, 7);
-    lv_obj_t *safe_k = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC K",
-                                 "air", "dlink", "safe_k", 1, 31);
-    lv_obj_t *safe_n = pp_slider(page, LV_SYMBOL_SETTINGS, "FEC N",
-                                 "air", "dlink", "safe_n", 2, 32);
-    pp_slider_set_relation(safe_k, "air", "dlink", "safe_n", -2, /*is_max*/ true);
-    pp_slider_set_relation(safe_n, "air", "dlink", "safe_k",  2, /*is_max*/ false);
-    pp_slider(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",
-              "air", "dlink", "safe_bitrate_kbps", 500, 30000);
 
     lv_group_t *grp = pp_page_group(page);
     uint32_t n = lv_obj_get_child_cnt(page);

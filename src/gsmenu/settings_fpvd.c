@@ -110,10 +110,7 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "air", "dlink", "compute_min_bitrate_kbps", "dynamicLink.compute.minBitrateKbps",      FPVD_T_INT,   FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "dlink", "compute_max_bitrate_kbps", "dynamicLink.compute.maxBitrateKbps",      FPVD_T_INT,   FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "gs",  "dlink", "max_mcs",                  "dynamicLink.maxMcs",                      FPVD_T_INT,   FPVD_EP_GS,  FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_mcs",             "dynamicLink.safe.mcs",             FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_k",               "dynamicLink.safe.k",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_n",               "dynamicLink.safe.n",               FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
-    { "air", "dlink", "safe_bitrate_kbps",    "dynamicLink.safe.bitrateKbps",     FPVD_T_INT,  FPVD_EP_AIR, FPVD_ROW_PLAIN },
+    { "gs",  "dlink", "flightlog_enabled",        "dynamicLink.flightlog.enabled",           FPVD_T_BOOL,  FPVD_EP_GS,  FPVD_ROW_PLAIN },
 
     /* PixelPilot launch config → fpvd /gs/config (pixelpilot.*). screen_mode is
      * the only staged row left; it self-applies on change (see prov_set_async). */
@@ -868,6 +865,44 @@ static char *prov_get(const char *d, const char *p, const char *k) {
     return out;
 }
 
+/* True when the Dynamic Link lock currently governs this field, applying the
+ * FEC-mode-aware exceptions:
+ *   - fec_mode is always editable (the user selects rs/swfec even with DL on).
+ *   - In swfec mode, deadlineMs/overheadPct are editable, and the compute
+ *     baseRedundancyRatio/blocksPerFrame become locked (swfec ignores them).
+ * Caller passes the already-resolved keymap entry; must NOT hold G.mu. */
+static bool dl_locks_field(const fpvd_keymap_entry_t *e,
+                           const char *d, const char *p, const char *k) {
+    pthread_mutex_lock(&G.mu);
+    cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;
+    cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
+    bool dl_on   = en && cJSON_IsTrue(en);
+    cJSON *link  = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "link") : NULL;
+    cJSON *fec   = link ? cJSON_GetObjectItemCaseSensitive(link, "fec") : NULL;
+    cJSON *mode  = fec ? cJSON_GetObjectItemCaseSensitive(fec, "mode") : NULL;
+    bool swfec   = mode && cJSON_IsString(mode) && strcmp(mode->valuestring, "swfec") == 0;
+    pthread_mutex_unlock(&G.mu);
+
+    if (!dl_on) return false;
+
+    bool is_air_wfbng = (!strcmp(d, "air") && !strcmp(p, "wfbng"));
+    bool is_air_dlink = (!strcmp(d, "air") && !strcmp(p, "dlink"));
+
+    /* FEC Mode: always editable. */
+    if (is_air_wfbng && !strcmp(k, "fec_mode")) return false;
+    /* swfec: deadline/overhead editable; in rs they're hidden anyway. */
+    if (swfec && is_air_wfbng &&
+        (!strcmp(k, "fec_deadline_ms") || !strcmp(k, "fec_overhead_pct")))
+        return false;
+    /* swfec: the compute redundancy/blocks knobs are ignored, so grey them. */
+    if (swfec && is_air_dlink &&
+        (!strcmp(k, "compute_base_redundancy") || !strcmp(k, "compute_blocks_per_frame")))
+        return true;
+
+    /* Default: locked iff the path is under a locked prefix. */
+    return fpvd_is_locked_path(e->path);
+}
+
 static void prov_set_async(const char *d, const char *p, const char *k,
                            const char *v, pp_settings_done_cb cb, void *ud) {
     if (pp_runtime_cfg_owns(d, p, k)) {
@@ -877,14 +912,11 @@ static void prov_set_async(const char *d, const char *p, const char *k,
     }
     const fpvd_keymap_entry_t *e = fpvd_keymap_lookup(d, p, k);
     if (!e) { schedule_done(cb, ud, -1, "Unknown setting"); return; }
-    /* Dynamic-link lock only governs drone-owned (AIR) fields. */
-    if (e->endpoint == FPVD_EP_AIR && fpvd_is_locked_path(e->path)) {
-        pthread_mutex_lock(&G.mu);
-        cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;
-        cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
-        bool dlink_on = en && cJSON_IsTrue(en);
-        pthread_mutex_unlock(&G.mu);
-        if (dlink_on) { schedule_done(cb, ud, -1, "Locked by Dynamic Link"); return; }
+    /* Dynamic-link lock only governs drone-owned (AIR) fields; the mode-aware
+     * exceptions live in dl_locks_field (shared with prov_is_locked). */
+    if (e->endpoint == FPVD_EP_AIR && dl_locks_field(e, d, p, k)) {
+        schedule_done(cb, ud, -1, "Locked by Dynamic Link");
+        return;
     }
     pthread_mutex_lock(&G.mu);
     if (e->kind == FPVD_ROW_STAGED) {
@@ -962,13 +994,7 @@ static bool prov_is_locked(const char *d, const char *p, const char *k) {
     bool is_bandwidth = (!strcmp(d, "gs") && !strcmp(p, "wfbng") &&
                          !strcmp(k, "bandwidth"));
     if (e->endpoint != FPVD_EP_AIR && !is_bandwidth) return false;
-    if (!fpvd_is_locked_path(e->path)) return false;
-    pthread_mutex_lock(&G.mu);
-    cJSON *dlink = G.air_snapshot ? cJSON_GetObjectItemCaseSensitive(G.air_snapshot, "dynamicLink") : NULL;
-    cJSON *en    = dlink ? cJSON_GetObjectItemCaseSensitive(dlink, "enabled") : NULL;
-    bool dl_on = en && cJSON_IsTrue(en);
-    pthread_mutex_unlock(&G.mu);
-    return dl_on;
+    return dl_locks_field(e, d, p, k);
 }
 
 static bool prov_is_connected(void) {

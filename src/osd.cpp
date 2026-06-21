@@ -1410,7 +1410,7 @@ public:
         SLOT_PKT_LOST,      // wfbcli.rx.packets.lost.delta  (uint)
         SLOT_PKT_FEC,       // wfbcli.rx.packets.fec_rec.delta (uint, -> LINK quality)
         SLOT_BITRATE,       // gstreamer.received_bytes(uint, -> Mb/s)
-        SLOT_LATENCY,       // video.latency.total_ms  (uint)
+        SLOT_JITTER,        // video.rtp_jitter_ms     (uint)
         SLOT_FPS_LIVE,      // video.displayed_frame   (uint, -> per-second)
         SLOT_RSSI,          // wfbcli.rx.ant_stats.rssi_avg (int, per-antenna)
         SLOT_SNR,           // wfbcli.rx.ant_stats.snr_avg  (int, per-antenna)
@@ -1469,7 +1469,7 @@ public:
             if (accept_link(fact)) pkt_fec.add(static_cast<long>(fact.getUintValue()));
             args[idx] = fact;
             break;
-        default: // SLOT_VIDEO_RES, SLOT_VIDEO_FPS, SLOT_LATENCY
+        default: // SLOT_VIDEO_RES, SLOT_VIDEO_FPS, SLOT_JITTER
             args[idx] = fact;
             break;
         }
@@ -1670,7 +1670,7 @@ private:
         // ---- Right group (right-anchored, fixed widths) ------------------
         int lq = aio::link_quality_pct(window_sum(pkt_all), window_sum(pkt_lost), window_sum(pkt_fec));
         double br = arg_d(SLOT_BITRATE);
-        long lat = (long)arg_u(SLOT_LATENCY);
+        long jit = (long)arg_u(SLOT_JITTER);
         auto rssi = rssi_agg.best(now_ms());
         auto snr  = snr_agg.best(now_ms());
 
@@ -1689,8 +1689,8 @@ private:
                                     aio::resolve_band(aio::Metric::Link, lq), "100"));
         right.push_back(metric_tile("BITRATE", fmt1(br), "Mb/s",
                                     aio::resolve_band(aio::Metric::Bitrate, br), "888.8"));
-        right.push_back(metric_tile("LATENCY", std::to_string(lat), "ms",
-                                    aio::resolve_band(aio::Metric::Latency, (double)lat), "888"));
+        right.push_back(metric_tile("JITTER", std::to_string(jit), "ms",
+                                    aio::resolve_band(aio::Metric::Jitter, (double)jit), "888"));
         right.push_back(fps_t);
         right.push_back(rssi
             ? metric_tile("RSSI", std::to_string(*rssi), "dBm",
@@ -2355,7 +2355,7 @@ public:
 					matchers.push_back(FactMatcher("wfbcli.rx.packets.lost.delta"));  // SLOT_PKT_LOST
 					matchers.push_back(FactMatcher("wfbcli.rx.packets.fec_rec.delta"));// SLOT_PKT_FEC
 					matchers.push_back(FactMatcher("gstreamer.received_bytes"));      // SLOT_BITRATE
-					matchers.push_back(FactMatcher("video.latency.total_ms"));        // SLOT_LATENCY
+					matchers.push_back(FactMatcher("video.rtp_jitter_ms"));           // SLOT_JITTER
 					matchers.push_back(FactMatcher("video.displayed_frame"));         // SLOT_FPS_LIVE
 					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.rssi_avg"));  // SLOT_RSSI
 					matchers.push_back(FactMatcher("wfbcli.rx.ant_stats.snr_avg"));   // SLOT_SNR

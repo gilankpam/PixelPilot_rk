@@ -11,36 +11,51 @@
 #include <string.h>
 
 /* ---- Page-state watch (500 ms) ----
- * The PP page reacts to two changes the settings snapshot doesn't surface:
+ * The PP page reacts to changes the settings snapshot doesn't surface:
  *   1. DVR recording start/stop (SIGUSR1) -> re-lock the DVR config rows.
- *   2. DVR mode -> the Re-encode bitrate row only applies when re-encoding,
- *      so it is hidden in raw mode.
- * A single 500 ms timer polls both and acts only on change. The page
+ *   2. DVR mode -> the Re-encode bitrate row only applies when re-encoding
+ *      (hidden in raw mode).
+ *   3. Color-correction Enabled -> Gain/Offset only apply when enabled
+ *      (hidden when off).
+ * A single 500 ms timer polls these and acts only on change. The page
  * user_data is owned by pp_page_data_t (pp_page.c), so the context lives in
  * the timer user_data and is freed via LV_EVENT_DELETE on the page. */
 typedef struct {
     lv_obj_t   *page;
     lv_timer_t *timer;
-    lv_obj_t   *bitrate_row;    /* hidden when dvr_mode == raw */
+    lv_obj_t   *bitrate_row;     /* hidden when dvr_mode == raw */
+    lv_obj_t   *cc_gain_row;     /* hidden when color correction off */
+    lv_obj_t   *cc_offset_row;
     int         last_recording;
     int         last_reenc;
+    int         last_cc;
 } pp_watch_ctx_t;
 
-/* Whether re-encoding applies (mode != raw). Read via the generic provider so
- * it works with both the runtime-cfg backend (device) and the dummy (sim). */
+static void set_hidden(lv_obj_t *row, int hidden) {
+    if (!row) return;
+    if (hidden) lv_obj_add_flag(row, LV_OBJ_FLAG_HIDDEN);
+    else        lv_obj_clear_flag(row, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Read settings via the generic provider so these work on device
+ * (runtime-cfg) and in the sim (dummy). */
 static int dvr_reenc_active(void) {
     char *m = pp_settings_get("gs", "dvr", "dvr_mode");
     int active = (m && strcmp(m, "raw") != 0);
     free(m);
     return active;
 }
+static int cc_enabled(void) {
+    char *v = pp_settings_get("gs", "display", "color_correction");
+    int on = (v && strcmp(v, "on") == 0);
+    free(v);
+    return on;
+}
 
-static void apply_bitrate_visibility(pp_watch_ctx_t *ctx) {
-    if (!ctx->bitrate_row) return;
-    if (ctx->last_reenc)
-        lv_obj_clear_flag(ctx->bitrate_row, LV_OBJ_FLAG_HIDDEN);
-    else
-        lv_obj_add_flag(ctx->bitrate_row, LV_OBJ_FLAG_HIDDEN);
+static void pp_watch_apply(pp_watch_ctx_t *ctx) {
+    set_hidden(ctx->bitrate_row,   !ctx->last_reenc);
+    set_hidden(ctx->cc_gain_row,   !ctx->last_cc);
+    set_hidden(ctx->cc_offset_row, !ctx->last_cc);
 }
 
 static void pp_watch_timer_cb(lv_timer_t *t) {
@@ -53,7 +68,13 @@ static void pp_watch_timer_cb(lv_timer_t *t) {
     int reenc = dvr_reenc_active();
     if (ctx->last_reenc != reenc) {
         ctx->last_reenc = reenc;
-        apply_bitrate_visibility(ctx);
+        set_hidden(ctx->bitrate_row, !reenc);
+    }
+    int cc = cc_enabled();
+    if (ctx->last_cc != cc) {
+        ctx->last_cc = cc;
+        set_hidden(ctx->cc_gain_row,   !cc);
+        set_hidden(ctx->cc_offset_row, !cc);
     }
 }
 
@@ -74,11 +95,13 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
                 "2560x1440@60\n3840x2160@60");
     pp_slider(page, LV_SYMBOL_IMAGE, "Video Scale",
               "gs", "display", "video_scale", 50, 100);
-    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Color correction",
+
+    pp_section_header(page, "Color Correction");
+    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Enabled",
               "gs", "display", "color_correction");
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Gain",
+    lv_obj_t *cc_gain_row = pp_slider(page, LV_SYMBOL_SETTINGS, "Gain",
               "gs", "display", "cc_gain", 0, 50);
-    pp_slider(page, LV_SYMBOL_SETTINGS, "Offset",
+    lv_obj_t *cc_offset_row = pp_slider(page, LV_SYMBOL_SETTINGS, "Offset",
               "gs", "display", "cc_offset", -50, 50);
 
     pp_section_header(page, "DVR · Recording");
@@ -114,13 +137,16 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
      * is freed by the LV_EVENT_DELETE handler below. */
     pp_watch_ctx_t *ctx = (pp_watch_ctx_t *)malloc(sizeof(*ctx));
     if (ctx) {
-        ctx->page        = page;
-        ctx->bitrate_row = bitrate_row;
+        ctx->page          = page;
+        ctx->bitrate_row   = bitrate_row;
+        ctx->cc_gain_row   = cc_gain_row;
+        ctx->cc_offset_row = cc_offset_row;
         ctx->last_recording = pp_runtime_cfg_is_recording() ? 1 : 0;
-        ctx->last_reenc  = dvr_reenc_active();
+        ctx->last_reenc    = dvr_reenc_active();
+        ctx->last_cc       = cc_enabled();
         ctx->timer = lv_timer_create(pp_watch_timer_cb, 500, ctx);
         lv_obj_add_event_cb(page, pp_watch_page_delete_cb, LV_EVENT_DELETE, ctx);
-        apply_bitrate_visibility(ctx);     /* initial: hidden if mode == raw */
+        pp_watch_apply(ctx);               /* initial row visibility */
     }
     pp_page_reapply_lock_state(page);      /* initial lock state */
 

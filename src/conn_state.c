@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <time.h>
 #include "cJSON.h"
+#include <curl/curl.h>
 
 #define CONN_MAX_SUBS 8
 
@@ -124,10 +125,96 @@ void conn_state_unsubscribe(int token) {
     pthread_mutex_unlock(&C.mu);
 }
 
-void conn_state_start(const char *base_url, int interval_ms) { (void)base_url; (void)interval_ms; }
+typedef struct { char *body; size_t len; } conn_buf_t;
+
+static size_t conn_write_cb(void *ptr, size_t sz, size_t nm, void *ud) {
+    conn_buf_t *b = (conn_buf_t *)ud;
+    size_t add = sz * nm;
+    char *nb = realloc(b->body, b->len + add + 1);
+    if (!nb) return 0;
+    b->body = nb;
+    memcpy(b->body + b->len, ptr, add);
+    b->len += add;
+    b->body[b->len] = '\0';
+    return add;
+}
+
+static void conn_curl_init_once(void) {
+    static int done = 0;
+    if (!done) { curl_global_init(CURL_GLOBAL_DEFAULT); done = 1; }
+}
+
+static void conn_poll_once(void) {
+    char url[160];
+    snprintf(url, sizeof url, "%s/gs/status", C.base_url);
+    conn_buf_t buf = { NULL, 0 };
+    long code = 0;
+    CURL *c = curl_easy_init();
+    if (c) {
+        curl_easy_setopt(c, CURLOPT_URL, url);
+        curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT_MS, 800L);
+        curl_easy_setopt(c, CURLOPT_TIMEOUT_MS, 1500L);
+        curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, conn_write_cb);
+        curl_easy_setopt(c, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
+        if (curl_easy_perform(c) == CURLE_OK)
+            curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+        curl_easy_cleanup(c);
+    }
+    conn_state_t ns;
+    if (!(code == 200 && buf.body && conn_state_parse(buf.body, &ns))) {
+        ns.state = CONN_UNKNOWN; ns.reason[0] = '\0'; ns.since_ms = -1;
+    }
+    ns.updated_ms = conn_now_ms();
+    free(buf.body);
+    conn_state_apply(&ns);
+}
+
+static void *conn_poll_main(void *arg) {
+    (void)arg;
+    for (;;) {
+        conn_poll_once();
+        pthread_mutex_lock(&C.mu);
+        if (C.stop) { pthread_mutex_unlock(&C.mu); break; }
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);   /* default cond clock */
+        ts.tv_sec  += C.interval_ms / 1000;
+        ts.tv_nsec += (C.interval_ms % 1000) * 1000000L;
+        if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+        pthread_cond_timedwait(&C.cv, &C.mu, &ts);
+        bool stop = C.stop;
+        pthread_mutex_unlock(&C.mu);
+        if (stop) break;
+    }
+    return NULL;
+}
+
+void conn_state_start(const char *base_url, int interval_ms) {
+    pthread_mutex_lock(&C.mu);
+    if (C.started) { pthread_mutex_unlock(&C.mu); return; }
+    strncpy(C.base_url, base_url && *base_url ? base_url : "http://127.0.0.1:8080",
+            sizeof C.base_url - 1);
+    C.base_url[sizeof C.base_url - 1] = '\0';
+    C.interval_ms = interval_ms > 0 ? interval_ms : 1000;
+    C.stop = false;
+    C.started = true;
+    pthread_mutex_unlock(&C.mu);
+    conn_curl_init_once();
+    pthread_create(&C.thread, NULL, conn_poll_main, NULL);
+}
+
 void conn_state_stop(void) {
     pthread_mutex_lock(&C.mu);
-    /* Task 3 adds: stop+join the poller thread here when started. */
+    bool was_started = C.started;
+    if (was_started) { C.stop = true; pthread_cond_signal(&C.cv); }
+    pthread_mutex_unlock(&C.mu);
+    if (was_started) {
+        pthread_join(C.thread, NULL);
+        pthread_mutex_lock(&C.mu);
+        C.started = false;
+        pthread_mutex_unlock(&C.mu);
+    }
+    pthread_mutex_lock(&C.mu);
     for (int i = 0; i < CONN_MAX_SUBS; i++) {
         C.subs[i].used = false; C.subs[i].cb = NULL; C.subs[i].ud = NULL;
     }

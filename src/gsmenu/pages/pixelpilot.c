@@ -58,12 +58,17 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
     pp_section_header(page, "DVR · Recording");
     pp_dropdown(page, LV_SYMBOL_VIDEO, "Mode",
                 "gs", "dvr", "dvr_mode", "raw\nreencode\nboth");
-    pp_slider(page, LV_SYMBOL_SD_CARD, "Max file size (MB)",
-              "gs", "dvr", "dvr_max_size", 100, 16000);
+    static const pp_slider_cfg_t maxsize_cfg = {
+        .raw_min = 500, .raw_max = 16000, .step = 500, .fine_step = 0,
+        .fine_threshold = 0, .disp_div = 1000, .decimals = 1,
+        .unit = "GB", .serialize = PP_SER_INT,
+    };
+    pp_slider_ex(page, LV_SYMBOL_SD_CARD, "Max file size",
+                 "gs", "dvr", "dvr_max_size", &maxsize_cfg);
 
-    pp_dropdown(page, LV_SYMBOL_AUDIO, "Re-encode bitrate (kbps)",
-                "gs", "dvr", "dvr_reenc_bitrate",
-                "4000\n8000\n12000\n16000\n25000");
+    pp_dropdown_units(page, LV_SYMBOL_AUDIO, "Re-encode bitrate",
+                      "gs", "dvr", "dvr_reenc_bitrate",
+                      "4000\n8000\n12000\n16000\n25000", "Mbps", 1000);
 
     /* Add focusable rows to the page's group. Section headers are lv_label_t
      * and have a different class, so the check filters them out. */

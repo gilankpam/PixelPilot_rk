@@ -570,3 +570,55 @@ TEST_CASE("integration: hidden->visible triggers an immediate refresh", "[fpvd][
     pp_settings_set_visibility(false);
     srv.stop();
 }
+
+TEST_CASE("integration: DL on + swfec — mode/deadline/overhead editable, "
+          "k/n + compute knobs locked", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"fec":{"mode":"swfec"}},"dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_mode") == false);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_deadline_ms") == false);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_overhead_pct") == false);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_k") == true);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_n") == true);
+    REQUIRE(pp_settings_is_locked("air", "dlink", "compute_base_redundancy") == true);
+    REQUIRE(pp_settings_is_locked("air", "dlink", "compute_blocks_per_frame") == true);
+    /* Min/Max bitrate + Max MCS stay editable in both modes. */
+    REQUIRE(pp_settings_is_locked("air", "dlink", "compute_min_bitrate_kbps") == false);
+    m.stop();
+}
+
+TEST_CASE("integration: DL on + rs — compute knobs editable, k/n locked, "
+          "deadline/overhead locked (hidden)", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"fec":{"mode":"rs"}},"dynamicLink":{"enabled":true}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_mode") == false);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_k") == true);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_n") == true);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_deadline_ms") == true);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_overhead_pct") == true);
+    REQUIRE(pp_settings_is_locked("air", "dlink", "compute_base_redundancy") == false);
+    REQUIRE(pp_settings_is_locked("air", "dlink", "compute_blocks_per_frame") == false);
+    m.stop();
+}
+
+TEST_CASE("integration: DL off — FEC + compute rows all editable", "[fpvd][network]") {
+    GsMockServer m;
+    m.air_response =
+      R"({"link":{"fec":{"mode":"swfec"}},"dynamicLink":{"enabled":false}})";
+    m.start();
+    install_provider_pointing_at(m.port);
+
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_mode") == false);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_k") == false);
+    REQUIRE(pp_settings_is_locked("air", "wfbng", "fec_deadline_ms") == false);
+    REQUIRE(pp_settings_is_locked("air", "dlink", "compute_base_redundancy") == false);
+    m.stop();
+}

@@ -30,18 +30,26 @@ Explicitly out of scope:
 
 ## Architecture decisions (from brainstorming)
 
-1. **Ownership (B):** pixelpilot owns the JSON. gsmenu writes it directly and
-   signals pixelpilot — fpvd is not involved for these six settings. Keeps the
-   whole change self-contained in the PixelPilot_rk repo.
-2. **Reload trigger (A):** SIGHUP. gsmenu writes the file, then
-   `kill -HUP $(pidof pixelpilot)`. A handler sets a reload flag; the existing
-   1 Hz main loop re-reads and applies. Mirrors the existing SIGUSR1 pattern.
+1. **Ownership (B):** pixelpilot owns the JSON. The menu writes it directly and
+   fpvd is not involved for these six settings. Keeps the whole change
+   self-contained in the PixelPilot_rk repo.
+2. **Apply mechanism — in-process direct calls (NOT SIGHUP).** During
+   brainstorming we assumed gsmenu was a separate process and chose SIGHUP. That
+   premise is wrong: **gsmenu runs in-process with pixelpilot** —
+   `build_pixelpilot_tab()` is called from `src/menu.c:114`, and the only
+   non-test executable is `pixelpilot` itself (`CMakeLists.txt:425`). The menu
+   therefore shares the address space with the DVR/color-correction state and
+   the existing `extern "C"` runtime setters in `main.cpp`. On a row change the
+   menu **calls the setter directly** for instant apply and **writes the JSON**
+   for persistence. No signal, no IPC, no `pidof`, no reload flag, no main-loop
+   polling.
 3. **Color-correction target (B):** both live display and re-encode recording.
-4. **Apply UX (A):** live apply. Each change writes the JSON + sends SIGHUP
-   immediately; gain/offset slider moves are debounced (~200 ms, plus a final
-   write on release).
-5. **Recording gate:** while recording, all three DVR rows are greyed out in
-   gsmenu; color-correction rows stay live.
+4. **Apply UX (A):** live apply. Each change calls the runtime setter
+   immediately and writes the JSON; gain/offset slider moves are debounced
+   (~200 ms, plus a final write on release).
+5. **Recording gate:** while recording, all three DVR rows are greyed out in the
+   menu; color-correction rows stay live. Recording state is read in-process
+   (`dvr_enabled` / the `dvr.recording` fact).
 6. **Startup precedence (A):** JSON is authoritative. The four CLI flags are
    removed; a default JSON ships so the file always exists.
 
@@ -70,30 +78,32 @@ A single file pixelpilot owns, mirroring the menu rows 1:1 in menu-scale values
 
 ## pixelpilot side
 
-New small config module (load/parse/serialize-diff) plus wiring in `main.cpp`.
+A new small config module (load/parse/serialize) plus a thin `extern "C"`
+color-correction apply wrapper in `main.cpp`. There is **no** signal handler and
+**no** main-loop reload — applies happen via direct in-process calls from the
+menu (see "menu side").
 
 - **Startup:** parse the JSON; seed the existing globals `dvr_mode`,
   `dvr_max_file_size`, `reenc_params.bitrate_kbps`, `enable_live_colortrans`,
   `live_colortrans_gain`, `live_colortrans_offset`. Remove the four CLI flags
   (`--dvr-mode`, `--dvr-max-size`, `--dvr-reenc-bitrate`, `--live-colortrans`)
   and their arg-parsing.
-- **SIGHUP handler:** set a `reload_config` flag (pattern mirrors the existing
-  SIGUSR1 handler at main.cpp:493).
-- **1 Hz main loop (main.cpp:883):** when the flag is set, re-read the JSON,
-  diff against current in-memory values, and call setters **only** for fields
-  that changed:
-  - DVR → existing runtime setters `dvr_set_mode()`, `dvr_reenc_set_bitrate()`,
-    `dvr_set_max_size()`.
-  - Color correction, re-encode path → existing
-    `set_color_correction()` / `set_color_correction_enabled()` (via the
-    `dvr_reenc_notify_colortrans` style C interface).
-  - Color correction, **live display → new runtime gamma-LUT update path**:
-    push a fresh CRTC `GAMMA_LUT` derived from gain/offset; toggling `enabled`
-    installs the LUT or restores an identity LUT. The current code only sets the
-    gamma LUT once at startup (main.cpp:1423), so this is the main net-new code.
-- **Robustness:** malformed or missing JSON on reload → log and keep current
-  values (no crash, no reset to defaults).
-- DVR field changes are only ever applied when not recording (the gsmenu gate
+- **Existing runtime setters reused as-is** (already `extern "C"` in main.cpp):
+  - DVR → `dvr_set_mode()`, `dvr_reenc_set_bitrate()`, `dvr_set_max_size()`.
+  - Color correction, re-encode path → `set_color_correction()` /
+    `set_color_correction_enabled()`.
+  - Color correction, live display → `gamma_lut_enable(&lut_ctrl, offset, gain)`
+    / `gamma_lut_disable(&lut_ctrl)` (both already exist in `drm.c`; the display
+    thread already branches on `enable_live_colortrans` per frame at
+    main.cpp:424, so toggling the global switches the OSD compositing path
+    automatically).
+- **New `extern "C"` wrapper** `pp_colortrans_apply(int enabled, float gain,
+  float offset)` that ties the three together: set the globals, update the live
+  display LUT, and update the re-encode path. This is the only net-new pixelpilot
+  apply code (the DVR setters already do everything needed).
+- **Robustness:** a malformed or missing JSON at startup → log and fall back to
+  the built-in defaults (no crash).
+- DVR field changes are only ever applied when not recording (the menu gate
   prevents mid-recording edits; the `dvr_set_mode()` setter would otherwise
   force-stop an active recording).
 
@@ -104,21 +114,35 @@ New small config module (load/parse/serialize-diff) plus wiring in `main.cpp`.
   become unused.
 - Package ships the default `runtime.json` at the chosen path.
 
-## gsmenu side
+## Menu side (in-process gsmenu)
 
-- **Remove from fpvd staging:** delete the `gs/dvr/*` entries from the
-  `settings_fpvd.c` keymap so these rows no longer route through fpvd
-  PATCH/apply.
-- **Un-grey color-correction rows:** the three rows
-  (`color_correction`, `cc_gain`, `cc_offset`) were `PP_ROW_LOCKED_UNAVAILABLE`;
-  make them live.
-- **Write path:** on change, write the JSON atomically (temp file + `rename`),
-  then `kill -HUP $(pidof pixelpilot)`. Gain/offset slider moves are debounced
-  (~200 ms, plus a final write on slider release).
-- **Recording lock:** subscribe to the `dvr.recording` OSD fact; while true,
-  lock all three DVR rows (Mode, Max file size, Re-encode bitrate) via
-  `pp_row_set_locked`; unlock when it clears. Honor the existing lock gate
-  semantics (early-return on unchanged state per the gsmenu row-disable gate).
+The menu routes the six keys through a new in-process runtime-config module
+instead of the fpvd provider. The menu widgets are unchanged; they keep calling
+`pp_settings_set/get`. Routing happens inside the fpvd provider: when a key is
+one of the six runtime keys, the provider delegates to the runtime-config module
+rather than staging to fpvd.
+
+- **New module `settings_runtime_cfg.{c,h}`** (in `src/gsmenu/`): owns the JSON
+  file (read at startup, atomic write on change via temp file + `rename`), the
+  value↔float mapping for gain/offset, the debounce for sliders, and the direct
+  calls into the pixelpilot `extern "C"` runtime setters (`dvr_set_mode`,
+  `dvr_reenc_set_bitrate`, `dvr_set_max_size`, `pp_colortrans_apply`). Exposes a
+  predicate `pp_runtime_cfg_owns(domain, page, key)` plus `set`/`get` for the six
+  keys.
+- **Provider routing (`settings_fpvd.c`):** in `set`/`get`/`set_async` and
+  `is_available`, if `pp_runtime_cfg_owns(...)` route to the runtime-config
+  module. These keys are **not** staged and do **not** participate in
+  `has_pending`/`apply`.
+- **Remove from fpvd keymap:** delete the three `gs/dvr/*` entries from the
+  `settings_fpvd.c` keymap so they no longer stage through fpvd PATCH/apply.
+- **Un-grey color-correction rows:** with `is_available` now returning true for
+  `color_correction`, `cc_gain`, `cc_offset`, the rows that were
+  `PP_ROW_LOCKED_UNAVAILABLE` become live.
+- **Recording lock:** while recording, lock all three DVR rows (Mode, Max file
+  size, Re-encode bitrate) via `pp_row_set_locked(PP_ROW_LOCKED_DYNAMIC)`,
+  driven by the in-process recording state (`dvr_enabled` / the `dvr.recording`
+  fact). Honor the existing lock-gate semantics (early-return on unchanged
+  state). Color-correction rows stay live.
 - **Apply button:** unchanged — still commits the remaining restart-based
   display rows (screen mode, video scale, RTP jitter) through fpvd.
 
@@ -140,7 +164,16 @@ New small config module (load/parse/serialize-diff) plus wiring in `main.cpp`.
 
 ## Risks / call-outs
 
-- **Live-display runtime gamma-LUT update** is the main new, untested-in-this-
-  codebase path; everything else reuses existing setters.
+- **Runtime color-correction toggle while displaying** uses existing functions
+  (`gamma_lut_enable`/`gamma_lut_disable` already exist in `drm.c`; the display
+  thread already branches on `enable_live_colortrans` per frame). The new code is
+  only the thin `pp_colortrans_apply` wrapper that calls them together — verify
+  on hardware that toggling enable mid-stream cleanly swaps the OSD compositing
+  path (main.cpp:424) without a frame glitch.
 - **JSON path** must be confirmed writable + persistent on the GS image (open
   item above) before implementation.
+- **Linker note:** the menu (C) calls `extern "C"` functions defined in
+  `main.cpp`. The simulator build does not link `main.cpp`, so the runtime-config
+  module must compile in the simulator with these calls stubbed/weak — see the
+  C-linkage memory note. Plan tests accordingly (logic tested host-side; the
+  direct setter calls exercised only in the device build).

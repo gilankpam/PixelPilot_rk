@@ -273,6 +273,17 @@ if(USE_SIMULATOR)
     target_link_libraries(gs_enum_tests
       Catch2::Catch2WithMain lvgl ${PNG_LIBRARIES})
 
+    add_executable(runtime_cfg_tests
+      src/gsmenu/settings_runtime_cfg.c
+      ${PP_CJSON_SOURCES}
+      tests/test_settings_runtime_cfg.cpp)
+    target_include_directories(runtime_cfg_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src
+      ${PROJECT_SOURCE_DIR}/src/gsmenu
+      ${PP_CJSON_INC})
+    target_link_libraries(runtime_cfg_tests
+      Catch2::Catch2WithMain)
+
     add_executable(aio_logic_tests
       src/osd_aio_logic.cpp
       tests/test_aio_logic.cpp)

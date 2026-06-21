@@ -5,7 +5,7 @@
         { "name": "All-in-one link OSD", "type": "AIOWidget", "color_scheme": "accent" }
     ],
     "latency_probe": {
-        "enable": true,
+        "enable": false,
         "host": "10.5.0.10",
         "port": 5602
     }

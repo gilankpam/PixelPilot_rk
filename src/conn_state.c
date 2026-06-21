@@ -69,24 +69,68 @@ conn_state_t conn_state_get(void) {
     return c;
 }
 
-/* Filled in Task 2. */
-void conn_state_ingest(conn_state_e state, const char *reason, long since_ms) {
+/* Apply a new snapshot; notify subscribers iff the enum state changed.
+ * Subscribers are snapshotted under the lock then invoked unlocked. */
+static void conn_state_apply(const conn_state_t *ns) {
+    conn_sub_t snap[CONN_MAX_SUBS];
+    int n = 0;
+    bool changed;
+    conn_state_t cur_copy;
     pthread_mutex_lock(&C.mu);
-    C.cur.state = state;
-    C.cur.reason[0] = '\0';
-    if (reason) { strncpy(C.cur.reason, reason, sizeof C.cur.reason - 1);
-                  C.cur.reason[sizeof C.cur.reason - 1] = '\0'; }
-    C.cur.since_ms = since_ms;
-    C.cur.updated_ms = conn_now_ms();
+    changed = (ns->state != C.cur.state);
+    C.cur = *ns;
+    cur_copy = C.cur;
+    if (changed)
+        for (int i = 0; i < CONN_MAX_SUBS; i++)
+            if (C.subs[i].used) snap[n++] = C.subs[i];
     pthread_mutex_unlock(&C.mu);
+    for (int i = 0; i < n; i++) snap[i].cb(&cur_copy, snap[i].ud);
 }
 
-int  conn_state_subscribe(conn_state_cb cb, void *ud) { (void)cb; (void)ud; return -1; }
-void conn_state_unsubscribe(int token) { (void)token; }
+void conn_state_ingest(conn_state_e state, const char *reason, long since_ms) {
+    conn_state_t ns;
+    ns.state = state;
+    ns.reason[0] = '\0';
+    if (reason) { strncpy(ns.reason, reason, sizeof ns.reason - 1);
+                  ns.reason[sizeof ns.reason - 1] = '\0'; }
+    ns.since_ms = since_ms;
+    ns.updated_ms = conn_now_ms();
+    conn_state_apply(&ns);
+}
+
+int conn_state_subscribe(conn_state_cb cb, void *ud) {
+    if (!cb) return -1;
+    int token = -1;
+    conn_state_t cur_copy;
+    pthread_mutex_lock(&C.mu);
+    for (int i = 0; i < CONN_MAX_SUBS; i++) {
+        if (!C.subs[i].used) {
+            C.subs[i].cb = cb; C.subs[i].ud = ud; C.subs[i].used = true;
+            token = i; break;
+        }
+    }
+    cur_copy = C.cur;
+    pthread_mutex_unlock(&C.mu);
+    if (token >= 0) cb(&cur_copy, ud);   /* immediate current-state delivery */
+    return token;
+}
+
+void conn_state_unsubscribe(int token) {
+    if (token < 0 || token >= CONN_MAX_SUBS) return;
+    pthread_mutex_lock(&C.mu);
+    C.subs[token].used = false;
+    C.subs[token].cb = NULL;
+    C.subs[token].ud = NULL;
+    pthread_mutex_unlock(&C.mu);
+}
 
 void conn_state_start(const char *base_url, int interval_ms) { (void)base_url; (void)interval_ms; }
 void conn_state_stop(void) {
     pthread_mutex_lock(&C.mu);
+    /* Task 3 adds: stop+join the poller thread here when started. */
+    for (int i = 0; i < CONN_MAX_SUBS; i++) {
+        C.subs[i].used = false; C.subs[i].cb = NULL; C.subs[i].ud = NULL;
+    }
     C.cur.state = CONN_UNKNOWN; C.cur.reason[0] = '\0'; C.cur.since_ms = -1; C.cur.updated_ms = 0;
     pthread_mutex_unlock(&C.mu);
 }

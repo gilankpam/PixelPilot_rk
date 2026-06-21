@@ -23,7 +23,6 @@ static struct {
     int             interval_ms;
 } C = {
     .mu  = PTHREAD_MUTEX_INITIALIZER,
-    .cv  = PTHREAD_COND_INITIALIZER,
     .cur = { CONN_UNKNOWN, "", -1, 0 },
 };
 
@@ -161,7 +160,7 @@ static void conn_poll_once(void) {
             curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
         curl_easy_cleanup(c);
     }
-    conn_state_t ns;
+    conn_state_t ns = {0};
     if (!(code == 200 && buf.body && conn_state_parse(buf.body, &ns))) {
         ns.state = CONN_UNKNOWN; ns.reason[0] = '\0'; ns.since_ms = -1;
     }
@@ -177,7 +176,7 @@ static void *conn_poll_main(void *arg) {
         pthread_mutex_lock(&C.mu);
         if (C.stop) { pthread_mutex_unlock(&C.mu); break; }
         struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);   /* default cond clock */
+        clock_gettime(CLOCK_MONOTONIC, &ts);   /* monotonic: matches condvar clock */
         ts.tv_sec  += C.interval_ms / 1000;
         ts.tv_nsec += (C.interval_ms % 1000) * 1000000L;
         if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
@@ -197,10 +196,21 @@ void conn_state_start(const char *base_url, int interval_ms) {
     C.base_url[sizeof C.base_url - 1] = '\0';
     C.interval_ms = interval_ms > 0 ? interval_ms : 1000;
     C.stop = false;
-    C.started = true;
+    C.started = true;                 /* claim under the lock to bar a concurrent double-spawn */
+    /* Monotonic condvar: the poll cadence must survive wall-clock steps (the GS
+     * boots at a ~2017 stub clock, then jumps to real time). */
+    pthread_condattr_t ca;
+    pthread_condattr_init(&ca);
+    pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
+    pthread_cond_init(&C.cv, &ca);
+    pthread_condattr_destroy(&ca);
     pthread_mutex_unlock(&C.mu);
     conn_curl_init_once();
-    pthread_create(&C.thread, NULL, conn_poll_main, NULL);
+    if (pthread_create(&C.thread, NULL, conn_poll_main, NULL) != 0) {
+        pthread_mutex_lock(&C.mu);
+        C.started = false;            /* spawn failed: don't strand stop() on an unspawned thread */
+        pthread_mutex_unlock(&C.mu);
+    }
 }
 
 void conn_state_stop(void) {

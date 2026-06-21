@@ -96,6 +96,7 @@ set(SIMULATOR_SOURCES
         src/gsmenu/settings_stub.c
         src/gsmenu/settings_dummy.c
         src/gsmenu/settings_gs_enum.c
+        src/gsmenu/settings_runtime_cfg.c
         third_party/cjson/cJSON.c
         src/lvosd.h
         src/lvosd.c
@@ -424,6 +425,7 @@ else()
   # fpvd provider sources (device build)
   list(APPEND SOURCE_FILES
       src/gsmenu/settings_fpvd.c
+      src/gsmenu/settings_runtime_cfg.c
       src/gsmenu/osd_air_bridge.h
       src/gsmenu/osd_air_bridge.c
       third_party/cjson/cJSON.c

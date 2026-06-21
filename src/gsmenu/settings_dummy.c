@@ -78,11 +78,6 @@ static const dummy_entry_t g_seed[] = {
     { "compute_min_bitrate_kbps", "1000" },
     { "compute_max_bitrate_kbps", "24000" },
     { "max_mcs",                  "5" },
-    /* Dynamic Link — Safe Ceilings */
-    { "safe_mcs",         "1" },
-    { "safe_k",           "8" },
-    { "safe_n",           "12" },
-    { "safe_bitrate_kbps","2000" },
 
     /* Display */
     { "video_scale",      "100" },

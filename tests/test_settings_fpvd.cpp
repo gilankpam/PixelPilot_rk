@@ -29,10 +29,6 @@ TEST_CASE("keymap: lookup returns the json path for known triples", "[fpvd][keym
     e = fpvd_keymap_lookup("air", "wfbng", "fec_k");
     REQUIRE(e != nullptr);
     REQUIRE(std::strcmp(e->path, "link.fec.k") == 0);
-
-    e = fpvd_keymap_lookup("air", "dlink", "safe_bitrate_kbps");
-    REQUIRE(e != nullptr);
-    REQUIRE(std::strcmp(e->path, "dynamicLink.safe.bitrateKbps") == 0);
 }
 
 TEST_CASE("keymap: lookup returns null for unknown triples", "[fpvd][keymap]") {
@@ -587,6 +583,6 @@ TEST_CASE("keymap: dynamicLink enabled is an orchestrated DLINK row", "[fpvd][ke
     REQUIRE(e->endpoint == FPVD_EP_AIR);
     REQUIRE(e->kind == FPVD_ROW_DLINK);
     /* the other dlink rows stay plain drone-only writes */
-    e = fpvd_keymap_lookup("air", "dlink", "safe_mcs");
+    e = fpvd_keymap_lookup("air", "dlink", "compute_base_redundancy");
     REQUIRE(e->kind == FPVD_ROW_PLAIN);
 }

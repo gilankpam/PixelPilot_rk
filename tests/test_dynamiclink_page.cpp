@@ -67,28 +67,29 @@ static bool subtree_has_label(lv_obj_t *obj, const char *text)
     return false;
 }
 
-TEST_CASE("Dynamic Link page drops deprecated Failsafe rows", "[dynamiclink]") {
+TEST_CASE("Dynamic Link page drops the whole Failsafe section", "[dynamiclink]") {
     lv_obj_t *scr = setup_screen();
     lv_obj_t *page = build_dynamiclink_tab(scr);
 
-    /* Deprecated rows that must no longer be built. */
-    REQUIRE_FALSE(subtree_has_label(page, "Block Depth"));
-    REQUIRE_FALSE(subtree_has_label(page, "Bandwidth"));
-    REQUIRE_FALSE(subtree_has_label(page, "TX Power (dBm)"));
+    /* Header + all four Failsafe rows are gone. */
+    REQUIRE_FALSE(subtree_has_label(page, "Failsafe"));
+    REQUIRE_FALSE(subtree_has_label(page, "MCS"));
+    REQUIRE_FALSE(subtree_has_label(page, "FEC K"));
+    REQUIRE_FALSE(subtree_has_label(page, "FEC N"));
+    REQUIRE_FALSE(subtree_has_label(page, "Bitrate (kbps)"));
 
     lv_obj_delete(scr);
 }
 
-TEST_CASE("Dynamic Link page keeps the surviving Failsafe rows",
-          "[dynamiclink]") {
+TEST_CASE("Dynamic Link page keeps the Compute rows", "[dynamiclink]") {
     lv_obj_t *scr = setup_screen();
     lv_obj_t *page = build_dynamiclink_tab(scr);
 
-    /* Sibling Failsafe rows that are NOT deprecated must remain. */
-    REQUIRE(subtree_has_label(page, "MCS"));
-    REQUIRE(subtree_has_label(page, "FEC K"));
-    REQUIRE(subtree_has_label(page, "FEC N"));
-    REQUIRE(subtree_has_label(page, "Bitrate (kbps)"));
+    REQUIRE(subtree_has_label(page, "Base Redundancy Ratio"));
+    REQUIRE(subtree_has_label(page, "Blocks / Frame"));
+    REQUIRE(subtree_has_label(page, "Min Bitrate"));
+    REQUIRE(subtree_has_label(page, "Max Bitrate"));
+    REQUIRE(subtree_has_label(page, "Max MCS"));
 
     lv_obj_delete(scr);
 }

@@ -271,7 +271,7 @@ void MppEncoder::encode_frame(EncRpc &rpc) {
     // especially for H265 which also needs VPS.
     if (!headers_sent && !extra_data.empty() && output_cb) {
         spdlog::info("MPP encoder: sending headers {}B to DVR", extra_data.size());
-        output_cb(std::make_shared<std::vector<uint8_t>>(extra_data));
+        output_cb(std::make_shared<std::vector<uint8_t>>(extra_data), rpc.pts);
         headers_sent = true;
     }
 
@@ -316,7 +316,7 @@ void MppEncoder::encode_frame(EncRpc &rpc) {
         if (len > 0 && output_cb) {
             output_cb(std::make_shared<std::vector<uint8_t>>(
                 static_cast<uint8_t *>(data),
-                static_cast<uint8_t *>(data) + len));
+                static_cast<uint8_t *>(data) + len), rpc.pts);
         }
         mpp_packet_deinit(&packet);
     }

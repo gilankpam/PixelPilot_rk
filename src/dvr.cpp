@@ -8,6 +8,7 @@
 #include "spdlog/spdlog.h"
 
 #include "dvr.h"
+#include "dvr_timing.h"
 #include "minimp4.h"
 
 #include "rtp_video_receiver.h"
@@ -71,10 +72,11 @@ Dvr::Dvr(dvr_thread_params params) {
 
 Dvr::~Dvr() {}
 
-void Dvr::frame(std::shared_ptr<std::vector<uint8_t>> frame) {
+void Dvr::frame(std::shared_ptr<std::vector<uint8_t>> frame, int64_t pts_ms) {
 	dvr_rpc rpc = {
 		.command = dvr_rpc::RPC_FRAME,
-		.frame = frame
+		.frame = frame,
+		.pts_ms = pts_ms
 	};
 	enqueue_dvr_command(rpc);
 }
@@ -214,6 +216,25 @@ void Dvr::loop() {
 					// Cache parameter sets as they arrive (they don't change)
 					if (!params_complete)
 						cache_parameter_sets(frame->data(), frame->size());
+					// Frame duration (90 kHz). Re-encode frames carry a real
+					// capture timestamp (rpc.pts_ms >= 0): derive the duration
+					// from the inter-frame delta so the file matches wall-clock
+					// despite pacer jitter. Parameter-set-only buffers emit no
+					// sample (duration ignored) and must not advance the timeline.
+					// The raw path has no pts and keeps the nominal 1/fps.
+					int dur;
+					if (rpc.pts_ms >= 0) {
+						if (dvr_buffer_has_vcl(frame->data(), frame->size(),
+						                       codec == VideoCodec::H265)) {
+							dur = (int)dvr_frame_duration_90k(rpc.pts_ms, last_pts_ms,
+							                                  video_framerate);
+							last_pts_ms = rpc.pts_ms;
+						} else {
+							dur = 0;
+						}
+					} else {
+						dur = (video_framerate > 0) ? 90000 / video_framerate : 3000;
+					}
 					// File splitting: split on next IDR when over size limit
 					if (max_file_size > 0 && write_ctx.file_size > max_file_size) {
 						if (!split_pending) {
@@ -243,11 +264,11 @@ void Dvr::loop() {
 								mp4_h26x_write_nal(mp4wr, params.data(), params.size(), 0);
 							}
 							mp4_h26x_write_nal(mp4wr, frame->data(),
-								frame->size(), 90000/video_framerate);
+								frame->size(), dur);
 							break;
 						}
 					}
-					mp4_h26x_write_nal(mp4wr, frame->data(), frame->size(), 90000/video_framerate);
+					mp4_h26x_write_nal(mp4wr, frame->data(), frame->size(), dur);
 					break;
 				}
 			case dvr_rpc::RPC_SHUTDOWN:
@@ -331,6 +352,7 @@ int Dvr::start() {
 		return -1;
 	}
 	write_ctx.file_size = 0;
+	last_pts_ms = -1;  // new recording session: first frame uses nominal duration
 	mux = MP4E_open(0 /*sequential_mode*/, mp4_fragmentation_mode, &write_ctx, write_callback);
 	if (max_file_size > 0)
 		spdlog::info("DVR file splitting enabled at {} MB", max_file_size / (1024*1024));

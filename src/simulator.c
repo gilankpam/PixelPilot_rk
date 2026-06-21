@@ -101,11 +101,7 @@ void restream_scan_clients(char *buf, size_t buf_len) { if (buf && buf_len) buf[
 const char *restream_get_manual_ip(void)              { return ""; }
 
 int dvr_get_mode(void)          { return 0; }
-int dvr_reenc_get_osd(void)     { return 0; }
-int dvr_reenc_get_fps(void)     { return 30; }
 int dvr_reenc_get_bitrate(void) { return 8000; }
-int dvr_reenc_get_codec(void)   { return 0; }
-int dvr_reenc_get_resolution(void) { return 1; }
 int dvr_get_max_size(void)      { return 4000; }
 void my_log_cb(lv_log_level_t level, const char * buf)
 {

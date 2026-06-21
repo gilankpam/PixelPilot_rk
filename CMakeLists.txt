@@ -286,6 +286,18 @@ if(USE_SIMULATOR)
       ${PROJECT_SOURCE_DIR}/src)
     target_link_libraries(osd_buf_tests Catch2::Catch2WithMain)
 
+    add_executable(dvr_timing_tests
+      tests/test_dvr_timing.cpp)
+    target_include_directories(dvr_timing_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(dvr_timing_tests Catch2::Catch2WithMain)
+
+    add_executable(dvr_fps_cap_tests
+      tests/test_dvr_fps_cap.cpp)
+    target_include_directories(dvr_fps_cap_tests PRIVATE
+      ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(dvr_fps_cap_tests Catch2::Catch2WithMain)
+
     add_executable(rtp_depay_tests
       src/hevc_depayloader.cpp
       tests/test_hevc_depayloader.cpp)

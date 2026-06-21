@@ -122,7 +122,6 @@ Dvr *dvr_reenc_inst = NULL;
 MppEncoder *reencoder = NULL;
 MppEncoderParams reenc_params;
 DvrMode dvr_mode = DVR_MODE_RAW;
-bool dvr_osd   = false;
 static int video_framerate = -1;
 static bool dvr_filenames_with_sequence = false;
 static int mp4_fragmentation_mode = 0;
@@ -151,10 +150,10 @@ float live_colortrans_offset = -0.15f;
 float live_colortrans_gain = 2.5f;
 gamma_lut_controller lut_ctrl;
 
-// Helper: get target width/height for the current re-encode resolution setting.
+// Helper: get target width/height for the re-encode encoder (screen mode dims).
 static void reenc_target_dims(uint32_t &w, uint32_t &h) {
-    if (reenc_params.resolution == EncResolution::Res720p) { w = 1280; h = 720; }
-    else { w = 1920; h = 1080; }
+    w = output_list ? output_list->mode.hdisplay : 1920;
+    h = output_list ? output_list->mode.vdisplay : 1080;
 }
 
 void init_buffer(MppFrame frame) {
@@ -564,19 +563,6 @@ static void *dvr_shutdown_worker(void *arg) {
 
 // C-compatible interface for gsmenu live control of the DVR.
 extern "C" {
-    void dvr_reenc_set_fps(int fps) {
-        if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
-        reenc_params.fps = fps;
-        if (dvr_reenc_inst) dvr_reenc_inst->set_video_framerate(fps);
-        if (frame_proc) frame_proc->set_fps(fps);
-        if (reencoder) reencoder->set_fps(fps);
-    }
-    void dvr_reenc_set_osd(int enabled) {
-        dvr_osd = (bool)enabled;
-        if (!enabled && frame_proc)
-            frame_proc->set_osd_blend(-1, 0, 0, 0);
-    }
-
     void dvr_reenc_notify_colortrans(int enabled) {
         if (!frame_proc) return;
         if (enabled)
@@ -584,11 +570,7 @@ extern "C" {
         else
             frame_proc->set_color_correction_enabled(false);
     }
-    int dvr_reenc_get_fps(void)     { return reenc_params.fps; }
     int dvr_reenc_get_bitrate(void) { return reenc_params.bitrate_kbps; }
-    int dvr_reenc_get_osd(void)     { return (int)dvr_osd; }
-    int dvr_reenc_get_codec(void)   { return (int)reenc_params.codec - 1; } // 0=h264, 1=h265
-    int dvr_reenc_get_resolution(void) { return (int)reenc_params.resolution; } // 0=720p, 1=1080p
 
     int  dvr_get_mode(void)  { return (int)dvr_mode; }
     // Deprecated — use dvr_get_mode() instead
@@ -609,30 +591,9 @@ extern "C" {
         }
     }
 
-    void dvr_reenc_set_resolution(int idx) {
-        if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
-        reenc_params.resolution = (EncResolution)idx;
-        if (frame_proc) frame_proc->set_resolution(reenc_params.resolution);
-        if (dvr_reenc_inst) {
-            uint32_t rw, rh; reenc_target_dims(rw, rh);
-            dvr_reenc_inst->set_video_params(rw, rh, reenc_params.codec);
-        }
-    }
-
     void dvr_reenc_set_bitrate(int kbps) {
         reenc_params.bitrate_kbps = kbps;
         if (reencoder) reencoder->set_bitrate(kbps);
-    }
-
-    void dvr_reenc_set_codec(int idx) {
-        if (dvr_reenc_inst) dvr_reenc_inst->stop_recording();
-        VideoCodec vc = (idx == 1) ? VideoCodec::H265 : VideoCodec::H264;
-        reenc_params.codec = vc;
-        if (reencoder) reencoder->set_codec(vc);
-        if (dvr_reenc_inst) {
-            uint32_t rw, rh; reenc_target_dims(rw, rh);
-            dvr_reenc_inst->set_video_params(rw, rh, vc);
-        }
     }
 
     void dvr_start_all(void) {
@@ -725,7 +686,6 @@ extern "C" {
             args.filename_template = tpl;
             args.mp4_fragmentation_mode = mp4_fragmentation_mode;
             args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-            args.video_framerate = reenc_params.fps;
             args.max_file_size = dvr_max_file_size;
             uint32_t rw, rh; reenc_target_dims(rw, rh);
             args.video_p.video_frm_width = rw;
@@ -734,12 +694,18 @@ extern "C" {
             dvr_reenc_inst = new Dvr(args);
             pthread_create(&g_tid_dvr_reenc, NULL, &Dvr::__THREAD__, dvr_reenc_inst);
 
+            reenc_params.fps = output_list ? (int)output_list->mode.vrefresh : 60;
+            args.video_framerate = reenc_params.fps;
             reencoder = new MppEncoder(reenc_params,
-                             [](std::shared_ptr<std::vector<uint8_t>> nal) {
-                                 if (dvr_enabled && dvr_reenc_inst) dvr_reenc_inst->frame(nal);
+                             [](std::shared_ptr<std::vector<uint8_t>> nal, uint64_t pts_ms) {
+                                 if (dvr_enabled && dvr_reenc_inst) dvr_reenc_inst->frame(nal, (int64_t)pts_ms);
                              });
             pthread_create(&g_tid_enc, NULL, &MppEncoder::__THREAD__, reencoder);
-            frame_proc = new FrameProcessor(reencoder, reenc_params.fps, reenc_params.resolution);
+            {
+                uint32_t rw, rh; reenc_target_dims(rw, rh);
+                int cap = output_list ? output_list->mode.vrefresh : 60;
+                frame_proc = new FrameProcessor(reencoder, cap, rw, rh);
+            }
             if (enable_live_colortrans)
                 frame_proc->set_color_correction(live_colortrans_gain,
                                                 live_colortrans_offset, drm_fd);
@@ -1064,15 +1030,7 @@ void printHelp() {
     "\n"
     "    --dvr-mode <mode>      - DVR recording mode: raw, reencode, or both (Default: raw)\n"
     "\n"
-    "    --dvr-reenc-codec <c>  - Re-encode codec: h264 or h265  (Default: h264)\n"
-    "\n"
     "    --dvr-reenc-bitrate <k>- Re-encode bitrate in kbps       (Default: 8000)\n"
-    "\n"
-    "    --dvr-reenc-fps <fps>  - Re-encode output FPS            (Default: 30)\n"
-    "\n"
-    "    --dvr-reenc-resolution <r> - Re-encode resolution: 720p or 1080p (Default: 1080p)\n"
-    "\n"
-    "    --dvr-osd              - Blend the OSD into the DVR recording\n"
     "\n"
     "    --screen-mode <mode>   - Override default screen mode. <width>x<heigth>@<fps> ex: 1920x1080@120\n"
     "\n"
@@ -1207,12 +1165,8 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-reenc-codec") {
-		VideoCodec c = video_codec(const_cast<char*>(__ArgValue));
-		if (c == VideoCodec::UNKNOWN) {
-			fprintf(stderr, "unsupported codec for --dvr-reenc-codec (use h264 or h265)\n");
-			return -1;
-		}
-		reenc_params.codec = c;
+		(void)__ArgValue;   // deprecated: re-encode codec is always h265
+		spdlog::warn("--dvr-reenc-codec is deprecated and ignored (codec is h265)");
 		continue;
 	}
 
@@ -1222,23 +1176,19 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-reenc-fps") {
-		reenc_params.fps = atoi(__ArgValue);
+		(void)__ArgValue;   // deprecated: fps follows input, capped at display refresh
+		spdlog::warn("--dvr-reenc-fps is deprecated and ignored (fps follows input, capped at display refresh)");
 		continue;
 	}
 
 	__OnArgument("--dvr-reenc-resolution") {
-		const char *v = __ArgValue;
-		if (!strcmp(v, "720p")) reenc_params.resolution = EncResolution::Res720p;
-		else if (!strcmp(v, "1080p")) reenc_params.resolution = EncResolution::Res1080p;
-		else {
-			fprintf(stderr, "unsupported resolution for --dvr-reenc-resolution (use 720p or 1080p)\n");
-			return -1;
-		}
+		(void)__ArgValue;   // deprecated: resolution follows the screen mode
+		spdlog::warn("--dvr-reenc-resolution is deprecated and ignored (resolution = screen mode)");
 		continue;
 	}
 
 	__OnArgument("--dvr-osd") {
-		dvr_osd = true;
+		spdlog::warn("--dvr-osd is deprecated and ignored (re-encode always burns in the OSD)");
 		continue;
 	}
 
@@ -1369,9 +1319,12 @@ int main(int argc, char **argv)
 	pp_settings_register_fpvd();
 	pp_osd_air_bridge_init();
 
+	// Re-encode codec is always h265 regardless of any (now-deprecated) --dvr-reenc-codec flag.
+	reenc_params.codec = VideoCodec::H265;
+
 	if (dvr_template != NULL && (dvr_mode == DVR_MODE_RAW || dvr_mode == DVR_MODE_BOTH) && video_framerate < 0) {
 		printf("--dvr-framerate must be provided when raw DVR is enabled.\n"
-		       "Use --dvr-mode reencode with --dvr-reenc-fps for hardware re-encoding only.\n");
+		       "Use --dvr-mode reencode for hardware re-encoding only.\n");
 		return 0;
 	}
 
@@ -1546,7 +1499,6 @@ int main(int argc, char **argv)
 			args.filename_template = tpl;
 			args.mp4_fragmentation_mode = mp4_fragmentation_mode;
 			args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-			args.video_framerate = reenc_params.fps;
 			args.max_file_size = dvr_max_file_size;
 			uint32_t rw, rh; reenc_target_dims(rw, rh);
 			args.video_p.video_frm_width = rw;
@@ -1556,14 +1508,20 @@ int main(int argc, char **argv)
 			ret = pthread_create(&g_tid_dvr_reenc, NULL, &Dvr::__THREAD__, dvr_reenc_inst);
 			assert(!ret);
 
-			reencoder = new MppEncoder(reenc_params, [](std::shared_ptr<std::vector<uint8_t>> nal) {
+			reenc_params.fps = output_list ? (int)output_list->mode.vrefresh : 60;
+			args.video_framerate = reenc_params.fps;
+			reencoder = new MppEncoder(reenc_params, [](std::shared_ptr<std::vector<uint8_t>> nal, uint64_t pts_ms) {
 				if (dvr_enabled && dvr_reenc_inst != NULL) {
-					dvr_reenc_inst->frame(nal);
+					dvr_reenc_inst->frame(nal, (int64_t)pts_ms);
 				}
 			});
 			ret = pthread_create(&g_tid_enc, NULL, &MppEncoder::__THREAD__, reencoder);
 			assert(!ret);
-			frame_proc = new FrameProcessor(reencoder, reenc_params.fps, reenc_params.resolution);
+			{
+				uint32_t rw, rh; reenc_target_dims(rw, rh);
+				int cap = output_list ? output_list->mode.vrefresh : 60;
+				frame_proc = new FrameProcessor(reencoder, cap, rw, rh);
+			}
 			if (enable_live_colortrans) {
 				frame_proc->set_color_correction(live_colortrans_gain,
 				                                live_colortrans_offset, drm_fd);

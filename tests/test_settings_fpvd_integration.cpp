@@ -402,11 +402,11 @@ TEST_CASE("integration: staged pixelpilot row patches /gs/config without apply",
     install_provider_pointing_at(srv.port);
 
     DoneWaiter w;
-    pp_settings_set_async("gs", "dvr", "dvr_osd", "off", DoneWaiter::cb, &w);
+    pp_settings_set_async("gs", "dvr", "dvr_reenc_bitrate", "4000", DoneWaiter::cb, &w);
     REQUIRE(w.wait());
     REQUIRE(w.rc == 0);
     REQUIRE(pp_settings_has_pending() == true);
-    REQUIRE(srv.last_gs_patch_body.find("\"osd\":false") != std::string::npos);
+    REQUIRE(srv.last_gs_patch_body.find("\"reencBitrate\":4000") != std::string::npos);
     for (auto &l : srv.snapshot_log()) REQUIRE(l != "POST /gs/apply");
 
     /* Explicit apply commits and clears pending. */
@@ -497,7 +497,7 @@ TEST_CASE("integration: drone reachability gates air rows, not GS rows", "[fpvd]
     /* GS rows stay reachable — including shared channel/width (recovery path). */
     REQUIRE(pp_settings_is_reachable("gs", "wfbng", "gs_channel") == true);
     REQUIRE(pp_settings_is_reachable("gs", "link", "rx_power") == true);
-    REQUIRE(pp_settings_is_reachable("gs", "dvr", "dvr_osd") == true);
+    REQUIRE(pp_settings_is_reachable("gs", "dvr", "dvr_reenc_bitrate") == true);
     m.stop();
 }
 

@@ -10,20 +10,14 @@
 
 #include "mpp_encoder.h"
 #include "frame_colorcorrect.h"
+#include "dvr_fps_cap.h"
 
 // ---------------------------------------------------------------------------
-// FrameProcessor: feeds MppEncoder at a steady fps regardless of incoming rate.
+// FrameProcessor: feeds MppEncoder at variable fps capped to cap_fps.
 //
-//  Two internal threads:
-//   1. Processor thread (has GL context): receives decoded frames, performs
-//      copy/resize/color-correction/OSD-blend, publishes the result.
-//   2. Timer thread: wakes at target fps intervals and submits the latest
-//      processed frame to the encoder — or repeats the last one if none
-//      arrived, preventing a speedup effect when source fps < target fps.
-//
-//  Decoupling processing from pacing ensures the timer is never blocked by
-//  heavy image work.  Throughput is limited by the slowest single stage
-//  instead of the serial sum of all stages.
+//  Single internal thread: receives decoded frames, performs
+//  copy/resize/color-correction/OSD-blend, and pushes directly to the
+//  encoder.  Frames that arrive faster than the cap are dropped.
 // ---------------------------------------------------------------------------
 
 struct FrameProcFrame {
@@ -40,7 +34,7 @@ struct FrameProcFrame {
 
 class FrameProcessor {
 public:
-    FrameProcessor(MppEncoder *enc, int fps, EncResolution res = EncResolution::Res1080p);
+    FrameProcessor(MppEncoder *enc, int cap_fps, uint32_t enc_w, uint32_t enc_h);
     ~FrameProcessor();
 
     // Called from decoder thread: update the latest available frame.
@@ -48,12 +42,6 @@ public:
                      uint32_t hs, uint32_t vs, MppFrameFormat fmt);
 
     void shutdown();
-
-    // Live-update the pacing interval (thread-safe).
-    void set_fps(int fps) { interval_ns.store(1000000000L / fps, std::memory_order_relaxed); }
-
-    // Set encoder output resolution (thread-safe).
-    void set_resolution(EncResolution r) { target_res_.store((int)r, std::memory_order_relaxed); }
 
     // Enable GPU color correction using the DRM gamma formula y = clamp((x+offset)*gain, 0, 1).
     // Safe to call from any thread.  drm_fd is used to create the GBM/EGL context (lazy).
@@ -77,27 +65,18 @@ public:
     void set_osd_blend(int prime_fd, uint32_t w, uint32_t h, uint32_t stride_px);
 
     static void *__THREAD__(void *p);
-    static void *__TIMER_THREAD__(void *p);
 
 private:
     void process_loop();
-    void timer_loop();
 
     MppEncoder            *encoder;
-    std::atomic<long>     interval_ns;
-    std::atomic<int>      target_res_{1};  // 0=720p, 1=1080p
+    uint32_t               enc_w_ = 0, enc_h_ = 0;
+    int                    cap_fps_ = 0;
     std::atomic<bool>     running{true};
     std::mutex              mtx;       // guards pending (shared with frame/decoder thread)
     std::condition_variable cv_;       // signalled by push_latest(); processor waits here
     std::mutex              copy_mtx_; // held by processor while it uses a decoder buffer
     FrameProcFrame     pending;   // latest from decoder (shared with decoder thread)
-
-    // Shared between processor (writer) and timer (reader):
-    std::mutex              ready_mtx_;       // guards last_copy / last_meta
-    std::condition_variable ready_cv_;        // signalled when fresh frame published
-    bool                    ready_fresh_{false}; // true = last_copy updated since last pickup
-    MppBuffer         last_copy   = nullptr;  // latest processed frame pixels
-    FrameProcFrame     last_meta;              // geometry/format for last_copy
 
     // Only accessed from the processor thread — no mutex needed:
     MppBufferGroup    hold_grp  = nullptr;  // our own DRM buffer pool

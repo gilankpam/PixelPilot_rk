@@ -395,10 +395,6 @@ TEST_CASE("keymap: pixelpilot rows route to EP_GS as staged rows", "[fpvd][keyma
     REQUIRE(std::strcmp(e->path, "pixelpilot.dvr.reencBitrate") == 0);
     REQUIRE(e->type == FPVD_T_INT);
 
-    e = fpvd_keymap_lookup("gs", "dvr", "dvr_osd");
-    REQUIRE(std::strcmp(e->path, "pixelpilot.dvr.osd") == 0);
-    REQUIRE(e->type == FPVD_T_BOOL);
-
     // color correction stays unmapped (handled by the unavailable rule)
     REQUIRE(fpvd_keymap_lookup("gs", "display", "color_correction") == nullptr);
     REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_enabled") == nullptr);

@@ -68,21 +68,9 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
     pp_slider(page, LV_SYMBOL_SD_CARD, "Max file size (MB)",
               "gs", "dvr", "dvr_max_size", 100, 16000);
 
-    pp_section_header(page, "DVR · Re-encode");
-    pp_dropdown(page, LV_SYMBOL_VIDEO, "Codec",
-                "gs", "dvr", "dvr_reenc_codec", "h264\nh265");
-    pp_dropdown(page, LV_SYMBOL_VIDEO, "Resolution",
-                "gs", "dvr", "dvr_reenc_resolution",
-                "1080p\n720p");
-    pp_dropdown(page, LV_SYMBOL_REFRESH, "Re-encode FPS",
-                "gs", "dvr", "dvr_reenc_fps", "30\n60");
-    pp_dropdown(page, LV_SYMBOL_AUDIO, "Bitrate (kbps)",
+    pp_dropdown(page, LV_SYMBOL_AUDIO, "Re-encode bitrate (kbps)",
                 "gs", "dvr", "dvr_reenc_bitrate",
                 "4000\n8000\n12000\n16000\n25000");
-
-    pp_section_header(page, "DVR · Overlay");
-    pp_toggle(page, LV_SYMBOL_EYE_OPEN, "Burn OSD into DVR",
-              "gs", "dvr", "dvr_osd");
 
     pp_section_header(page, "Playback");
     lv_obj_t *pb_row = pp_row_text(page, LV_SYMBOL_PLAY, "Browse recordings…", NULL);

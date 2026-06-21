@@ -118,3 +118,75 @@ char *pp_runtime_cfg_get(const char *domain, const char *page, const char *key) 
     }
     return NULL;
 }
+
+void pp_runtime_cfg_set_ops(const pp_runtime_cfg_ops_t *ops) { g_ops = ops; }
+
+bool pp_runtime_cfg_is_recording(void) {
+    return (g_ops && g_ops->is_recording) ? (g_ops->is_recording() != 0) : false;
+}
+
+/* Atomic write of g_state to g_path via "<path>.tmp" + rename(). */
+static void persist(void) {
+    cJSON *root = cJSON_CreateObject();
+    cJSON *dvr  = cJSON_AddObjectToObject(root, "dvr");
+    cJSON_AddStringToObject(dvr, "mode", mode_int_to_str(g_state.dvr_mode));
+    cJSON_AddNumberToObject(dvr, "maxSizeMb", g_state.dvr_max_size_mb);
+    cJSON_AddNumberToObject(dvr, "reencBitrateKbps", g_state.dvr_reenc_kbps);
+    cJSON *cc = cJSON_AddObjectToObject(root, "colorCorrection");
+    cJSON_AddBoolToObject(cc, "enabled", g_state.cc_enabled ? 1 : 0);
+    cJSON_AddNumberToObject(cc, "gain", g_state.cc_gain);
+    cJSON_AddNumberToObject(cc, "offset", g_state.cc_offset);
+
+    char *txt = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!txt) return;
+
+    char tmp[540];
+    snprintf(tmp, sizeof tmp, "%s.tmp", g_path);
+    FILE *f = fopen(tmp, "wb");
+    if (f) {
+        fwrite(txt, 1, strlen(txt), f);
+        fflush(f);
+        fclose(f);
+        rename(tmp, g_path);   /* atomic replace */
+    }
+    free(txt);
+}
+
+static void apply_colortrans(void) {
+    if (g_ops && g_ops->colortrans_apply)
+        g_ops->colortrans_apply(g_state.cc_enabled,
+                                g_state.cc_gain   / 10.0f,
+                                g_state.cc_offset / 100.0f);
+}
+
+void pp_runtime_cfg_set(const char *domain, const char *page,
+                        const char *key, const char *value) {
+    if (!pp_runtime_cfg_owns(domain, page, key)) return;
+    ensure_primed();
+
+    if (eq(page, "dvr")) {
+        if (eq(key, "dvr_mode")) {
+            g_state.dvr_mode = mode_str_to_int(value, g_state.dvr_mode);
+            if (g_ops && g_ops->dvr_set_mode) g_ops->dvr_set_mode(g_state.dvr_mode);
+        } else if (eq(key, "dvr_max_size")) {
+            g_state.dvr_max_size_mb = atoi(value);
+            if (g_ops && g_ops->dvr_set_max_size) g_ops->dvr_set_max_size(g_state.dvr_max_size_mb);
+        } else if (eq(key, "dvr_reenc_bitrate")) {
+            g_state.dvr_reenc_kbps = atoi(value);
+            if (g_ops && g_ops->dvr_reenc_set_bitrate) g_ops->dvr_reenc_set_bitrate(g_state.dvr_reenc_kbps);
+        }
+    } else { /* display */
+        if (eq(key, "color_correction")) {
+            g_state.cc_enabled = (strcmp(value, "on") == 0) ? 1 : 0;
+            apply_colortrans();
+        } else if (eq(key, "cc_gain")) {
+            g_state.cc_gain = atoi(value);
+            apply_colortrans();
+        } else if (eq(key, "cc_offset")) {
+            g_state.cc_offset = atoi(value);
+            apply_colortrans();
+        }
+    }
+    persist();
+}

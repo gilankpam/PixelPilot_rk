@@ -104,3 +104,75 @@ TEST_CASE("get returns widget-format strings from the loaded file") {
     REQUIRE(pp_runtime_cfg_get("gs", "display", "screen_mode") == nullptr);
     remove(p.c_str());
 }
+
+/* ---- fake apply ops ---- */
+struct FakeOps {
+    int mode = -1, max_mb = -1, kbps = -1;
+    int cc_enabled = -1; float cc_gain = -1, cc_offset = -1;
+    int recording = 0;
+};
+static FakeOps g_fake;
+static void f_mode(int m)      { g_fake.mode = m; }
+static void f_max(int mb)      { g_fake.max_mb = mb; }
+static void f_kbps(int k)      { g_fake.kbps = k; }
+static void f_cc(int e, float g, float o) { g_fake.cc_enabled = e; g_fake.cc_gain = g; g_fake.cc_offset = o; }
+static int  f_rec(void)        { return g_fake.recording; }
+
+static void install_fake_ops() {
+    static pp_runtime_cfg_ops_t ops = { f_mode, f_max, f_kbps, f_cc, f_rec };
+    pp_runtime_cfg_set_ops(&ops);
+}
+
+TEST_CASE("set applies via ops and persists to disk") {
+    g_fake = FakeOps{};
+    install_fake_ops();
+    std::string p = std::string("/tmp/pp_rtcfg_set_") + std::to_string(::rand()) + ".json";
+    pp_runtime_cfg_set_path(p.c_str());
+    pp_runtime_cfg_t c; pp_runtime_cfg_load(&c);   /* primes from (missing) file -> defaults */
+
+    pp_runtime_cfg_set("gs", "dvr", "dvr_mode", "both");
+    REQUIRE(g_fake.mode == 2);
+
+    pp_runtime_cfg_set("gs", "dvr", "dvr_max_size", "9000");
+    REQUIRE(g_fake.max_mb == 9000);
+
+    pp_runtime_cfg_set("gs", "dvr", "dvr_reenc_bitrate", "16000");
+    REQUIRE(g_fake.kbps == 16000);
+
+    pp_runtime_cfg_set("gs", "display", "cc_gain", "30");
+    /* colortrans_apply gets all three cc fields; gain mapped /10 */
+    REQUIRE(g_fake.cc_gain == 3.0f);
+    REQUIRE(g_fake.cc_offset == -0.15f);   /* default -15 / 100 */
+    REQUIRE(g_fake.cc_enabled == 0);
+
+    pp_runtime_cfg_set("gs", "display", "color_correction", "on");
+    REQUIRE(g_fake.cc_enabled == 1);
+
+    /* Persisted: reload from a fresh path-reset and confirm round-trip. */
+    pp_runtime_cfg_set_path(p.c_str());
+    pp_runtime_cfg_t r; REQUIRE(pp_runtime_cfg_load(&r) == true);
+    REQUIRE(r.dvr_mode == 2);
+    REQUIRE(r.dvr_max_size_mb == 9000);
+    REQUIRE(r.dvr_reenc_kbps == 16000);
+    REQUIRE(r.cc_gain == 30);
+    REQUIRE(r.cc_enabled == 1);
+    remove(p.c_str());
+    pp_runtime_cfg_set_ops(NULL);
+}
+
+TEST_CASE("set on a non-owned key is a no-op") {
+    g_fake = FakeOps{};
+    install_fake_ops();
+    pp_runtime_cfg_set("gs", "display", "screen_mode", "1280x720@60");
+    REQUIRE(g_fake.mode == -1);
+    pp_runtime_cfg_set_ops(NULL);
+}
+
+TEST_CASE("is_recording reflects ops; false when unregistered") {
+    pp_runtime_cfg_set_ops(NULL);
+    REQUIRE(pp_runtime_cfg_is_recording() == false);
+    g_fake = FakeOps{}; g_fake.recording = 1;
+    install_fake_ops();
+    REQUIRE(pp_runtime_cfg_is_recording() == true);
+    pp_runtime_cfg_set_ops(NULL);
+}

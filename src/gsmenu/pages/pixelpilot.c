@@ -126,10 +126,12 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
      * for pp_page_data_t, so the context lives in the timer user_data and
      * is freed by the LV_EVENT_DELETE handler below. */
     rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)malloc(sizeof(*ctx));
-    ctx->page  = page;
-    ctx->last  = pp_runtime_cfg_is_recording() ? 1 : 0;
-    ctx->timer = lv_timer_create(rec_watch_timer_cb, 500, ctx);
-    lv_obj_add_event_cb(page, rec_watch_page_delete_cb, LV_EVENT_DELETE, ctx);
+    if (ctx) {
+        ctx->page  = page;
+        ctx->last  = pp_runtime_cfg_is_recording() ? 1 : 0;
+        ctx->timer = lv_timer_create(rec_watch_timer_cb, 500, ctx);
+        lv_obj_add_event_cb(page, rec_watch_page_delete_cb, LV_EVENT_DELETE, ctx);
+    }
     pp_page_reapply_lock_state(page);   /* initial state */
 
     return page;

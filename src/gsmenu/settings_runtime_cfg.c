@@ -145,10 +145,17 @@ static void persist(void) {
     snprintf(tmp, sizeof tmp, "%s.tmp", g_path);
     FILE *f = fopen(tmp, "wb");
     if (f) {
-        fwrite(txt, 1, strlen(txt), f);
-        fflush(f);
-        fclose(f);
-        rename(tmp, g_path);   /* atomic replace */
+        size_t len = strlen(txt);
+        if (fwrite(txt, 1, len, f) == len) {
+            fflush(f);
+            fclose(f);
+            rename(tmp, g_path);   /* atomic replace */
+        } else {
+            /* Short write (e.g. disk full): never promote a truncated file
+             * over the live config — drop the temp instead. */
+            fclose(f);
+            remove(tmp);
+        }
     }
     free(txt);
 }

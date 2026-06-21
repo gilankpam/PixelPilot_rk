@@ -45,8 +45,11 @@ Explicitly out of scope:
    polling.
 3. **Color-correction target (B):** both live display and re-encode recording.
 4. **Apply UX (A):** live apply. Each change calls the runtime setter
-   immediately and writes the JSON; gain/offset slider moves are debounced
-   (~200 ms, plus a final write on release).
+   immediately and writes the JSON. **No debounce needed:** the keypad-driven
+   widgets write exactly once on commit (the slider calls `pp_settings_set_async`
+   only on ENTER-to-exit-edit, and only if the value changed — pp_slider.c:142),
+   not per-step, so there is no drag write-storm. This keeps the module
+   LVGL-free and deterministic.
 5. **Recording gate:** while recording, all three DVR rows are greyed out in the
    menu; color-correction rows stay live. Recording state is read in-process
    (`dvr_enabled` / the `dvr.recording` fact).
@@ -85,9 +88,20 @@ menu (see "menu side").
 
 - **Startup:** parse the JSON; seed the existing globals `dvr_mode`,
   `dvr_max_file_size`, `reenc_params.bitrate_kbps`, `enable_live_colortrans`,
-  `live_colortrans_gain`, `live_colortrans_offset`. Remove the four CLI flags
+  `live_colortrans_gain`, `live_colortrans_offset`. The four CLI flags
   (`--dvr-mode`, `--dvr-max-size`, `--dvr-reenc-bitrate`, `--live-colortrans`)
-  and their arg-parsing.
+  become **deprecated no-ops** (accept + warn + ignore, matching the existing
+  `--dvr-framerate` pattern) rather than hard-removed — fpvd may still inject
+  them via `EXTRA_OPTS` at relaunch, and removing the parser would break launch.
+  JSON is the authoritative source; the flags no longer have any effect.
+- **Apply ops vtable:** the menu cannot call the `main.cpp` runtime setters
+  directly because the simulator (and host tests) build the PP page but do not
+  link `main.cpp`. The runtime-config module exposes a registerable ops struct
+  (`dvr_set_mode`, `dvr_set_max_size`, `dvr_reenc_set_bitrate`,
+  `colortrans_apply`, `is_recording`). The device build registers the real
+  `extern "C"` functions at startup; the simulator/tests leave it unregistered
+  (calls become no-ops / recording reads false). This also makes the module
+  fully host-testable with a fake ops struct.
 - **Existing runtime setters reused as-is** (already `extern "C"` in main.cpp):
   - DVR → `dvr_set_mode()`, `dvr_reenc_set_bitrate()`, `dvr_set_max_size()`.
   - Color correction, re-encode path → `set_color_correction()` /
@@ -109,10 +123,11 @@ menu (see "menu side").
 
 ## Launch path
 
-- `debian/pixelpilot-rk.pixelpilot.service` — drop the four removed flags from
-  `ExecStart`. The `DVR_*` env vars in `debian/pixelpilot-rk.pixelpilot.default`
-  become unused.
-- Package ships the default `runtime.json` at the chosen path.
+- The systemd unit (`debian/pixelpilot-rk.pixelpilot.service`) does not pass
+  these four flags directly today (fpvd injects them via `EXTRA_OPTS`), so the
+  unit needs no change. The flags are handled as deprecated no-ops in the parser.
+- Package ships the default `runtime.json` at the chosen path so the file always
+  exists.
 
 ## Menu side (in-process gsmenu)
 
@@ -124,11 +139,11 @@ rather than staging to fpvd.
 
 - **New module `settings_runtime_cfg.{c,h}`** (in `src/gsmenu/`): owns the JSON
   file (read at startup, atomic write on change via temp file + `rename`), the
-  value↔float mapping for gain/offset, the debounce for sliders, and the direct
-  calls into the pixelpilot `extern "C"` runtime setters (`dvr_set_mode`,
-  `dvr_reenc_set_bitrate`, `dvr_set_max_size`, `pp_colortrans_apply`). Exposes a
-  predicate `pp_runtime_cfg_owns(domain, page, key)` plus `set`/`get` for the six
-  keys.
+  value↔float mapping for gain/offset, and dispatch into the registered apply ops
+  (`dvr_set_mode`, `dvr_set_max_size`, `dvr_reenc_set_bitrate`,
+  `colortrans_apply`, `is_recording`). Exposes a predicate
+  `pp_runtime_cfg_owns(domain, page, key)` plus `set`/`get` for the six keys.
+  No LVGL dependency; apply + persist happen synchronously per committed change.
 - **Provider routing (`settings_fpvd.c`):** in `set`/`get`/`set_async` and
   `is_available`, if `pp_runtime_cfg_owns(...)` route to the runtime-config
   module. These keys are **not** staged and do **not** participate in

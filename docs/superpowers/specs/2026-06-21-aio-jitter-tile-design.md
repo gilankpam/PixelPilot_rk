@@ -93,21 +93,39 @@ private:
 Keeping `J` in µs internally avoids precision loss; convert to ms only at the
 boundary.
 
-### 2. Wire it into `latency_probe::on_rtp_buffer`
+### 2. Wire it into `RtpVideoReceiver`'s packet loop
 
-`on_rtp_buffer` (`latency_probe.cpp:230`) already runs per RTP packet, gates on
-`marker=1` (one per frame), and holds `h.timestamp` + `gs_recv_us`. Add, right
-after the existing `on_marker_arrival` call:
+> **Revised 2026-06-21 (decouple):** the estimator was originally wired into
+> `latency_probe::on_rtp_buffer`, which made the JITTER tile depend on the
+> latency probe being enabled (and on its drone-side sidecar/clock-sync) —
+> wrong for a pure link metric. It now lives in the RTP receiver and publishes
+> unconditionally whenever video flows. The original probe-based wiring is
+> retained below struck-through for history.
+
+`RtpVideoReceiver::recv_loop` (`rtp_video_receiver.cpp`) already parses every
+packet's `marker` bit and RTP timestamp. The estimator is a member
+(`RtpJitterEstimator m_jitter;` in `rtp_video_receiver.h`); on `marker=1`
+packets the loop parses the SSRC (bytes 8–11), stamps a local
+`steady_clock` arrival time, updates the estimator, and publishes directly:
 
 ```cpp
-double jms = s->jitter.update(h.ssrc, h.timestamp, gs_recv_us);
-s->pub_u("video.rtp_jitter_ms", (uint64_t)llround(jms));
+if (marker) {
+    const uint32_t ssrc = /* bytes 8..11 */;
+    const uint64_t recv_us = /* steady_clock now, µs */;
+    const double jms = m_jitter.update(ssrc, ts, recv_us);
+    osd_publish_uint_fact("video.rtp_jitter_ms", nullptr, 0,
+                          (unsigned long)std::llround(jms));
+}
 ```
 
-- `RtpJitterEstimator jitter;` becomes a member of `ProbeState`.
-- Publishes via the same `pub_u` indirection the probe already uses, so the
-  test publish-override path (`set_publish_overrides_for_test`) captures it.
-- Runs on the receiver thread, same as the existing marker handling.
+- Independent of `latency_probe` — no `active` gate, no sidecar, no clock-sync.
+- Arrival time is local `steady_clock` µs; the jitter math is a
+  difference-of-differences, so the sender/receiver offset still cancels.
+- Runs on the single receiver thread (same as the existing marker handling).
+
+~~**Original (probe-based):** add to `latency_probe::on_rtp_buffer` after the
+`on_marker_arrival` call, with `RtpJitterEstimator jitter;` as a `ProbeState`
+member, publishing via the probe's `pub_u` indirection.~~
 
 **New fact: `video.rtp_jitter_ms`** (uint, ms). Named to distinguish it from
 the unrelated `--rtp-jitter-ms` *jitter-buffer* CLI knob (now ignored).
@@ -149,16 +167,16 @@ Add to the enum (`osd_aio_logic.hpp:10`) and `resolve_band`
 ## Data flow
 
 ```
-RTP marker packet ──(pad probe)──► latency_probe::on_rtp_buffer
-                                      │  RtpJitterEstimator::update(ssrc, rtp_ts, gs_recv_us)
-                                      ▼
-                            pub_u("video.rtp_jitter_ms", J)
-                                      │  (OSD publish)
-                                      ▼
-                         AIOWidget::setFact(SLOT_JITTER)  ── stores latest
-                                      │  (1 Hz cairo redraw)
-                                      ▼
-                    draw_strip: JITTER tile, ms, Metric::Jitter band
+RTP marker packet ──► RtpVideoReceiver::recv_loop (per frame, always)
+                        │  m_jitter.update(ssrc, rtp_ts, steady_clock µs)
+                        ▼
+              osd_publish_uint_fact("video.rtp_jitter_ms", J)
+                        │  (OSD publish)
+                        ▼
+            AIOWidget::setFact(SLOT_JITTER)  ── stores latest
+                        │  (1 Hz cairo redraw)
+                        ▼
+        draw_strip: JITTER tile, ms, Metric::Jitter band
 ```
 
 ## Testing
@@ -173,8 +191,12 @@ Host sim / Catch2 (see [[reference_host_sim_test_build]]):
   - SSRC change resets state.
   - First sample after reset returns 0 (no previous reference).
 - **`resolve_band(Metric::Jitter, …)` boundary tests**: 10/11, 25/26 ms.
-- **Publish integration**: with `set_publish_overrides_for_test`, feed marker
-  buffers through `on_rtp_buffer` and assert `video.rtp_jitter_ms` is emitted.
+- **Probe non-publish**: the latency-probe integration test asserts the probe
+  does **not** emit `video.rtp_jitter_ms` (jitter now lives in the receiver).
+  The receiver's publish wiring (inline RTP-header parse → estimator →
+  `osd_publish_uint_fact`) has no host socket-test harness; it is covered by
+  the estimator unit tests plus the aarch64 device compile+link gate and
+  on-device verification.
 
 ## Non-goals / notes
 
@@ -182,12 +204,11 @@ Host sim / Catch2 (see [[reference_host_sim_test_build]]):
   the AIO subscription changes; other OSD configs may still reference latency.
 - **`VideoStutterWidget` is untouched** — the median-based stutter rate / 10 s
   peak widget remains available; this only changes the AIO tile.
-- **Probe dependency**: jitter is published only while `latency_probe` is
-  active (the pad-probe hook is gated on `latency_probe::active`). Unlike
-  latency it needs *no* sidecar/clock-sync, but it does require the probe to be
-  started via OSD config. If the probe is disabled, the JITTER tile shows
-  `--`. Decoupling jitter from the probe lifecycle is possible but out of
-  scope here.
+- **No probe dependency** (decoupled 2026-06-21): jitter is computed in
+  `RtpVideoReceiver` and published whenever video flows, independent of
+  `latency_probe`. It needs no sidecar, no clock-sync, and no `latency_probe`
+  config — a pure link metric. When no fact has arrived yet (e.g. no video) the
+  tile renders `0`, matching the prior LATENCY tile's unconditional render.
 - **Custom AIO configs**: anyone with an explicit per-slot `facts` list for
   their AIOWidget must swap `video.latency.total_ms` → `video.rtp_jitter_ms`
   themselves; the default injected list is handled.

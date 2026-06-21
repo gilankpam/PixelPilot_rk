@@ -8,31 +8,57 @@
 #include "../settings_runtime_cfg.h"
 #include "../helper.h"
 #include <stdlib.h>
+#include <string.h>
 
-/* ---- Recording-watch timer: re-apply row lock when DVR starts/stops ----
- * Recording is toggled out-of-band (SIGUSR1), not through the settings
- * snapshot, so nothing else re-evaluates row lock state.  A 500 ms timer
- * polls the in-process flag and calls pp_page_reapply_lock_state only when
- * the flag changes.  The page user_data is owned by pp_page_data_t (in
- * pp_page.c), so we keep our own context struct in the timer user_data and
- * free it via LV_EVENT_DELETE on the page. */
+/* ---- Page-state watch (500 ms) ----
+ * The PP page reacts to two changes the settings snapshot doesn't surface:
+ *   1. DVR recording start/stop (SIGUSR1) -> re-lock the DVR config rows.
+ *   2. DVR mode -> the Re-encode bitrate row only applies when re-encoding,
+ *      so it is hidden in raw mode.
+ * A single 500 ms timer polls both and acts only on change. The page
+ * user_data is owned by pp_page_data_t (pp_page.c), so the context lives in
+ * the timer user_data and is freed via LV_EVENT_DELETE on the page. */
 typedef struct {
-    lv_obj_t  *page;
+    lv_obj_t   *page;
     lv_timer_t *timer;
-    int        last;
-} rec_watch_ctx_t;
+    lv_obj_t   *bitrate_row;    /* hidden when dvr_mode == raw */
+    int         last_recording;
+    int         last_reenc;
+} pp_watch_ctx_t;
 
-static void rec_watch_timer_cb(lv_timer_t *t) {
-    rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)lv_timer_get_user_data(t);
-    int now = pp_runtime_cfg_is_recording() ? 1 : 0;
-    if (ctx->last != now) {
-        ctx->last = now;
+/* Whether re-encoding applies (mode != raw). Read via the generic provider so
+ * it works with both the runtime-cfg backend (device) and the dummy (sim). */
+static int dvr_reenc_active(void) {
+    char *m = pp_settings_get("gs", "dvr", "dvr_mode");
+    int active = (m && strcmp(m, "raw") != 0);
+    free(m);
+    return active;
+}
+
+static void apply_bitrate_visibility(pp_watch_ctx_t *ctx) {
+    if (!ctx->bitrate_row) return;
+    if (ctx->last_reenc)
+        lv_obj_clear_flag(ctx->bitrate_row, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(ctx->bitrate_row, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void pp_watch_timer_cb(lv_timer_t *t) {
+    pp_watch_ctx_t *ctx = (pp_watch_ctx_t *)lv_timer_get_user_data(t);
+    int rec = pp_runtime_cfg_is_recording() ? 1 : 0;
+    if (ctx->last_recording != rec) {
+        ctx->last_recording = rec;
         pp_page_reapply_lock_state(ctx->page);
+    }
+    int reenc = dvr_reenc_active();
+    if (ctx->last_reenc != reenc) {
+        ctx->last_reenc = reenc;
+        apply_bitrate_visibility(ctx);
     }
 }
 
-static void rec_watch_page_delete_cb(lv_event_t *e) {
-    rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)lv_event_get_user_data(e);
+static void pp_watch_page_delete_cb(lv_event_t *e) {
+    pp_watch_ctx_t *ctx = (pp_watch_ctx_t *)lv_event_get_user_data(e);
     if (!ctx) return;
     lv_timer_delete(ctx->timer);
     free(ctx);
@@ -66,9 +92,10 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
     pp_slider_ex(page, LV_SYMBOL_SD_CARD, "Max file size",
                  "gs", "dvr", "dvr_max_size", &maxsize_cfg);
 
-    pp_dropdown_units(page, LV_SYMBOL_AUDIO, "Re-encode bitrate",
-                      "gs", "dvr", "dvr_reenc_bitrate",
-                      "4000\n8000\n12000\n16000\n25000", "Mbps", 1000);
+    lv_obj_t *bitrate_row =
+        pp_dropdown_units(page, LV_SYMBOL_AUDIO, "Re-encode bitrate",
+                          "gs", "dvr", "dvr_reenc_bitrate",
+                          "4000\n8000\n12000\n16000\n25000", "Mbps", 1000);
 
     /* Add focusable rows to the page's group. Section headers are lv_label_t
      * and have a different class, so the check filters them out. */
@@ -85,14 +112,17 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
      * lv_obj_set_user_data(page, ...) because pp_page.c already owns it
      * for pp_page_data_t, so the context lives in the timer user_data and
      * is freed by the LV_EVENT_DELETE handler below. */
-    rec_watch_ctx_t *ctx = (rec_watch_ctx_t *)malloc(sizeof(*ctx));
+    pp_watch_ctx_t *ctx = (pp_watch_ctx_t *)malloc(sizeof(*ctx));
     if (ctx) {
-        ctx->page  = page;
-        ctx->last  = pp_runtime_cfg_is_recording() ? 1 : 0;
-        ctx->timer = lv_timer_create(rec_watch_timer_cb, 500, ctx);
-        lv_obj_add_event_cb(page, rec_watch_page_delete_cb, LV_EVENT_DELETE, ctx);
+        ctx->page        = page;
+        ctx->bitrate_row = bitrate_row;
+        ctx->last_recording = pp_runtime_cfg_is_recording() ? 1 : 0;
+        ctx->last_reenc  = dvr_reenc_active();
+        ctx->timer = lv_timer_create(pp_watch_timer_cb, 500, ctx);
+        lv_obj_add_event_cb(page, pp_watch_page_delete_cb, LV_EVENT_DELETE, ctx);
+        apply_bitrate_visibility(ctx);     /* initial: hidden if mode == raw */
     }
-    pp_page_reapply_lock_state(page);   /* initial state */
+    pp_page_reapply_lock_state(page);      /* initial lock state */
 
     return page;
 }

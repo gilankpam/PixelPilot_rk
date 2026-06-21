@@ -1744,7 +1744,11 @@ static int mp4e_flush_index_ex(MP4E_mux_t *mux, int64_t moov_override_offset)
     if (mux->enable_fragmentation)
     {
         track_t *tr = ((track_t*)mux->tracks.data) + 0;
+        // mehd.fragment_duration is in the MOVIE timescale (mvhd's), not the
+        // track timescale -- rescale like mvhd/tkhd, else players that trust
+        // mehd as the total duration read it (time_scale/MOOV_TIMESCALE)x too long.
         uint32_t movie_duration = mp4e_track_duration(mux, tr);
+        movie_duration = (uint32_t)(movie_duration * 1LL * MOOV_TIMESCALE / tr->info.time_scale);
 
         ATOM(BOX_mvex);
             ATOM_FULL(BOX_mehd, 0);

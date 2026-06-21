@@ -53,7 +53,8 @@ int64_t find_box(const std::vector<uint8_t> &b, uint32_t type,
             return off;
         if (t == FOUR_CHAR_INT('m', 'o', 'o', 'v') ||
             t == FOUR_CHAR_INT('t', 'r', 'a', 'k') ||
-            t == FOUR_CHAR_INT('m', 'd', 'i', 'a')) {
+            t == FOUR_CHAR_INT('m', 'd', 'i', 'a') ||
+            t == FOUR_CHAR_INT('m', 'v', 'e', 'x')) {
             int64_t inner = find_box(b, type, off + hdr, box_end);
             if (inner >= 0)
                 return inner;
@@ -168,6 +169,31 @@ TEST_CASE("fragmented moov reports summed duration in mdhd", "[dvr][moov]") {
     DurField md = read_mvhd_like(buf, mdhd, /*ts*/ 8, /*dur*/ 12);
     REQUIRE(md.timescale == 90000);
     REQUIRE(md.duration == total_90k);
+}
+
+TEST_CASE("fragmented mehd fragment_duration is in the movie timescale",
+          "[dvr][moov]") {
+    // mehd.fragment_duration (ISO 14496-12 8.8.2) is expressed in the MOVIE
+    // timescale (mvhd's), NOT the track's 90 kHz. Players that honour mehd as
+    // the total duration of a fragmented file (the spec's canonical source)
+    // otherwise read it 90x too long -- e.g. a 12 s clip shows as 18 min.
+    const std::vector<int> durations = {1500, 3000, 4500, 3000, 6000};
+    const uint64_t total_90k = 18000;
+
+    auto buf = mux_fragments(durations);
+
+    int64_t mvhd = find_box(buf, FOUR_CHAR_INT('m', 'v', 'h', 'd'), 0, buf.size());
+    REQUIRE(mvhd >= 0);
+    DurField mv = read_mvhd_like(buf, mvhd, /*ts*/ 8, /*dur*/ 12);
+    uint64_t expected = total_90k * mv.timescale / 90000; // total in movie units
+
+    int64_t mehd = find_box(buf, FOUR_CHAR_INT('m', 'e', 'h', 'd'), 0, buf.size());
+    REQUIRE(mehd >= 0);
+    // mehd v0 payload: fragment_duration(4), right after version+flags.
+    int64_t p = mehd + 8 + 4;
+    uint32_t frag_dur = ((uint32_t)buf[p] << 24) | ((uint32_t)buf[p + 1] << 16) |
+                        ((uint32_t)buf[p + 2] << 8) | buf[p + 3];
+    REQUIRE(frag_dur == expected);
 }
 
 TEST_CASE("closing a fragmented mux with no frames does not crash or patch",

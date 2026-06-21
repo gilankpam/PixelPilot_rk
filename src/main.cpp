@@ -1039,8 +1039,6 @@ void printHelp() {
     "\n"
     "    --dvr-sequenced-files  - Prepend a sequence number to the names of the dvr files\n"
     "\n"
-    "    --dvr-start            - Start DVR immediately\n"
-    "\n"
     "    --dvr-max-size <MB>    - DEPRECATED, ignored (set via runtime.json)\n"
     "\n"
     "    --dvr-fmp4             - Save the video feed as a fragmented mp4\n"
@@ -1084,7 +1082,6 @@ int main(int argc, char **argv)
 	int i, j;
 	int mavlink_thread = 0;
 	int print_modelist = 0;
-	int dvr_autostart = 0;
 	uint16_t wfb_port = 8003;
 	const char *wfb_api_host = "127.0.0.1";
 	uint16_t mode_width = 0;
@@ -1131,11 +1128,6 @@ int main(int argc, char **argv)
 			fprintf(stderr, "unsupported video codec");
 			return -1;
 		}
-		continue;
-	}
-
-	__OnArgument("--dvr-start") {
-		dvr_autostart = 1;
 		continue;
 	}
 
@@ -1563,14 +1555,6 @@ int main(int argc, char **argv)
 			spdlog::info("Re-encoding recorder: codec={} fps={} bitrate={}kbps",
 			             reenc_params.codec == VideoCodec::H265 ? "h265" : "h264",
 			             reenc_params.fps, reenc_params.bitrate_kbps);
-		}
-
-		if (dvr_autostart) {
-			dvr_enabled = 1;
-			osd_publish_bool_fact("dvr.recording", NULL, 0, true);
-			if (dvr_raw) dvr_raw->start_recording();
-			if (dvr_reenc_inst) dvr_reenc_inst->start_recording();
-			if (reencoder) reencoder->request_idr();
 		}
 	}
 	ret = pthread_create(&tid_frame, NULL, __FRAME_THREAD__, NULL);

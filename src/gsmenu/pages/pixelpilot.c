@@ -91,8 +91,6 @@ lv_obj_t *build_pixelpilot_tab(lv_obj_t *parent) {
               "gs", "display", "cc_offset", -50, 50);
 
     pp_section_header(page, "DVR · Recording");
-    pp_toggle(page, LV_SYMBOL_VIDEO, "Enabled",
-              "gs", "dvr", "rec_enabled");
     pp_dropdown(page, LV_SYMBOL_VIDEO, "Mode",
                 "gs", "dvr", "dvr_mode", "raw\nreencode\nboth");
     pp_slider(page, LV_SYMBOL_SD_CARD, "Max file size (MB)",

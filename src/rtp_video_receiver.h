@@ -17,7 +17,7 @@
 // units, and invokes the frame callback once per frame (feeding MPP + DVR record).
 class RtpVideoReceiver {
 public:
-    using NEW_FRAME_CALLBACK = std::function<void(std::shared_ptr<std::vector<uint8_t>>)>;
+    using NEW_FRAME_CALLBACK = std::function<void(std::shared_ptr<std::vector<uint8_t>>, uint32_t rtp_ts)>;
 
     explicit RtpVideoReceiver(int udp_port);       // UDP source (production: 5600)
     explicit RtpVideoReceiver(const char* unix_sock); // abstract AF_UNIX dgram (compat)

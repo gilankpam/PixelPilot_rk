@@ -8,8 +8,12 @@ namespace {
 // Collects emitted access units for assertions.
 struct Sink {
     std::vector<std::vector<uint8_t>> aus;
+    std::vector<uint32_t> timestamps;
     HevcDepayloader::FrameCallback cb() {
-        return [this](const uint8_t* p, size_t n) { aus.emplace_back(p, p + n); };
+        return [this](const uint8_t* p, size_t n, uint32_t rtp_ts) {
+            aus.emplace_back(p, p + n);
+            timestamps.push_back(rtp_ts);
+        };
     }
 };
 
@@ -76,6 +80,9 @@ TEST_CASE("two single-NAL packets, one AU until marker", "[depay][single]") {
     REQUIRE(nals.size() == 2);
     REQUIRE(nals[0] == a);
     REQUIRE(nals[1] == b);
+    // RTP timestamp must be propagated to the callback
+    REQUIRE(sink.timestamps.size() == 1);
+    REQUIRE(sink.timestamps[0] == 2000);
 }
 
 TEST_CASE("aggregation packet expands to multiple NALs", "[depay][ap]") {
@@ -212,7 +219,7 @@ TEST_CASE("golden: depayloader output matches gst reference NAL sequence", "[dep
 
     // Replay capture through the depayloader, collecting AUs.
     std::vector<std::vector<uint8_t>> got;
-    HevcDepayloader d([&](const uint8_t* p, size_t n){ got.emplace_back(p, p+n); });
+    HevcDepayloader d([&](const uint8_t* p, size_t n, uint32_t){ got.emplace_back(p, p+n); });
     uint32_t plen;
     while (std::fread(&plen,4,1,cap)==1) {              // little-endian length
         std::vector<uint8_t> pkt(plen);

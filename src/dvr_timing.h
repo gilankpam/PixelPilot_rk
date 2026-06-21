@@ -53,4 +53,15 @@ inline int64_t dvr_frame_duration_90k(int64_t pts_ms, int64_t last_pts_ms, int f
     return dur;
 }
 
+// Raw-DVR per-frame MP4 duration (90 kHz) from consecutive RTP timestamps
+// (uint32, 90 kHz, wrap-safe forward delta). First frame, duplicate timestamp,
+// or a gap over 1 s falls back to the nominal 1/fallback_fps.
+inline int dvr_rtp_duration_90k(uint32_t ts, uint32_t last_ts, bool have_last, int fallback_fps) {
+    const int nominal = (fallback_fps > 0) ? 90000 / fallback_fps : 1500;
+    if (!have_last) return nominal;
+    uint32_t d = ts - last_ts;                  // wrap-safe forward delta
+    if (d == 0 || d > 90000) return nominal;    // duplicate ts / >1 s gap
+    return (int)d;
+}
+
 #endif // DVR_TIMING_H

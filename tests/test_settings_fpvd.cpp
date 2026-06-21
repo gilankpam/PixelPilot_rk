@@ -398,6 +398,7 @@ TEST_CASE("keymap: pixelpilot rows route to EP_GS as staged rows", "[fpvd][keyma
     // color correction stays unmapped (handled by the unavailable rule)
     REQUIRE(fpvd_keymap_lookup("gs", "display", "color_correction") == nullptr);
     REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_enabled") == nullptr);
+    REQUIRE(fpvd_keymap_lookup("gs", "dvr", "rec_fps") == nullptr);
 }
 
 static int plan(fpvd_row_kind_t kind, fpvd_endpoint_t ep, const char *path,

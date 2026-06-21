@@ -687,18 +687,18 @@ void idr_notify_decoded_frame() {
 
 RtpVideoReceiver::RtpVideoReceiver(int udp_port)
     : m_port(udp_port),
-      m_depay([this](const uint8_t* au, size_t len) {
+      m_depay([this](const uint8_t* au, size_t len, uint32_t rtp_ts) {
           auto buf = std::make_shared<std::vector<uint8_t>>(au, au + len);
           if (au && len) maybe_mark_idr_received(au, len, VideoCodec::H265);
-          if (m_cb) m_cb(buf);
+          if (m_cb) m_cb(buf, rtp_ts);
       }) {}
 
 RtpVideoReceiver::RtpVideoReceiver(const char* unix_sock)
     : m_unix_socket(unix_sock ? unix_sock : ""),
-      m_depay([this](const uint8_t* au, size_t len) {
+      m_depay([this](const uint8_t* au, size_t len, uint32_t rtp_ts) {
           auto buf = std::make_shared<std::vector<uint8_t>>(au, au + len);
           if (au && len) maybe_mark_idr_received(au, len, VideoCodec::H265);
-          if (m_cb) m_cb(buf);
+          if (m_cb) m_cb(buf, rtp_ts);
       }) {}
 
 RtpVideoReceiver::~RtpVideoReceiver() { stop(); }

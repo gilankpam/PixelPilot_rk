@@ -122,7 +122,6 @@ Dvr *dvr_reenc_inst = NULL;
 MppEncoder *reencoder = NULL;
 MppEncoderParams reenc_params;
 DvrMode dvr_mode = DVR_MODE_RAW;
-static int video_framerate = -1;
 static bool dvr_filenames_with_sequence = false;
 static int mp4_fragmentation_mode = 0;
 static int64_t dvr_max_file_size = 4000000000LL;  // 4 GB (decimal), safe margin for VFAT 4 GiB limit
@@ -669,7 +668,6 @@ extern "C" {
             args.filename_template = tpl;
             args.mp4_fragmentation_mode = mp4_fragmentation_mode;
             args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-            args.video_framerate = video_framerate;
             args.max_file_size = dvr_max_file_size;
             args.video_p.video_frm_width = output_list ? output_list->video_frm_width : 0;
             args.video_p.video_frm_height = output_list ? output_list->video_frm_height : 0;
@@ -756,7 +754,7 @@ void switch_pipeline_source(const char * source_type, const char * source_path) 
     if (strcmp(source_type, "file") == 0) {
         if (receiver) receiver->stop();
         file_player = std::make_unique<GstFilePlayer>();
-        file_player->start(source_path, g_video_frame_cb);
+        file_player->start(source_path, [](std::shared_ptr<std::vector<uint8_t>> frame){ g_video_frame_cb(frame, 0); });
     } else if (strcmp(source_type, "stream") == 0) {
         if (file_player) { file_player->stop(); file_player.reset(); }
         if (receiver) receiver->start(g_video_frame_cb);
@@ -910,7 +908,7 @@ void read_gstreamerpipe_stream(MppPacket *packet, int gst_udp_port, const char *
     if (sock) receiver = std::make_unique<RtpVideoReceiver>(sock);
     else      receiver = std::make_unique<RtpVideoReceiver>(gst_udp_port);
 
-    g_video_frame_cb = [](std::shared_ptr<std::vector<uint8_t>> frame){
+    g_video_frame_cb = [](std::shared_ptr<std::vector<uint8_t>> frame, uint32_t rtp_ts){
         osd_publish_uint_fact("gstreamer.received_bytes", NULL, 0, frame->size());
         const bool fed_ok = feed_packet_to_decoder(g_decode_packet, frame->data(), frame->size());
         static int stall_count = 0;
@@ -922,7 +920,7 @@ void read_gstreamerpipe_stream(MppPacket *packet, int gst_udp_port, const char *
                 idr_request_decoder_issue("decoder-feed-stall");
             }
         } else stall_count = 0;
-        if (dvr_enabled && dvr_raw != NULL) dvr_raw->frame(frame);
+        if (dvr_enabled && dvr_raw != NULL) dvr_raw->frame_rtp(frame, rtp_ts);
     };
 
     receiver->start(g_video_frame_cb);
@@ -1021,8 +1019,6 @@ void printHelp() {
     "    --dvr-sequenced-files  - Prepend a sequence number to the names of the dvr files\n"
     "\n"
     "    --dvr-start            - Start DVR immediately\n"
-    "\n"
-    "    --dvr-framerate <rate> - Force the dvr framerate for smoother dvr, ex: 60\n"
     "\n"
     "    --dvr-max-size <MB>    - Split DVR files at <MB> megabytes (Default: 4000, for VFAT)\n"
     "\n"
@@ -1133,7 +1129,8 @@ int main(int argc, char **argv)
 	}
 
 	__OnArgument("--dvr-framerate") {
-		video_framerate = atoi(__ArgValue);
+		(void)__ArgValue;
+		spdlog::warn("--dvr-framerate is deprecated and ignored (raw DVR times from RTP timestamps)");
 		continue;
 	}
 
@@ -1322,12 +1319,6 @@ int main(int argc, char **argv)
 	// Re-encode codec is always h265 regardless of any (now-deprecated) --dvr-reenc-codec flag.
 	reenc_params.codec = VideoCodec::H265;
 
-	if (dvr_template != NULL && (dvr_mode == DVR_MODE_RAW || dvr_mode == DVR_MODE_BOTH) && video_framerate < 0) {
-		printf("--dvr-framerate must be provided when raw DVR is enabled.\n"
-		       "Use --dvr-mode reencode for hardware re-encoding only.\n");
-		return 0;
-	}
-
 	printf("PixelPilot Rockchip %d.%d\n", APP_VERSION_MAJOR, APP_VERSION_MINOR);
 
 	// Load yaml config
@@ -1483,7 +1474,6 @@ int main(int argc, char **argv)
 			args.filename_template = tpl;
 			args.mp4_fragmentation_mode = mp4_fragmentation_mode;
 			args.dvr_filenames_with_sequence = dvr_filenames_with_sequence;
-			args.video_framerate = video_framerate;
 			args.max_file_size = dvr_max_file_size;
 			args.video_p.video_frm_width = output_list->video_frm_width;
 			args.video_p.video_frm_height = output_list->video_frm_height;

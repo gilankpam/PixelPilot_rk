@@ -32,10 +32,10 @@ void HevcDepayloader::flush_au() {
             };
             add(vps_); add(sps_); add(pps_);
             out.insert(out.end(), au_.begin(), au_.end());
-            cb_(out.data(), out.size());
+            cb_(out.data(), out.size(), cur_ts_);
             stats_.param_sets_reinserted++;
         } else {
-            cb_(au_.data(), au_.size());
+            cb_(au_.data(), au_.size(), cur_ts_);
         }
         stats_.aus_emitted++;
     }

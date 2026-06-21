@@ -69,3 +69,38 @@ TEST_CASE("load on malformed json returns false and fills defaults") {
     REQUIRE(c.dvr_reenc_kbps == 8000);
     remove(p.c_str());
 }
+
+TEST_CASE("owns matches exactly the six keys") {
+    REQUIRE(pp_runtime_cfg_owns("gs", "dvr", "dvr_mode"));
+    REQUIRE(pp_runtime_cfg_owns("gs", "dvr", "dvr_max_size"));
+    REQUIRE(pp_runtime_cfg_owns("gs", "dvr", "dvr_reenc_bitrate"));
+    REQUIRE(pp_runtime_cfg_owns("gs", "display", "color_correction"));
+    REQUIRE(pp_runtime_cfg_owns("gs", "display", "cc_gain"));
+    REQUIRE(pp_runtime_cfg_owns("gs", "display", "cc_offset"));
+    REQUIRE_FALSE(pp_runtime_cfg_owns("gs", "display", "screen_mode"));
+    REQUIRE_FALSE(pp_runtime_cfg_owns("gs", "dvr", "rec_enabled"));
+    REQUIRE_FALSE(pp_runtime_cfg_owns("air", "camera", "fps"));
+}
+
+TEST_CASE("get returns widget-format strings from the loaded file") {
+    std::string p = write_tmp(
+        "{\"dvr\":{\"mode\":\"reencode\",\"maxSizeMb\":8000,\"reencBitrateKbps\":12000},"
+        "\"colorCorrection\":{\"enabled\":true,\"gain\":30,\"offset\":-20}}");
+    pp_runtime_cfg_set_path(p.c_str());
+    pp_runtime_cfg_t c; pp_runtime_cfg_load(&c);
+
+    auto chk = [](const char *d, const char *pg, const char *k, const char *want) {
+        char *v = pp_runtime_cfg_get(d, pg, k);
+        REQUIRE(v != nullptr);
+        REQUIRE(std::string(v) == want);
+        free(v);
+    };
+    chk("gs", "dvr", "dvr_mode", "reencode");
+    chk("gs", "dvr", "dvr_max_size", "8000");
+    chk("gs", "dvr", "dvr_reenc_bitrate", "12000");
+    chk("gs", "display", "color_correction", "on");
+    chk("gs", "display", "cc_gain", "30");
+    chk("gs", "display", "cc_offset", "-20");
+    REQUIRE(pp_runtime_cfg_get("gs", "display", "screen_mode") == nullptr);
+    remove(p.c_str());
+}

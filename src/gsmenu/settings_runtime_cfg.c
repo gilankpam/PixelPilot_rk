@@ -86,3 +86,35 @@ bool pp_runtime_cfg_load(pp_runtime_cfg_t *out) {
     *out = g_state;
     return ok;
 }
+
+static void ensure_primed(void) {
+    if (!g_state_primed) { read_file(&g_state); g_state_primed = true; }
+}
+
+static bool eq(const char *a, const char *b) { return strcmp(a, b) == 0; }
+
+bool pp_runtime_cfg_owns(const char *domain, const char *page, const char *key) {
+    if (!eq(domain, "gs")) return false;
+    if (eq(page, "dvr"))
+        return eq(key, "dvr_mode") || eq(key, "dvr_max_size") || eq(key, "dvr_reenc_bitrate");
+    if (eq(page, "display"))
+        return eq(key, "color_correction") || eq(key, "cc_gain") || eq(key, "cc_offset");
+    return false;
+}
+
+char *pp_runtime_cfg_get(const char *domain, const char *page, const char *key) {
+    if (!pp_runtime_cfg_owns(domain, page, key)) return NULL;
+    ensure_primed();
+
+    char buf[32];
+    if (eq(page, "dvr")) {
+        if (eq(key, "dvr_mode"))          return strdup(mode_int_to_str(g_state.dvr_mode));
+        if (eq(key, "dvr_max_size"))      { snprintf(buf, sizeof buf, "%d", g_state.dvr_max_size_mb); return strdup(buf); }
+        if (eq(key, "dvr_reenc_bitrate")) { snprintf(buf, sizeof buf, "%d", g_state.dvr_reenc_kbps);  return strdup(buf); }
+    } else { /* display */
+        if (eq(key, "color_correction"))  return strdup(g_state.cc_enabled ? "on" : "off");
+        if (eq(key, "cc_gain"))           { snprintf(buf, sizeof buf, "%d", g_state.cc_gain);   return strdup(buf); }
+        if (eq(key, "cc_offset"))         { snprintf(buf, sizeof buf, "%d", g_state.cc_offset); return strdup(buf); }
+    }
+    return NULL;
+}

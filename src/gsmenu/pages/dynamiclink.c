@@ -44,6 +44,9 @@ lv_obj_t *build_dynamiclink_tab(lv_obj_t *parent) {
                                   "air", "dlink", "enabled");
     lv_obj_add_flag(enabled, LV_OBJ_FLAG_USER_3);   /* visibility anchor */
 
+    pp_toggle(page, LV_SYMBOL_SD_CARD, "Flight Log",
+              "gs", "dlink", "flightlog_enabled");
+
     pp_section_header(page, "Compute");
     static const pp_slider_cfg_t redundancy_cfg = {
         .raw_min = 1, .raw_max = 20, .step = 1, .fine_step = 0,

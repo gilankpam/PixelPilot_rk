@@ -110,6 +110,7 @@ static const fpvd_keymap_entry_t KEYMAP[] = {
     { "air", "dlink", "compute_min_bitrate_kbps", "dynamicLink.compute.minBitrateKbps",      FPVD_T_INT,   FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "air", "dlink", "compute_max_bitrate_kbps", "dynamicLink.compute.maxBitrateKbps",      FPVD_T_INT,   FPVD_EP_AIR, FPVD_ROW_PLAIN },
     { "gs",  "dlink", "max_mcs",                  "dynamicLink.maxMcs",                      FPVD_T_INT,   FPVD_EP_GS,  FPVD_ROW_PLAIN },
+    { "gs",  "dlink", "flightlog_enabled",        "dynamicLink.flightlog.enabled",           FPVD_T_BOOL,  FPVD_EP_GS,  FPVD_ROW_PLAIN },
 
     /* PixelPilot launch config → fpvd /gs/config (pixelpilot.*). screen_mode is
      * the only staged row left; it self-applies on change (see prov_set_async). */

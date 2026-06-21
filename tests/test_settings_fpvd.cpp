@@ -74,6 +74,12 @@ TEST_CASE("keymap: camera resilience/osd + dlink compute/maxMcs", "[fpvd][keymap
     REQUIRE(std::strcmp(e->path, "dynamicLink.maxMcs") == 0);
     REQUIRE(e->type == FPVD_T_INT);
     REQUIRE(e->endpoint == FPVD_EP_GS);
+
+    e = fpvd_keymap_lookup("gs", "dlink", "flightlog_enabled");
+    REQUIRE(e != nullptr);
+    REQUIRE(std::strcmp(e->path, "dynamicLink.flightlog.enabled") == 0);
+    REQUIRE(e->type == FPVD_T_BOOL);
+    REQUIRE(e->endpoint == FPVD_EP_GS);
 }
 
 TEST_CASE("keymap: removed dynamic-link rows no longer resolve", "[fpvd][keymap]") {

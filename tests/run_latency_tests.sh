@@ -18,6 +18,7 @@ g++ -std=c++17 -Wall -Wextra -O0 -g \
     "$HERE/standalone_main.cpp" \
     "$HERE/test_latency_probe.cpp" \
     "$HERE/test_latency_probe_integration.cpp" \
+    "$HERE/test_rtp_jitter.cpp" \
     "$HERE/osd_stub.cpp" \
     "$ROOT/src/latency_probe.cpp" \
     -lspdlog -lfmt -lpthread

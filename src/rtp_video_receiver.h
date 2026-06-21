@@ -11,6 +11,7 @@
 
 #include "video_codec.h"
 #include "hevc_depayloader.h"
+#include "rtp_jitter.hpp"
 
 // Custom, single-threaded HEVC RTP receiver that replaces the GStreamer live path.
 // Receives RTP datagrams (UDP or abstract AF_UNIX), depayloads to Annex-B access
@@ -40,6 +41,9 @@ private:
     HevcDepayloader m_depay;
     uint16_t m_last_seq = 0;
     bool m_have_seq = false;
+    // RFC 3550 interarrival jitter, computed per frame-marker independently of
+    // latency_probe so the OSD JITTER tile works even when the probe is off.
+    RtpJitterEstimator m_jitter;
 };
 
 #ifdef __cplusplus

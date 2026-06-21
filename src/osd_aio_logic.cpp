@@ -28,6 +28,10 @@ Band resolve_band(Metric m, double v) {
         if (v >= 12) return Band::Good;
         if (v >= 6)  return Band::Warn;
         return Band::Crit;
+    case Metric::Jitter: // lower is better
+        if (v <= 10) return Band::Good;
+        if (v <= 25) return Band::Warn;
+        return Band::Crit;
     }
     return Band::Neutral;
 }

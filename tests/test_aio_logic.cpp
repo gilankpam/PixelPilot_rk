@@ -37,6 +37,12 @@ TEST_CASE("resolve_band boundaries", "[aio]") {
     REQUIRE(resolve_band(Metric::Snr, 11) == Band::Warn);
     REQUIRE(resolve_band(Metric::Snr, 6) == Band::Warn);
     REQUIRE(resolve_band(Metric::Snr, 5) == Band::Crit);
+
+    // JITTER ms: <=10 good, 11..25 warn, >25 crit (lower is better)
+    REQUIRE(resolve_band(Metric::Jitter, 10) == Band::Good);
+    REQUIRE(resolve_band(Metric::Jitter, 11) == Band::Warn);
+    REQUIRE(resolve_band(Metric::Jitter, 25) == Band::Warn);
+    REQUIRE(resolve_band(Metric::Jitter, 26) == Band::Crit);
 }
 
 TEST_CASE("resolve_color schemes", "[aio]") {

@@ -217,4 +217,11 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
         REQUIRE(n != "video.latency.decode_ms");
         REQUIRE(n != "video.latency.display_ms");
     }
+    // RTP jitter is intentionally NOT published here: it is computed in
+    // RtpVideoReceiver (independent of the probe) so it works even when
+    // latency_probe is disabled. The estimator math is covered by
+    // tests/test_rtp_jitter.cpp.
+    for (auto& [n, _] : uint_facts) {
+        REQUIRE(n != "video.rtp_jitter_ms");
+    }
 }

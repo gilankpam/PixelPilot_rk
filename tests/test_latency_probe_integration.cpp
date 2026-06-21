@@ -218,3 +218,51 @@ TEST_CASE("latency_probe: integration loopback publishes facts",
         REQUIRE(n != "video.latency.display_ms");
     }
 }
+
+TEST_CASE("latency_probe: publishes video.rtp_jitter_ms per marker",
+          "[latency_probe][integration][rtp_jitter]") {
+    FakeWaybeam fw;
+    REQUIRE(fw.start_listening());
+    fw.th = std::thread([&]{ fw.run(); });
+
+    std::mutex captured_mu;
+    std::vector<std::pair<std::string,uint64_t>> uint_facts;
+    lp::set_publish_overrides_for_test(
+        [&](const char* n, uint64_t v){
+            std::lock_guard<std::mutex> lk(captured_mu); uint_facts.emplace_back(n,v);
+        },
+        [&](const char*, int64_t){});
+
+    REQUIRE(lp::start("127.0.0.1", fw.port));
+
+    // Helper: feed one marker packet with explicit rtp_ts + arrival time.
+    auto feed = [](uint32_t rtp_ts, uint32_t ssrc, uint64_t recv_us){
+        uint8_t hdr[12] = {};
+        hdr[0] = 0x80;                       // V=2
+        hdr[1] = 0x80;                       // marker=1
+        hdr[4]=(rtp_ts>>24)&0xff; hdr[5]=(rtp_ts>>16)&0xff;
+        hdr[6]=(rtp_ts>>8)&0xff;  hdr[7]= rtp_ts &0xff;
+        hdr[8]=(ssrc>>24)&0xff; hdr[9]=(ssrc>>16)&0xff;
+        hdr[10]=(ssrc>>8)&0xff; hdr[11]= ssrc &0xff;
+        lp::on_rtp_buffer(hdr, sizeof(hdr), recv_us);
+    };
+
+    // 5 evenly spaced frames, then one 30 ms late.
+    uint32_t ts = 1000; uint64_t rx = 1'000'000; const uint32_t ssrc = 7;
+    for (int i = 0; i < 5; ++i) { feed(ts, ssrc, rx); ts += 1500; rx += 16667; }
+    feed(ts, ssrc, rx + 30000);   // late arrival
+
+    lp::stop();
+    lp::set_publish_overrides_for_test(nullptr, nullptr);
+    fw.stop = true;
+    if (fw.th.joinable()) fw.th.join();
+    close(fw.fd);
+
+    std::lock_guard<std::mutex> lk(captured_mu);
+    size_t jitter_pubs = 0;
+    uint64_t last_jitter = 0;
+    for (auto& [n, v] : uint_facts)
+        if (n == "video.rtp_jitter_ms") { jitter_pubs++; last_jitter = v; }
+    REQUIRE(jitter_pubs >= 5);          // one per marker (first returns 0)
+    REQUIRE(last_jitter >= 1);          // late frame pushed the estimate up
+}

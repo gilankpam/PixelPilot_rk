@@ -1,6 +1,7 @@
 #include "latency_probe.hpp"
 #include "latency_probe_wire.hpp"
 #include "osd.h"
+#include "rtp_jitter.hpp"
 #include <spdlog/spdlog.h>
 
 #include <arpa/inet.h>
@@ -11,6 +12,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <limits>
@@ -36,6 +38,7 @@ struct ProbeState {
     sockaddr_in        peer{};
     ClockOffset        clock;
     FrameMatcher       matcher;
+    RtpJitterEstimator jitter;
     uint64_t           wire_clamp_count = 0;
     uint64_t           started_us = 0;
 };
@@ -235,6 +238,10 @@ void on_rtp_buffer(const uint8_t* data, size_t len, uint64_t gs_recv_us) {
     if (!parse_rtp_header(data, len, h)) return;
     if (!h.marker) return;
     s->matcher.on_marker_arrival(h.ssrc, h.timestamp, gs_recv_us, gs_recv_us);
+
+    double jms = s->jitter.update(h.ssrc, h.timestamp, gs_recv_us);
+    PublishUintFn pu = g_pub_u_override ? g_pub_u_override : publish_uint_real;
+    pu("video.rtp_jitter_ms", static_cast<uint64_t>(std::llround(jms)));
 }
 
 void record_gs_pipeline_ms(uint64_t gs_pipeline_ms) {

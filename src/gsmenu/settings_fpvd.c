@@ -2,6 +2,7 @@
 #include "settings.h"
 #include "settings_fpvd_internal.h"
 #include "settings_runtime_cfg.h"
+#include "../conn_state.h"
 
 #include <string.h>
 #include "cJSON.h"
@@ -39,7 +40,6 @@ typedef struct {
     bool     visible;
     bool     refresh_now;         /* hidden→visible: probe now, don't wait a tick */
     bool     gs_connected;        /* fpvd-GS HTTP round-trips succeed */
-    bool     drone_reachable;     /* derived from the /air round-trip (2xx=reachable) */
     bool     worker_started;
 
     cJSON   *air_snapshot;        /* GET /air/config (drone), protected by mu */
@@ -544,6 +544,14 @@ static void notify_listener(void) {
     lv_unlock();
 }
 
+#ifndef PP_FPVD_TEST
+/* conn_state pushes drone-link transitions; re-lock the menu rows on change. */
+static void on_conn_state_change(const conn_state_t *st, void *ud) {
+    (void)st; (void)ud;
+    notify_listener();
+}
+#endif
+
 /* -------------------------------------------------------------------------
  * URL helper + snapshot refresh
  * ---------------------------------------------------------------------- */
@@ -557,9 +565,8 @@ static char *url_join(const char *base, const char *path) {
 }
 
 /* Called with G.mu HELD. Releases and re-acquires the mutex around HTTP.
- * gs_connected tracks the GS daemon itself; drone_reachable comes solely from
- * the /air/config result (2xx → true, else → false), leaving air_snapshot
- * stale rather than cleared when the drone is unreachable.
+ * gs_connected tracks the GS daemon itself; drone reachability is owned by
+ * conn_state (not derived here). /air/config is fetched to refresh air_snapshot.
  *
  * NEVER notifies the listener itself: returns true when the caller should
  * call notify_listener() AFTER releasing G.mu (notify_listener takes the
@@ -581,7 +588,7 @@ static bool refresh_snapshot_unlocked(void) {
     pthread_mutex_lock(&G.mu);
     free(gs_url); free(status_url); free(air_url);
 
-    bool was_gs = G.gs_connected, was_drone = G.drone_reachable;
+    bool was_gs = G.gs_connected;
 
     if (gr.status == 200 && gr.body) {
         cJSON *g = cJSON_Parse(gr.body);
@@ -597,23 +604,17 @@ static bool refresh_snapshot_unlocked(void) {
             G.status_snapshot = s;
         }
     }
-    /* Drone reachability comes solely from the /air proxy round-trip: a 2xx
-     * means the GS reached the drone and relayed its config; anything else —
-     * 502 (GS can't reach the drone), 0 (can't reach the GS), or a relayed
-     * drone error — marks it unreachable. /gs/status is not consulted. */
-    if (ar.status >= 200 && ar.status < 300) {
-        if (ar.body) {
-            cJSON *a = cJSON_Parse(ar.body);
-            if (a) { if (G.air_snapshot) cJSON_Delete(G.air_snapshot); G.air_snapshot = a; }
-        }
-        G.drone_reachable = true;
-    } else {
-        G.drone_reachable = false;
+    /* /air/config is fetched only to refresh air_snapshot (the drone's config
+     * values shown in the menu). Drone reachability is no longer derived here —
+     * it comes from conn_state (fpvd's /gs/status.connection). */
+    if (ar.status >= 200 && ar.status < 300 && ar.body) {
+        cJSON *a = cJSON_Parse(ar.body);
+        if (a) { if (G.air_snapshot) cJSON_Delete(G.air_snapshot); G.air_snapshot = a; }
     }
     fpvd_http_result_free(&gr);
     fpvd_http_result_free(&sr);
     fpvd_http_result_free(&ar);
-    return was_gs != G.gs_connected || was_drone != G.drone_reachable || G.gs_connected;
+    return was_gs != G.gs_connected || G.gs_connected;
 }
 
 /* -------------------------------------------------------------------------
@@ -675,9 +676,9 @@ static void run_job_unlocked(fpvd_job_t job) {
         step_init(&steps[0], "POST", "/gs/apply", NULL, 0, true);
         nsteps = 1;
     } else {
-        pthread_mutex_lock(&G.mu);
-        bool reachable = G.drone_reachable;
+        bool reachable = (conn_state_get().state == CONN_CONNECTED);
         char mac[24] = {0};
+        pthread_mutex_lock(&G.mu);
         cJSON *bf = G.status_snapshot ?
             cJSON_GetObjectItemCaseSensitive(G.status_snapshot, "beamforming") : NULL;
         cJSON *lm = bf ? cJSON_GetObjectItemCaseSensitive(bf, "localMac") : NULL;
@@ -730,15 +731,9 @@ static void run_job_unlocked(fpvd_job_t job) {
                 if (was) notify_listener();
             } else {
                 m = parse_error_message(r.body);
-                /* A 502 only signals "drone unreachable" when it came from the
-                 * /air/* proxy; /gs/* 502s are GS-side errors. */
-                if (r.status == 502 && !steps[i].gs_side) {
-                    pthread_mutex_lock(&G.mu);
-                    bool was = G.drone_reachable; G.drone_reachable = false;
-                    pthread_mutex_unlock(&G.mu);
-                    if (was) notify_listener();
-                    if (!m) m = "Drone unreachable";
-                }
+                /* A 502 from the /air/* proxy still surfaces a message; drone
+                 * reachability is owned by conn_state, not by apply outcomes. */
+                if (r.status == 502 && !steps[i].gs_side && !m) m = "Drone unreachable";
             }
             if (air_committed && steps[i].gs_side)
                 snprintf(err, sizeof err, "Drone updated; GS apply failed: %s",
@@ -989,10 +984,7 @@ static bool prov_is_reachable(const char *d, const char *p, const char *k) {
     /* AIR rows and the beamforming handshake need the drone; GS rows —
      * including SHARED channel/width (the offline recovery path) — do not. */
     if (e->endpoint != FPVD_EP_AIR && e->kind != FPVD_ROW_BEAMFORM) return true;
-    pthread_mutex_lock(&G.mu);
-    bool r = G.drone_reachable;
-    pthread_mutex_unlock(&G.mu);
-    return r;
+    return conn_state_get().state == CONN_CONNECTED;
 }
 
 static void prov_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {
@@ -1050,7 +1042,6 @@ void pp_settings_register_fpvd(void) {
     G.visible   = false;
     G.refresh_now = false;
     G.gs_connected    = false;
-    G.drone_reachable = false;
     if (G.air_snapshot)    { cJSON_Delete(G.air_snapshot);    G.air_snapshot    = NULL; }
     if (G.gs_snapshot)     { cJSON_Delete(G.gs_snapshot);     G.gs_snapshot     = NULL; }
     if (G.status_snapshot) { cJSON_Delete(G.status_snapshot); G.status_snapshot = NULL; }
@@ -1069,6 +1060,10 @@ void pp_settings_register_fpvd(void) {
 
     if (!G.worker_started) {
         pthread_create(&G.worker, NULL, worker_main, NULL);
+#ifndef PP_FPVD_TEST
+        conn_state_start(G.base_url, 1000);
+        conn_state_subscribe(on_conn_state_change, NULL);
+#endif
         G.worker_started = true;
     }
     pp_settings_register(&G_PROVIDER);

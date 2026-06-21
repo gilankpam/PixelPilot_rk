@@ -14,6 +14,7 @@ extern "C" {
 #include "lvgl/lvgl.h"
 #include "gsmenu/settings.h"
 #include "gsmenu/settings_fpvd_internal.h"
+#include "conn_state.h"
 }
 
 static void ensure_lv_init() {
@@ -157,6 +158,7 @@ static void install_provider_pointing_at(int port) {
     snprintf(url, sizeof url, "http://127.0.0.1:%d", port);
     setenv("PP_FPVD_URL", url, 1);
     pp_settings_register_fpvd();
+    conn_state_ingest(CONN_CONNECTED, "", -1);   /* default: drone link up */
 }
 
 /* Done-callback waiter: rc + error message, delivered via lv_async_call, so
@@ -235,9 +237,8 @@ TEST_CASE("integration: shared channel change is drone-first then GS", "[fpvd][n
 
 TEST_CASE("integration: shared change degrades to GS-only when drone down", "[fpvd][network]") {
     GsMockServer srv; srv.drone_up = false; srv.start();
-    /* Registration primes /gs/status + /air/config synchronously, so
-     * drone_reachable latches false before the first write. */
     install_provider_pointing_at(srv.port);
+    conn_state_ingest(CONN_DISCONNECTED, "timeout", -1);
 
     DoneWaiter w;
     pp_settings_set_async("gs", "wfbng", "gs_channel", "108", DoneWaiter::cb, &w);
@@ -324,6 +325,7 @@ TEST_CASE("integration: beamforming enable sends MAC handshake", "[fpvd][network
 TEST_CASE("integration: beamforming rejected while drone down", "[fpvd][network]") {
     GsMockServer srv; srv.drone_up = false; srv.start();
     install_provider_pointing_at(srv.port);
+    conn_state_ingest(CONN_DISCONNECTED, "timeout", -1);
 
     DoneWaiter w;
     pp_settings_set_async("gs", "link", "beamforming", "on", DoneWaiter::cb, &w);
@@ -358,6 +360,7 @@ TEST_CASE("integration: dynamicLink enable is drone-first across both daemons", 
 TEST_CASE("integration: dynamicLink toggle rejected while drone down", "[fpvd][network]") {
     GsMockServer srv; srv.drone_up = false; srv.start();
     install_provider_pointing_at(srv.port);
+    conn_state_ingest(CONN_DISCONNECTED, "timeout", -1);
 
     DoneWaiter w;
     pp_settings_set_async("air", "dlink", "enabled", "on", DoneWaiter::cb, &w);
@@ -369,31 +372,17 @@ TEST_CASE("integration: dynamicLink toggle rejected while drone down", "[fpvd][n
     srv.stop();
 }
 
-TEST_CASE("integration: drone reachability comes only from /air, not /gs/status", "[fpvd][network]") {
-    GsMockServer srv;
-    /* A stale /gs/status that still claims the drone reachable must NOT be
-     * trusted — only the /air round-trip decides. Here /air returns a non-2xx,
-     * so drone-backed rows must be unreachable despite the status field. */
-    srv.gs_status_response =
-        R"({"runner":{"running":true},)"
-        R"("radio":[{"wlan":"wlx0","txpowerDbm":19.0}],)"
-        R"("link":{"linkId":7669206,"droneReachable":true},)"
-        R"("beamforming":{"enabled":false,"localMac":"84:fc:14:6c:36:e6"}})";
-    srv.air_get_override = 503;     /* drone did not return a clean config */
-    srv.start();
-    install_provider_pointing_at(srv.port);
+TEST_CASE("integration: reachability follows conn_state link, not /air", "[fpvd][network]") {
+    GsMockServer srv; srv.drone_up = false; srv.start();  /* /air would report DOWN */
+    install_provider_pointing_at(srv.port);               /* ingests CONNECTED */
 
+    /* conn_state says connected even though the /air probe is failing. */
+    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == true);
+
+    conn_state_ingest(CONN_DISCONNECTED, "timeout", -1);  /* link drops */
     REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
     /* GS-local rows stay reachable regardless of the drone. */
     REQUIRE(pp_settings_is_reachable("gs", "link", "rx_power") == true);
-    srv.stop();
-}
-
-TEST_CASE("integration: /air 2xx marks the drone reachable (no status field)", "[fpvd][network]") {
-    GsMockServer srv; srv.start();    /* default status has no droneReachable */
-    install_provider_pointing_at(srv.port);
-
-    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == true);
     srv.stop();
 }
 
@@ -485,6 +474,7 @@ TEST_CASE("integration: offline -> reconnect tracks GS reachability", "[fpvd][ne
 TEST_CASE("integration: drone reachability gates air rows, not GS rows", "[fpvd][network]") {
     GsMockServer m; m.drone_up = false; m.start();
     install_provider_pointing_at(m.port);
+    conn_state_ingest(CONN_DISCONNECTED, "timeout", -1);
 
     REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
     REQUIRE(pp_settings_is_reachable("gs", "wfbng", "txpower") == false);  /* drone TX power */
@@ -555,28 +545,28 @@ TEST_CASE("integration: TX Power editable when Dynamic Link is off",
 }
 
 TEST_CASE("integration: hidden->visible triggers an immediate refresh", "[fpvd][network]") {
-    GsMockServer srv;
-    srv.air_get_override = 503;            /* drone down at registration */
-    srv.start();
+    GsMockServer srv; srv.start();
     install_provider_pointing_at(srv.port);
-    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
+    char *c0 = pp_settings_get("gs", "wfbng", "gs_channel");
+    REQUIRE(std::string(c0) == "132"); free(c0);
 
-    srv.air_get_override = 0;              /* drone comes back up */
-    pp_settings_set_visibility(false);     /* ensure a clean hidden state */
-    pp_settings_set_visibility(true);      /* menu opens -> immediate probe */
+    /* GS config changes server-side; only a refresh will surface it. */
+    srv.gs_config_response =
+        R"({"link":{"channel":120,"width":40,"txPowerDbm":25,"region":"US",)"
+        R"("linkId":7669206,"beamforming":{"enabled":false},"wlans":"auto"},)"
+        R"("pixelpilot":{"videoScale":1.0,"screenMode":"1920x1080@60",)"
+        R"("dvr":{"osd":true,"mode":"reencode","reencBitrate":50000}}})";
+    pp_settings_set_visibility(false);
+    pp_settings_set_visibility(true);     /* menu opens -> immediate refresh */
 
-    /* Must flip well before the 3s visible tick (and the 60s hidden one).
-     * Discrimination depends on the worker refreshing only on ETIMEDOUT or
-     * refresh_now: the visibility signal merely re-arms a fresh 3s wait, so
-     * without refresh_now the flip lands at ~t+3s, past this 2s deadline. */
-    bool reachable = false;
+    bool flipped = false;
     auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-    while (!reachable && std::chrono::steady_clock::now() < end) {
-        reachable = pp_settings_is_reachable("air", "camera", "fps");
+    while (!flipped && std::chrono::steady_clock::now() < end) {
+        char *c = pp_settings_get("gs", "wfbng", "gs_channel");
+        flipped = (std::string(c) == "120"); free(c);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
-    REQUIRE(reachable == true);
-
-    pp_settings_set_visibility(false);     /* don't leave 3s polling running */
+    REQUIRE(flipped == true);
+    pp_settings_set_visibility(false);
     srv.stop();
 }

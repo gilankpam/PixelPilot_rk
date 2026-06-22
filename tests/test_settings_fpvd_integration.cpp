@@ -372,17 +372,47 @@ TEST_CASE("integration: dynamicLink toggle rejected while drone down", "[fpvd][n
     srv.stop();
 }
 
-TEST_CASE("integration: reachability follows conn_state link, not /air", "[fpvd][network]") {
-    GsMockServer srv; srv.drone_up = false; srv.start();  /* /air would report DOWN */
+TEST_CASE("integration: air rows unreachable until air_snapshot is populated", "[fpvd][network]") {
+    GsMockServer srv; srv.drone_up = false; srv.start();  /* /air 502 -> air_snapshot stays NULL */
     install_provider_pointing_at(srv.port);               /* ingests CONNECTED */
 
-    /* conn_state says connected even though the /air probe is failing. */
-    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == true);
+    /* conn_state says the link is up, but no /air/config has been fetched yet.
+     * The row must stay offline rather than surface empty ("—") values. */
+    REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
+    /* GS-local rows never depend on drone config data. */
+    REQUIRE(pp_settings_is_reachable("gs", "link", "rx_power") == true);
 
     conn_state_ingest(CONN_DISCONNECTED, "timeout", -1);  /* link drops */
     REQUIRE(pp_settings_is_reachable("air", "camera", "fps") == false);
-    /* GS-local rows stay reachable regardless of the drone. */
-    REQUIRE(pp_settings_is_reachable("gs", "link", "rx_power") == true);
+    srv.stop();
+}
+
+TEST_CASE("integration: drone link-up kicks an immediate air refresh", "[fpvd][network]") {
+    GsMockServer srv; srv.start();
+    install_provider_pointing_at(srv.port);   /* register-time refresh primes air_snapshot */
+
+    /* Let the priming refresh settle, then snapshot the air-GET count. The menu
+     * is hidden (default), so the worker's idle poll is 60s away — only the
+     * link-up kick can produce another /air/config GET within the test window. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    auto air_gets = [&] {
+        int n = 0;
+        for (auto &l : srv.snapshot_log()) if (l == "GET /air/config") n++;
+        return n;
+    };
+    int before = air_gets();
+
+    conn_state_t st{};
+    st.state = CONN_CONNECTED;
+    fpvd_on_conn_state_change(&st);   /* drone link just came up */
+
+    bool refreshed = false;
+    auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+    while (!refreshed && std::chrono::steady_clock::now() < end) {
+        refreshed = air_gets() > before;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    REQUIRE(refreshed == true);
     srv.stop();
 }
 

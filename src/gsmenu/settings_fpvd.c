@@ -541,11 +541,25 @@ static void notify_listener(void) {
     lv_unlock();
 }
 
-#ifndef PP_FPVD_TEST
-/* conn_state pushes drone-link transitions; re-lock the menu rows on change. */
-static void on_conn_state_change(const conn_state_t *st, void *ud) {
-    (void)st; (void)ud;
+/* conn_state pushes drone-link transitions. On link-up, kick an immediate
+ * /air/config refresh so air_snapshot is fresh before the rows unlock (conn_state
+ * flips to CONNECTED a poll cycle before the worker would otherwise re-fetch),
+ * then re-lock the menu rows. Not gated by PP_FPVD_TEST so it is unit-testable;
+ * the real subscription wrapper below forwards to it. */
+void fpvd_on_conn_state_change(const conn_state_t *st) {
+    if (st && st->state == CONN_CONNECTED) {
+        pthread_mutex_lock(&G.mu);
+        G.refresh_now = true;
+        pthread_cond_signal(&G.cv);
+        pthread_mutex_unlock(&G.mu);
+    }
     notify_listener();
+}
+
+#ifndef PP_FPVD_TEST
+static void on_conn_state_change(const conn_state_t *st, void *ud) {
+    (void)ud;
+    fpvd_on_conn_state_change(st);
 }
 #endif
 
@@ -1010,7 +1024,19 @@ static bool prov_is_reachable(const char *d, const char *p, const char *k) {
     /* AIR rows and the beamforming handshake need the drone; GS rows —
      * including SHARED channel/width (the offline recovery path) — do not. */
     if (e->endpoint != FPVD_EP_AIR && e->kind != FPVD_ROW_BEAMFORM) return true;
-    return conn_state_get().state == CONN_CONNECTED;
+    if (conn_state_get().state != CONN_CONNECTED) return false;
+    /* The link is up, but an AIR row renders the drone's own config values.
+     * Until air_snapshot has actually been fetched there is nothing to show,
+     * so keep the row offline rather than let it surface empty ("—") values
+     * during the reconnect gap (conn_state flips before the worker re-fetches
+     * /air/config). Beamforming reads no air value, so it needs only the link. */
+    if (e->endpoint == FPVD_EP_AIR) {
+        pthread_mutex_lock(&G.mu);
+        bool have_air = (G.air_snapshot != NULL);
+        pthread_mutex_unlock(&G.mu);
+        return have_air;
+    }
+    return true;
 }
 
 static void prov_set_snapshot_listener(pp_settings_snapshot_cb cb, void *ud) {

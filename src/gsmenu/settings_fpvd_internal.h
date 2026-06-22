@@ -5,10 +5,18 @@
 #include <stddef.h>
 #include "cJSON.h"
 #include "settings.h"
+#include "conn_state.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* React to a drone-link state transition reported by conn_state: when the link
+ * comes up, kick an immediate /air/config refresh (so air_snapshot is fresh
+ * without waiting for the worker's idle poll, which is up to 60s while the menu
+ * is hidden) and re-lock the menu rows. Production wires this via
+ * conn_state_subscribe; exposed here so it is unit-testable. */
+void fpvd_on_conn_state_change(const conn_state_t *st);
 
 typedef enum {
     FPVD_T_INT,

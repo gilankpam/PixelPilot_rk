@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include "cJSON.h"
 #include "settings.h"
-#include "conn_state.h"
+#include "../conn_state.h"
 
 #ifdef __cplusplus
 extern "C" {
